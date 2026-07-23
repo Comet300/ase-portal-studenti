@@ -608,7 +608,10 @@ p{ margin:0; }
 .auth-foot a:hover{ color:var(--red); }
 @media (max-width:820px){
   .auth-split{ grid-template-columns:1fr; min-height:auto; }
-  .auth-hero{ min-height:38vh; }
+  /* Brandul intră în flux (nu mai e absolut) → fără suprapunere peste titlu.
+     space-between: brand sus, mesajul jos, cu spațiu între ele. */
+  .auth-hero{ min-height:40vh; justify-content:space-between; gap:1.5rem; }
+  .auth-hero__brand{ position:relative; top:auto; left:auto; }
 }
 @media (max-width:420px){ .role-cards{ grid-template-columns:1fr; } }
 
