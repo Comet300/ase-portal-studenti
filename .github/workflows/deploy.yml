@@ -1,0 +1,34 @@
+name: Deploy to Coolify
+
+# GitHub Actions joins the tailnet via a Tailscale OAuth client, then calls the
+# Coolify deploy API over Tailscale. No public webhook.
+# Secrets: TS_OAUTH_CLIENT_ID, TS_OAUTH_SECRET, COOLIFY_TOKEN
+# Variable: COOLIFY_APP_UUID
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-ase-portal-studenti
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Join tailnet
+        uses: tailscale/github-action@v3
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:ci
+          version: latest
+
+      - name: Trigger Coolify deploy
+        run: |
+          set -euo pipefail
+          curl -fsS \
+            -H "Authorization: Bearer ${{ secrets.COOLIFY_TOKEN }}" \
+            "http://100.88.240.57:8000/api/v1/deploy?uuid=${{ vars.COOLIFY_APP_UUID }}&force=false"
