@@ -11,7 +11,9 @@ export const GET: APIRoute = async ({ locals, url }) => {
     return new Response('Pagina nu a fost găsită', { status: 404 })
   }
 
-  const sesiune = await currentYearLabel()
+  // The year label contains an en dash, and a non-ASCII byte in a plain
+  // `filename=` is not valid per RFC 6266 — the browser silently kept the tail.
+  const sesiune = (await currentYearLabel()).replace(/[^\x20-\x7e]+/g, '-') || 'curenta'
 
   const rows = await query<{
     number: string
@@ -64,7 +66,7 @@ export const GET: APIRoute = async ({ locals, url }) => {
   return new Response(csv, {
     headers: {
       'content-type': 'text/csv; charset=utf-8',
-      'content-disposition': `attachment; filename="cereri-sesiune-${sesiune || 'curenta'}.csv"`,
+      'content-disposition': `attachment; filename="cereri-sesiune-${sesiune}.csv"`,
     },
   })
 }
