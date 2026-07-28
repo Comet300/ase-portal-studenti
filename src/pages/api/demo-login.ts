@@ -1,6 +1,7 @@
 import type { APIRoute } from 'astro'
 import { SESSION_COOKIE, createSession, DEMO_MODE } from '../../lib/auth'
 import { queryOne } from '../../lib/db'
+import { redirect } from '../../lib/http'
 
 /**
  * Intrare fără email pentru conturile demonstrative.
@@ -25,7 +26,7 @@ export const POST: APIRoute = async ({ request, cookies, url }) => {
   )
 
   if (!utilizator) {
-    return Response.redirect(
+    return redirect(
       new URL('/autentificare?eroare=' + encodeURIComponent('Cont demonstrativ inexistent.'), url),
       303,
     )
@@ -42,5 +43,5 @@ export const POST: APIRoute = async ({ request, cookies, url }) => {
   })
 
   const implicit = utilizator.role === 'student' ? '/cererile-mele' : '/profesor'
-  return Response.redirect(new URL(redirect || implicit, url), 303)
+  return redirect(new URL(redirect || implicit, url), 303)
 }

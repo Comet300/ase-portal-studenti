@@ -3,6 +3,7 @@ import { myConversation } from '../../lib/chat'
 import { queryOne, transaction } from '../../lib/db'
 import { template, sendEmail } from '../../lib/mail'
 import { saveFile } from '../../lib/files'
+import { redirect } from '../../lib/http'
 
 /** Trimite un mesaj, cu atașament opțional. */
 export const POST: APIRoute = async ({ request, locals, url }) => {
@@ -20,7 +21,7 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
   if (!conversation) return new Response('Conversația nu a fost găsită', { status: 404 })
 
   if (!body && !(file instanceof File && file.size > 0)) {
-    return Response.redirect(new URL(redirect, url), 303)
+    return redirect(new URL(redirect, url), 303)
   }
 
   const messageId = await transaction(async (client) => {
@@ -68,5 +69,5 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
     })
   }
 
-  return Response.redirect(new URL(redirect, url), 303)
+  return redirect(new URL(redirect, url), 303)
 }
