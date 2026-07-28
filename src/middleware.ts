@@ -71,5 +71,22 @@ export const onRequest = defineMiddleware(async (context, next) => {
     return new Response('Pagina nu a fost găsită', { status: 404 })
   }
 
-  return next()
+  const response = await next()
+
+  /* Nimic din ce vede un utilizator autentificat nu are voie să ajungă în cache.
+   *
+   * Fără acest antet, originea nu spune nimic, iar Cloudflare aplică regula lui
+   * implicită pe extensie: un export `.csv` a fost păstrat la margine patru ore
+   * și servit oricui, fără cookie. Răspunsurile pentru un vizitator rămân
+   * publice — sunt aceleași pentru toată lumea. */
+  if (user) {
+    try {
+      response.headers.set('cache-control', 'private, no-store')
+      response.headers.set('vary', 'cookie')
+    } catch {
+      // Un răspuns cu antete imutabile este construit de noi și nu ajunge la CDN.
+    }
+  }
+
+  return response
 })
