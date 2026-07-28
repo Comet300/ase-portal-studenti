@@ -1,7 +1,15 @@
 ---
 import { consumeMagicLink, createSession, SESSION_COOKIE } from '../lib/auth'
+import { internalPath } from '../lib/http'
 
-/** Consumă tokenul din email, deschide sesiunea și trimite utilizatorul unde trebuie. */
+/**
+ * Consumă tokenul din email, deschide sesiunea și trimite utilizatorul unde trebuie.
+ *
+ * Ultima instrucțiune din frontmatter-ul unui fișier .astro fără corp nu este
+ * verificată de `astro check` — aici a supraviețuit luni de zile un `redirectLa`
+ * inexistent, rămas dintr-o redenumire. De aceea logica stă în `lib/http.ts`, iar
+ * aici rămâne doar apelul.
+ */
 
 const token = Astro.url.searchParams.get('token') ?? ''
 const result = await consumeMagicLink(token)
@@ -14,9 +22,7 @@ if (!result) {
   )
 }
 
-const sesiuneId = await createSession(result.user.id)
-
-Astro.cookies.set(SESSION_COOKIE, sesiuneId, {
+Astro.cookies.set(SESSION_COOKIE, await createSession(result.user.id), {
   path: '/',
   httpOnly: true,
   sameSite: 'lax',
@@ -24,6 +30,10 @@ Astro.cookies.set(SESSION_COOKIE, sesiuneId, {
   maxAge: 60 * 60 * 24 * 30,
 })
 
-const implicit = result.user.role === 'student' ? '/cererile-mele' : '/profesor'
-return Astro.redirect(result.redirectLa || implicit, 302)
+const destination = internalPath(
+  result.redirectTo,
+  result.user.role === 'student' ? '/cererile-mele' : '/profesor',
+)
+
+return Astro.redirect(destination, 302)
 ---
