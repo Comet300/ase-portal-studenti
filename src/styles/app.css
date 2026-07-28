@@ -206,6 +206,16 @@ h4 {
   border: 0;
 }
 
+/* Atributul `hidden` trebuie să învingă orice `display` pus de o clasă.
+ *
+ * Regula implicită a browserului, `[hidden] { display: none }`, are specificitate
+ * mai mică decât un selector de clasă — așa că un card cu `display: flex` rămâne
+ * vizibil oricât l-ai ascunde din JavaScript. Filtrele din catalog numărau
+ * corect și nu ascundeau nimic exact din acest motiv. */
+[hidden] {
+  display: none !important;
+}
+
 /* --- butoane ------------------------------------------------------------- */
 
 .btn {

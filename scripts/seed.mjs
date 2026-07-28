@@ -300,8 +300,11 @@ console.log('[seed] studenți')
 const studentIds = []
 for (const [i, nume] of STUDENT_NAMES.entries()) {
   const isMaster = i % 3 === 2
+  // Împărțit pe poziția în seria de master, nu pe indexul global: `i % 3` este
+  // constant 2 pentru toți masteranzii, deci `i % MASTER_GROUPS.length` i-ar fi
+  // trimis pe toți la același program.
   const [level, specializare, limba, an] = isMaster
-    ? MASTER_GROUPS[i % MASTER_GROUPS.length]
+    ? MASTER_GROUPS[Math.floor(i / 3) % MASTER_GROUPS.length]
     : BACHELOR_GROUPS[i % BACHELOR_GROUPS.length]
   const email = `${nume.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, '.')}@stud.ase.ro`
   studentIds.push(
@@ -333,8 +336,11 @@ const unassignedStudentId = await upsertUser([
 ])
 
 // Idempotency guard: if an earlier run (or a manual test) left this account with
-// a request, clear it so the account keeps meaning "not yet started".
+// a request, clear it so the account keeps meaning "not yet started". The same
+// applies to the invitation below — once answered it would never be reissued,
+// and the accept/refuse screen would be reachable exactly once per database.
 await q(`DELETE FROM requests WHERE student_id = $1`, [unassignedStudentId])
+await q(`DELETE FROM invitations WHERE student_id = $1 AND status <> 'pending'`, [unassignedStudentId])
 
 console.log('[seed] teme')
 for (const [i, [titlu, nivel, limba, metode, prereq, locuri]] of TOPICS.entries()) {
