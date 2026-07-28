@@ -356,6 +356,23 @@ const cai: Record<string, string> = {
     .content__body {
       padding-inline: var(--s-4);
     }
+    /* At phone width a serif display title and an action button cannot share a
+       row: the title wraps to three lines and collides with the button. */
+    .content__header {
+      flex-wrap: wrap;
+      gap: var(--s-3);
+    }
+    .content__header > div {
+      flex: 1 1 100%;
+      order: 2;
+    }
+    .content__header :global(.row) {
+      order: 3;
+      flex: 1 1 100%;
+    }
+    .content__header .page-title {
+      font-size: var(--t-xl);
+    }
     .demo-note {
       margin-inline: var(--s-4);
     }
