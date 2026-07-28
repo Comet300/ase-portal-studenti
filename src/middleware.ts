@@ -9,7 +9,7 @@ import { SESSION_COOKIE, getUserFromSession } from './lib/auth'
 
 const REQUIRES_SESSION = ['/cererile-mele', '/mesaje', '/consultatii', '/contul-meu']
 const TEACHER_AREA = '/profesor'
-const HEAD_AREA = '/profesor/departament'
+const HEAD_ONLY = ['/profesor/departament', '/profesor/calendar']
 
 const UNSAFE = new Set(['POST', 'PUT', 'PATCH', 'DELETE'])
 
@@ -54,7 +54,7 @@ export const onRequest = defineMiddleware(async (context, next) => {
     return new Response('Pagina nu a fost găsită', { status: 404 })
   }
 
-  if (path.startsWith(HEAD_AREA) && user && user.role !== 'head') {
+  if (HEAD_ONLY.some((p) => path.startsWith(p)) && user && user.role !== 'head') {
     return new Response('Pagina nu a fost găsită', { status: 404 })
   }
 
