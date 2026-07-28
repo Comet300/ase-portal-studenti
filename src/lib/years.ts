@@ -82,6 +82,26 @@ export async function openYear(
          ON CONFLICT DO NOTHING`,
         [yearId, from],
       )
+
+      /* Students follow their programme into the new year.
+       *
+       * The copy above creates new rows, so without this every student would
+       * still point at last year's programme: the new year's cohorts would all
+       * read as empty while the students were plainly still there. Matched on
+       * the tuple that defines a programme, not on the id, because the id is
+       * exactly what changed. */
+      await client.query(
+        `UPDATE users u
+            SET programme_id = nou.id
+           FROM study_programmes nou, study_programmes vechi
+          WHERE u.programme_id = vechi.id
+            AND vechi.academic_year_id = $2
+            AND nou.academic_year_id = $1
+            AND nou.level = vechi.level
+            AND nou.name = vechi.name
+            AND nou.language = vechi.language`,
+        [yearId, from],
+      )
     }
     if (from && options.copyStages) {
       await client.query(

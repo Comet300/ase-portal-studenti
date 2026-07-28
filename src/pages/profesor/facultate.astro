@@ -1,8 +1,16 @@
 ---
 import Avatar from '../../components/Avatar.astro'
 import ProfesorLayout from '../../layouts/ProfesorLayout.astro'
+import { isDepartmentHead } from '../../lib/auth'
 import { studentDirectory } from '../../lib/repo'
-import { LANGUAGE_LABELS, LEVEL_LABELS, languageLabel, levelLabel } from '../../lib/years'
+import {
+  LANGUAGE_LABELS,
+  LEVEL_LABELS,
+  currentYear,
+  languageLabel,
+  levelLabel,
+  programmes,
+} from '../../lib/years'
 
 /**
  * The whole cohort, split the way the faculty thinks about it.
@@ -22,6 +30,13 @@ const stare = Astro.url.searchParams.get('stare') ?? ''
 const cauta = (Astro.url.searchParams.get('q') ?? '').trim().toLowerCase()
 
 const all = await studentDirectory()
+
+/* Mutarea unui student între programe este o sarcină administrativă: apare doar
+ * pentru directorul de departament, pe același ecran pe care oricum se uită la
+ * cine în ce grupă e. */
+const poateAtribui = isDepartmentHead(Astro.locals.user)
+const an = poateAtribui ? await currentYear() : null
+const programeleAnului = an ? (await programmes(an.id)).filter((p) => p.is_active) : []
 
 const filtered = all.filter((s) => {
   if (nivel && s.program !== nivel) return false
@@ -179,6 +194,7 @@ const STARI = [
                     <th>An</th>
                     <th>Coordonator</th>
                     <th>Stare</th>
+                    {poateAtribui && <th>Grupare</th>}
                   </tr>
                 </thead>
                 <tbody>
@@ -211,6 +227,53 @@ const STARI = [
                           <span class="badge badge--ciorna">Fără cerere</span>
                         )}
                       </td>
+                      {poateAtribui && (
+                        <td>
+                          <form method="POST" action="/api/studenti" class="atribuire">
+                            <input type="hidden" name="student_id" value={s.id} />
+                            <label class="visually-hidden" for={`prog-${s.id}`}>
+                              Program de studiu pentru {s.name}
+                            </label>
+                            <select class="select select--sm" id={`prog-${s.id}`} name="program_id">
+                              {programeleAnului.map((p) => (
+                                <option
+                                  value={p.id}
+                                  selected={
+                                    p.level === s.program &&
+                                    p.name === s.specialization &&
+                                    p.language === s.study_language
+                                  }
+                                >
+                                  {LEVEL_LABELS[p.level]} · {p.name} · {LANGUAGE_LABELS[p.language]}
+                                </option>
+                              ))}
+                            </select>
+                            <label class="visually-hidden" for={`an-${s.id}`}>
+                              An de studiu pentru {s.name}
+                            </label>
+                            <input
+                              class="input input--num"
+                              id={`an-${s.id}`}
+                              name="an_studiu"
+                              type="number"
+                              min="1"
+                              max="6"
+                              value={s.study_year ?? ''}
+                            />
+                            <label class="visually-hidden" for={`gr-${s.id}`}>
+                              Grupa pentru {s.name}
+                            </label>
+                            <input
+                              class="input input--num"
+                              id={`gr-${s.id}`}
+                              name="grupa"
+                              value={s.study_group ?? ''}
+                              placeholder="Grupa"
+                            />
+                            <button class="btn btn--secondary btn--sm" type="submit">Salvează</button>
+                          </form>
+                        </td>
+                      )}
                     </tr>
                   ))}
                 </tbody>
@@ -244,5 +307,22 @@ const STARI = [
   .metric__label {
     font-size: var(--t-sm);
     color: var(--ink-soft);
+  }
+
+  .atribuire {
+    display: flex;
+    align-items: center;
+    gap: var(--s-2);
+    justify-content: flex-end;
+  }
+  .atribuire .select--sm {
+    min-width: 210px;
+    font-size: var(--t-xs);
+    padding-block: var(--s-1);
+  }
+  .atribuire .input--num {
+    width: 72px;
+    font-size: var(--t-xs);
+    padding-block: var(--s-1);
   }
 </style>

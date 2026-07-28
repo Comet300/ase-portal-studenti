@@ -1,0 +1,63 @@
+import type { APIRoute } from 'astro'
+import { isDepartmentHead } from '../../lib/auth'
+import { execute, queryOne } from '../../lib/db'
+import { redirectWithNotice } from '../../lib/http'
+import { id as formId } from '../../lib/ids'
+
+/**
+ * Which group a student belongs to.
+ *
+ * The registrar decides this, not the student — so it is editable only by the
+ * head of department, and only here. The programme carries level, name and
+ * language, and those three are written onto the student in the same statement:
+ * every screen that groups or filters reads the plain columns, and a programme
+ * that disagreed with them would split one cohort into two.
+ */
+
+const PAGE = '/profesor/facultate'
+
+export const POST: APIRoute = async ({ request, locals }) => {
+  if (!isDepartmentHead(locals.user)) {
+    return new Response('Pagina nu a fost găsită', { status: 404 })
+  }
+
+  const form = await request.formData()
+  const studentId = formId(form.get('student_id'))
+  const programmeId = formId(form.get('program_id'))
+  const studyYear = Number(form.get('an_studiu') ?? 0)
+  const studyGroup = String(form.get('grupa') ?? '').trim()
+
+  const back = (message: string, isError = false) => redirectWithNotice(PAGE, message, isError)
+
+  const student = await queryOne<{ name: string }>(
+    `SELECT name FROM users WHERE id = $1 AND role = 'student'`,
+    [studentId],
+  )
+  if (!student) return back('Studentul nu a fost găsit.', true)
+
+  // A programme from another academic year would put the student in a cohort
+  // that is not running, so the lookup is scoped to the current one.
+  const programme = await queryOne<{ id: string; level: string; name: string; language: string }>(
+    `SELECT id, level, name, language
+       FROM study_programmes
+      WHERE id = $1 AND academic_year_id = (SELECT id FROM academic_years WHERE is_current)`,
+    [programmeId],
+  )
+  if (!programme) return back('Alege un program de studiu din anul curent.', true)
+
+  const year = Number.isFinite(studyYear) ? Math.min(6, Math.max(1, Math.trunc(studyYear))) : null
+
+  await execute(
+    `UPDATE users
+        SET programme_id   = $2,
+            program        = $3,
+            specialization = $4,
+            study_language = $5,
+            study_year     = COALESCE($6, study_year),
+            study_group    = NULLIF($7, '')
+      WHERE id = $1 AND role = 'student'`,
+    [studentId, programme.id, programme.level, programme.name, programme.language, year, studyGroup],
+  )
+
+  return back(`${student.name} a fost mutat la ${programme.name}.`)
+}
