@@ -5,7 +5,7 @@ import { template, sendEmail } from '../../../lib/mail'
 import { redirect, redirectWithNotice } from '../../../lib/http'
 
 /** Jaloanele implicite, create odată cu acceptarea, ca studentul să nu pornească din gol. */
-const JALOANE_IMPLICITE = [
+const DEFAULT_MILESTONES = [
   ['Stabilirea temei și a bibliografiei', 'Temă confirmată și minimum 20 de titluri bibliografice.', 0],
   ['Capitolul teoretic', 'Sinteza literaturii de specialitate și cadrul conceptual.', 45],
   ['Metodologia cercetării', 'Instrument de cercetare validat, eșantion stabilit.', 90],
@@ -19,15 +19,15 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
 
   const date = await request.formData()
   const cerereId = String(date.get('cerere_id') ?? '')
-  const decizie = String(date.get('decizie') ?? '')
+  const decision = String(date.get('decision') ?? '')
   const motiv = String(date.get('motiv') ?? '').trim()
   const redirectTo = String(date.get('redirect') ?? '/profesor/studenti')
 
-  if (decizie !== 'approved' && decizie !== 'rejected') {
+  if (decision !== 'approved' && decision !== 'rejected') {
     return new Response('Decizie invalidă', { status: 400 })
   }
 
-  if (decizie === 'rejected' && motiv.length < 10) {
+  if (decision === 'rejected' && motiv.length < 10) {
     return redirectWithNotice(redirectTo, 'Motivul respingerii este obligatoriu (minimum 10 caractere).', true)
   }
 
@@ -42,18 +42,18 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
               updated_at = now()
         WHERE id = $2 AND teacher_id = $1 AND status = 'pending'
         RETURNING id, student_id, title_ro, number`,
-      [u!.id, cerereId, decizie, decizie === 'rejected' ? motiv : null],
+      [u!.id, cerereId, decision, decision === 'rejected' ? motiv : null],
     )
 
     const c = rows[0]
     if (!c) return null
 
-    if (decizie === 'approved') {
-      for (const [titlu, description, zile] of JALOANE_IMPLICITE) {
+    if (decision === 'approved') {
+      for (const [title, description, days] of DEFAULT_MILESTONES) {
         await client.query(
           `INSERT INTO milestones (request_id, title, description, due_on, position)
            VALUES ($1, $2, $3, (current_date + ($4 || ' days')::interval)::date, $5)`,
-          [c.id, title, description, String(zile), JALOANE_IMPLICITE.findIndex((j) => j[0] === titlu)],
+          [c.id, title, description, String(days), DEFAULT_MILESTONES.findIndex((m) => m[0] === title)],
         )
       }
       // Firul de discuție se deschide odată cu acceptarea.
@@ -78,7 +78,7 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
 
   if (student) {
     const baza = process.env.APP_BASE_URL ?? url.origin
-    const aprobata = decizie === 'approved'
+    const aprobata = decision === 'approved'
     await sendEmail({
       to: student.email,
       subject: aprobata
@@ -99,5 +99,5 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
     })
   }
 
-  return redirectWithNotice(redirectTo, decizie === 'approved' ? 'Cerere aprobată. Studentul a fost notificat.' : 'Cerere respinsă. Studentul a fost notificat.',)
+  return redirectWithNotice(redirectTo, decision === 'approved' ? 'Cerere aprobată. Studentul a fost notificat.' : 'Cerere respinsă. Studentul a fost notificat.',)
 }

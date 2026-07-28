@@ -20,7 +20,7 @@ export const POST: APIRoute = async ({ request, cookies, url }) => {
   const utilizatorId = String(date.get('utilizator_id') ?? '')
   const redirectTo = String(date.get('redirect') ?? '')
 
-  const utilizator = await queryOne<{ id: string; rol: string }>(
+  const utilizator = await queryOne<{ id: string; role: string }>(
     `SELECT id, role FROM users WHERE id = $1 AND is_demo = true`,
     [utilizatorId],
   )

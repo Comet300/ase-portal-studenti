@@ -19,7 +19,7 @@ for (const t of allTopics) {
 <StudentLayout
   title="Coordonatori & Teme"
   description="Catalogul cadrelor didactice și temele propuse pentru sesiunea 2026"
-  active="supervisors"
+  active="coordonatori"
 >
   <div class="container stack stack--loose">
     <header class="stack stack--tight">
@@ -87,7 +87,7 @@ for (const t of allTopics) {
                 </div>
                 {u?.role === 'student' && (
                   <a class="btn btn--primary btn--sm" href={`/cererile-mele?coordonator=${p.id}`}>
-                    Depune request
+                    Depune cerere
                   </a>
                 )}
               </div>
@@ -132,23 +132,23 @@ for (const t of allTopics) {
 </StudentLayout>
 
 <script>
-  const cauta = document.getElementById('cauta') as HTMLInputElement
-  const dep = document.getElementById('department') as HTMLSelectElement
-  const level = document.getElementById('level') as HTMLSelectElement
-  const resultLabel = document.getElementById('resultLabel')!
+  const search = document.getElementById('cauta') as HTMLInputElement
+  const dep = document.getElementById('departament') as HTMLSelectElement
+  const level = document.getElementById('nivel') as HTMLSelectElement
+  const resultLabel = document.getElementById('rezultat')!
   const emptyLabel = document.getElementById('fara-rezultate')!
   const cards = [...document.querySelectorAll<HTMLLIElement>('.coord')]
 
   function filter() {
-    const q = cauta.value.trim().toLowerCase()
+    const q = search.value.trim().toLowerCase()
     const d = dep.value
     const n = level.value
     let visibleCount = 0
 
     for (const c of cards) {
       const matchesText =
-        !q || (c.dataset.name ?? '').includes(q) || (c.dataset.topics ?? '').includes(q)
-      const matchesDept = !d || c.dataset.department === d
+        !q || (c.dataset.nume ?? '').includes(q) || (c.dataset.teme ?? '').includes(q)
+      const matchesDept = !d || c.dataset.departament === d
       const matchesLevel = !n || (c.dataset.niveluri ?? '').includes(n)
       const visible = matchesText && matchesDept && matchesLevel
 
@@ -161,12 +161,12 @@ for (const t of allTopics) {
       })
     }
 
-    rezultat.textContent =
-      vizibile === 1 ? '1 cadru didactic' : `${vizibile} cadre didactice`
-    gol.hidden = vizibile > 0
+    resultLabel.textContent =
+      visibleCount === 1 ? '1 cadru didactic' : `${visibleCount} cadre didactice`
+    emptyLabel.hidden = visibleCount > 0
   }
 
-  ;[cauta, dep, nivel].forEach((el) => el.addEventListener('input', filter))
+  ;[search, dep, level].forEach((el) => el.addEventListener('input', filter))
 </script>
 
 <style>
@@ -220,7 +220,7 @@ for (const t of allTopics) {
     font-weight: 600;
   }
 
-  .topics {
+  .teme {
     list-style: none;
     margin: 0;
     padding: 0;

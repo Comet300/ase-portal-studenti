@@ -1,41 +1,41 @@
 import type { APIRoute } from 'astro'
 import { isTeacher } from '../../lib/auth'
 import { execute } from '../../lib/db'
-import { redirect, redirectWithNotice } from '../../lib/http'
+import { redirectWithNotice } from '../../lib/http'
 
 /** Temele propuse de un cadru didactic. Proprietarul este verificat în fiecare instrucțiune. */
 export const POST: APIRoute = async ({ request, locals, url }) => {
   const u = locals.user
   if (!isTeacher(u)) return new Response('Neautorizat', { status: 401 })
 
-  const date = await request.formData()
-  const actiune = String(date.get('actiune') ?? 'adauga')
+  const form = await request.formData()
+  const action = String(form.get('actiune') ?? 'adauga')
   const redirectTo = '/profesor/studenti?sectiune=teme'
 
-  const inapoi = (mesaj: string, eroare = false) =>
-    redirectWithNotice(redirectTo, mesaj, isError)
+  const back = (message: string, isError = false) =>
+    redirectWithNotice(redirectTo, message, isError)
 
   if (action === 'adauga') {
-    const title = String(date.get('title') ?? '').trim()
-    const nivel = String(date.get('nivel') ?? '')
-    const metode = String(date.get('metode') ?? '').trim()
-    const prerechizite = String(date.get('prerechizite') ?? '').trim()
-    const locuri = Number(date.get('locuri') ?? 1)
+    const title = String(form.get('titlu') ?? '').trim()
+    const level = String(form.get('nivel') ?? '')
+    const methods = String(form.get('metode') ?? '').trim()
+    const prerequisites = String(form.get('prerechizite') ?? '').trim()
+    const seats = Number(form.get('locuri') ?? 1)
 
-    if (!title || !['bachelor', 'master'].includes(nivel)) {
+    if (!title || !['bachelor', 'master'].includes(level)) {
       return back('Completează titlul și nivelul temei.', true)
     }
 
     await execute(
       `INSERT INTO topics (teacher_id, title, level, methods, prerequisites, seats)
        VALUES ($1, $2, $3, NULLIF($4, ''), NULLIF($5, ''), $6)`,
-      [u!.id, title, nivel, metode, prerechizite, Number.isFinite(locuri) ? Math.max(1, locuri) : 1],
+      [u!.id, title, level, methods, prerequisites, Number.isFinite(seats) ? Math.max(1, seats) : 1],
     )
     return back('Tema a fost publicată în catalog.')
   }
 
   if (action === 'comuta') {
-    const topicId = String(date.get('tema_id') ?? '')
+    const topicId = String(form.get('tema_id') ?? '')
     const n = await execute(
       `UPDATE topics SET is_active = NOT is_active WHERE id = $2 AND teacher_id = $1`,
       [u!.id, topicId],

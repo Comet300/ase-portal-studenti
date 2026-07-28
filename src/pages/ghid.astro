@@ -6,7 +6,7 @@ const stageList = await stages()
 
 const DOCS = [
   {
-    title: 'Model — request de coordonare',
+    title: 'Model — cerere de coordonare',
     text: 'Se pre-completează cu datele contului tău. Cererea oficială se depune în portal.',
     href: '/documente/model-cerere-coordonare.html',
     kind: 'Document',
@@ -88,7 +88,7 @@ const DOCS = [
       <div class="panel__body prose stack">
         <h2 class="section-title">Utilizarea instrumentelor de inteligență artificială</h2>
         <p>
-          Instrumentele de kind AI generativ pot fi folosite ca sprijin, nu ca autor. Regula de bază:
+          Instrumentele de tip AI generativ pot fi folosite ca sprijin, nu ca autor. Regula de bază:
           rămâi responsabil pentru fiecare afirmație din lucrare, indiferent cine a formulat-o prima
           dată.
         </p>
@@ -111,12 +111,12 @@ const DOCS = [
 
         <h3 class="section-title" style="font-size:var(--t-md)">Cum se declară</h3>
         <p>
-          Într-o secțiune scurtă, înainte de bibliografie: instrumentul folosit, în ce objectivesField și la ce
+          Într-o secțiune scurtă, înainte de bibliografie: instrumentul folosit, în ce scop și la ce
           părți ale lucrării. O frază precisă este suficientă.
         </p>
         <blockquote class="citat">
-          Pentru corectura lingvistică a capitolelor 2 și 3 am folosit un instrument de kind AI
-          generativ. Conținutul științific, analiza datelor și interpretarea rezultatele îmi
+          Pentru corectura lingvistică a capitolelor 2 și 3 am folosit un instrument de tip AI
+          generativ. Conținutul științific, analiza datelor și interpretarea rezultatelor îmi
           aparțin.
         </blockquote>
       </div>
@@ -139,9 +139,9 @@ const DOCS = [
 
         <h3 class="section-title" style="font-size:var(--t-md)">Ce contează în raport</h3>
         <p>
-          Un percent de similitudine nu înseamnă automat plagiat: citările corecte apar și ele ca
+          Un procent de similitudine nu înseamnă automat plagiat: citările corecte apar și ele ca
           similitudini. Se analizează sursele coincidenței, nu doar cifra. Preluarea fără citare,
-          indiferent de percent, este plagiat.
+          indiferent de procent, este plagiat.
         </p>
 
         <div class="atentie">
@@ -162,7 +162,7 @@ const DOCS = [
             DOCS.map((d) => (
               <li>
                 <a href={d.href} class="document" download={d.href.endsWith('.ics') ? '' : undefined}>
-                  <span class="document__tip">{d.tip}</span>
+                  <span class="document__tip">{d.kind}</span>
                   <span class="document__corp">
                     <strong>{d.title}</strong>
                     <small class="muted">{d.text}</small>
@@ -194,34 +194,34 @@ const DOCS = [
 
 <script>
   const tabs = [...document.querySelectorAll<HTMLButtonElement>('[role="tab"]')]
-  const panouri = taburi.map((t) => document.getElementById(t.getAttribute('aria-controls')!)!)
+  const panels = tabs.map((t) => document.getElementById(t.getAttribute('aria-controls')!)!)
 
-  function arata(index: number) {
-    taburi.forEach((t, i) => {
+  function showTab(index: number) {
+    tabs.forEach((t, i) => {
       const active = i === index
-      t.classList.toggle('is-activ', activ)
-      t.setAttribute('aria-selected', String(activ))
-      panouri[i].hidden = !active
+      t.classList.toggle('is-activ', active)
+      t.setAttribute('aria-selected', String(active))
+      panels[i].hidden = !active
     })
-    history.replaceState({}, '', `#${taburi[index].id.replace('t-', '')}`)
+    history.replaceState({}, '', `#${tabs[index].id.replace('t-', '')}`)
   }
 
-  taburi.forEach((t, i) => {
-    t.addEventListener('click', () => arata(i))
+  tabs.forEach((t, i) => {
+    t.addEventListener('click', () => showTab(i))
     // Săgețile stânga/dreapta trec între file, cum se așteaptă la un tablist.
     t.addEventListener('keydown', (e) => {
       if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return
       e.preventDefault()
-      const next = (i + (e.key === 'ArrowRight' ? 1 : taburi.length - 1)) % taburi.length
-      taburi[next].focus()
-      arata(next)
+      const next = (i + (e.key === 'ArrowRight' ? 1 : tabs.length - 1)) % tabs.length
+      tabs[next].focus()
+      showTab(next)
     })
   })
 
   // Linkurile din alte pagini (/ghid#antiplagiat) deschid fila potrivită.
-  const ancora = location.hash.replace('#', '')
-  const initial = taburi.findIndex((t) => t.id === `t-${ancora}`)
-  if (initial >= 0) showTab(initialTab)
+  const anchor = location.hash.replace('#', '')
+  const initialTab = tabs.findIndex((t) => t.id === `t-${anchor}`)
+  if (initialTab >= 0) showTab(initialTab)
 </script>
 
 <style>

@@ -12,7 +12,7 @@ import {
 
 const u = Astro.locals.user!
 
-// Un cadru didactic care ajunge aici își vede propriile requests (nu are), deci
+// Un cadru didactic care ajunge aici își vede propriile cereri (nu are), deci
 // îl trimitem în zona lui în loc să-i arătăm un ecran gol fără sens.
 if (u.role !== 'student') return Astro.redirect('/profesor', 302)
 
@@ -28,9 +28,9 @@ const hasActiveRequest = requests.some((c) => c.status === 'pending' || c.status
 const approvedRequest = requests.find((c) => c.status === 'approved')
 
 const MILESTONE_STATES: Record<string, string> = {
-  planificat: 'Planificat',
-  in_lucru: 'În lucru',
-  finalizat: 'Finalizat',
+  planned: 'Planificat',
+  in_progress: 'În lucru',
+  done: 'Finalizat',
 }
 ---
 
@@ -62,7 +62,7 @@ const MILESTONE_STATES: Record<string, string> = {
               când primești un răspuns, iar termenele lucrării apar tot aici.
             </p>
             <div class="row" style="gap:var(--s-2)">
-              <a href="/supervisors" class="btn btn--secondary btn--sm">Vezi coordonatorii</a>
+              <a href="/coordonatori" class="btn btn--secondary btn--sm">Vezi coordonatorii</a>
               <button class="btn btn--primary btn--sm" type="button" id="deschide-cerere-gol">
                 Depune cerere
               </button>
@@ -97,7 +97,7 @@ const MILESTONE_STATES: Record<string, string> = {
                   <div class="motiv">
                     <strong>Motivul respingerii</strong>
                     <p>{c.rejection_reason}</p>
-                    <a href="/supervisors" class="btn btn--secondary btn--sm">Depune o cerere nouă</a>
+                    <a href="/coordonatori" class="btn btn--secondary btn--sm">Depune o cerere nouă</a>
                   </div>
                 )}
 
@@ -157,7 +157,7 @@ const MILESTONE_STATES: Record<string, string> = {
   </div>
 
   <dialog id="dialog-cerere">
-    <form method="POST" action="/api/requests/depune" class="formular" id="formular-cerere">
+    <form method="POST" action="/api/cereri/depune" class="formular" id="formular-cerere">
       <div class="formular__cap">
         <h2 class="section-title">Cerere de coordonare</h2>
         <button class="btn btn--ghost btn--sm" type="button" data-inchide aria-label="Închide">✕</button>
@@ -259,42 +259,42 @@ const MILESTONE_STATES: Record<string, string> = {
   const dialog = document.getElementById('dialog-cerere') as HTMLDialogElement | null
   const form = document.getElementById('formular-cerere') as HTMLFormElement | null
 
-  const deschide = () => dialog?.showModal()
-  document.getElementById('deschide-cerere')?.addEventListener('click', deschide)
-  document.getElementById('deschide-cerere-gol')?.addEventListener('click', deschide)
+  const openDialog = () => dialog?.showModal()
+  document.getElementById('deschide-cerere')?.addEventListener('click', openDialog)
+  document.getElementById('deschide-cerere-gol')?.addEventListener('click', openDialog)
   dialog?.querySelectorAll('[data-inchide]').forEach((b) => b.addEventListener('click', () => dialog.close()))
 
-  // Dacă s-a venit din catalog cu un coordonator ales, formularul se openDialog direct.
+  // Dacă s-a venit din catalog cu un coordonator ales, formularul se deschide direct.
   if (new URLSearchParams(location.search).get('coordonator')) openDialog()
 
   const step1 = dialog?.querySelector<HTMLElement>('[data-pas="1"]')
   const step2 = dialog?.querySelector<HTMLElement>('[data-pas="2"]')
-  const profesor = document.getElementById('profesor_id') as HTMLSelectElement
-  const tema = document.getElementById('tema_id') as HTMLSelectElement
+  const teacherSelect = document.getElementById('profesor_id') as HTMLSelectElement
+  const topicSelect = document.getElementById('tema_id') as HTMLSelectElement
   const title = document.getElementById('titlu_ro') as HTMLInputElement
-  const scop = document.getElementById('scop_obiective') as HTMLTextAreaElement
-  const contor = document.getElementById('contor')
+  const objectivesField = document.getElementById('scop_obiective') as HTMLTextAreaElement
+  const counter = document.getElementById('contor')
 
-  scop?.addEventListener('input', () => {
-    if (contor) contor.textContent = String(scop.value.length)
+  objectivesField?.addEventListener('input', () => {
+    if (counter) counter.textContent = String(objectivesField.value.length)
   })
 
   // Temele se restrâng la coordonatorul ales, ca să nu se poată cere o temă
   // care aparține altcuiva.
-  function sincronizeazaTeme() {
-    const optiuni = [...tema.options]
-    for (const o of optiuni) {
+  function syncTopics() {
+    const options = [...topicSelect.options]
+    for (const o of options) {
       if (!o.value) continue
-      o.hidden = Boolean(profesor.value) && o.dataset.profesor !== profesor.value
+      o.hidden = Boolean(teacherSelect.value) && o.dataset.profesor !== teacherSelect.value
     }
-    if (tema.selectedOptions[0]?.hidden) tema.value = ''
+    if (topicSelect.selectedOptions[0]?.hidden) topicSelect.value = ''
   }
 
-  profesor?.addEventListener('change', sincronizeazaTeme)
-  sincronizeazaTeme()
+  teacherSelect?.addEventListener('change', syncTopics)
+  syncTopics()
 
-  tema?.addEventListener('change', () => {
-    const t = tema.selectedOptions[0]?.dataset.title
+  topicSelect?.addEventListener('change', () => {
+    const t = topicSelect.selectedOptions[0]?.dataset.title
     if (t && !title.value) title.value = t
   })
 
@@ -308,11 +308,11 @@ const MILESTONE_STATES: Record<string, string> = {
       const el = document.getElementById(id)
       if (el) el.textContent = val
     }
-    set('pv-profesor', profesor.selectedOptions[0]?.textContent ?? '—')
+    set('pv-profesor', teacherSelect.selectedOptions[0]?.textContent ?? '—')
     set('pv-title', title.value)
-    set('pv-scop', scop.value)
-    if (pas1) pas1.hidden = true
-    if (pas2) pas2.hidden = false
+    set('pv-scop', objectivesField.value)
+    if (step1) step1.hidden = true
+    if (step2) step2.hidden = false
   })
 
   document.getElementById('inapoi-pas-1')?.addEventListener('click', () => {
@@ -403,11 +403,11 @@ const MILESTONE_STATES: Record<string, string> = {
     flex: none;
     z-index: 1;
   }
-  .jalon--finalizat .jalon__punct {
+  .jalon--done .jalon__punct {
     background: var(--ok);
     border-color: var(--ok);
   }
-  .jalon--in_lucru .jalon__punct {
+  .jalon--in_progress .jalon__punct {
     background: var(--red);
     border-color: var(--red);
   }

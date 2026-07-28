@@ -5,12 +5,13 @@
   "type": "module",
   "scripts": {
     "dev": "astro dev",
-    "build": "astro build",
+    "build": "astro check && astro build",
     "preview": "astro preview",
     "start": "node ./dist/server/entry.mjs",
     "check": "astro check",
     "db:migrate": "node scripts/migrate.mjs",
-    "db:seed": "node scripts/seed.mjs"
+    "db:seed": "node scripts/seed.mjs",
+    "build:only": "astro build"
   },
   "dependencies": {
     "@astrojs/node": "^9.4.4",

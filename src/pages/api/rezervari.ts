@@ -3,20 +3,20 @@ import { queryOne } from '../../lib/db'
 import { buildIcs } from '../../lib/ics'
 import { template, sendEmail } from '../../lib/mail'
 import { formatDate, formatTime } from '../../lib/repo'
-import { redirect, redirectWithNotice } from '../../lib/http'
+import { redirectWithNotice } from '../../lib/http'
 
 /** Rezervarea și anularea unui interval de consultație, cu invitație în calendar. */
 export const POST: APIRoute = async ({ request, locals, url }) => {
   const u = locals.user
   if (!u) return new Response('Neautentificat', { status: 401 })
 
-  const date = await request.formData()
-  const actiune = String(date.get('actiune') ?? 'rezerva')
-  const slotId = String(date.get('slot_id') ?? '')
-  const subiect = String(date.get('subiect') ?? '').trim()
+  const form = await request.formData()
+  const action = String(form.get('actiune') ?? 'rezerva')
+  const slotId = String(form.get('slot_id') ?? '')
+  const subject = String(form.get('subiect') ?? '').trim()
 
-  const inapoi = (mesaj: string, eroare = false) =>
-    redirectWithNotice('/consultatii', mesaj, error)
+  const back = (message: string, isError = false) =>
+    redirectWithNotice('/consultatii', message, isError)
 
   if (action === 'anuleaza') {
     const cancelledRow = await queryOne<{ id: string }>(
@@ -29,7 +29,7 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
   }
 
   // Slotul trebuie să fie liber, viitor și neanulat; condițiile stau în INSERT,
-  // deci două requests simultane nu pot ocupa amândouă ultimul loc.
+  // deci două cereri simultane nu pot ocupa amândouă ultimul loc.
   const booking = await queryOne<{ id: string }>(
     `INSERT INTO bookings (slot_id, student_id, subject)
      SELECT s.id, $1, NULLIF($3, '')
@@ -48,7 +48,7 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
   const slot = await queryOne<{
     starts_at: string
     ends_at: string
-    mod: string
+    mode: string
     location: string | null
     meeting_url: string | null
     teacher_name: string

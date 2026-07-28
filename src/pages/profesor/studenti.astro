@@ -3,6 +3,7 @@ import ProfesorLayout from '../../layouts/ProfesorLayout.astro'
 import { initials } from '../../lib/auth'
 import {
   STATUS_CLASS,
+  MILESTONE_LABELS,
   STATUS_LABELS,
   timeAgo,
   teacherRequests,
@@ -29,10 +30,10 @@ const inAsteptare = toateCererile.filter((c) => c.status === 'pending')
 const decise = toateCererile.filter((c) => c.status !== 'pending')
 
 // Cronologia se încarcă pentru studentul deschis; implicit, primul coordonat.
-const cerereTimeline = studentDeschis
+const timelineRequest = studentDeschis
   ? studenti.find((s) => s.id === studentDeschis)
   : studenti[0]
-const jaloane = cerereTimeline ? await requestMilestones(u.id, cerereTimeline.id) : []
+const milestones = timelineRequest ? await requestMilestones(u.id, timelineRequest.id) : []
 
 const sectiuni = [
   { cheie: 'cereri', text: 'Cereri', contor: inAsteptare.length },
@@ -43,11 +44,6 @@ const sectiuni = [
 ]
 
 const caleCurenta = `/profesor/studenti?sectiune=${sectiune}`
-const STARI_JALON: Record<string, string> = {
-  planificat: 'Planificat',
-  in_lucru: 'În lucru',
-  finalizat: 'Finalizat',
-}
 ---
 
 <ProfesorLayout
@@ -294,7 +290,7 @@ const STARI_JALON: Record<string, string> = {
                     <label class="label" for="student">Student</label>
                     <select class="select" id="student" name="student" onchange="this.form.submit()">
                       {studenti.map((s) => (
-                        <option value={s.id} selected={cerereTimeline?.id === s.id}>
+                        <option value={s.id} selected={timelineRequest?.id === s.id}>
                           {s.student_name} — {s.title_ro}
                         </option>
                       ))}
@@ -337,7 +333,7 @@ const STARI_JALON: Record<string, string> = {
                                   : 'badge--ciorna',
                             ]}
                           >
-                            {STARI_JALON[j.status]}
+                            {MILESTONE_LABELS[j.status]}
                           </span>
                         </span>
                       </summary>
@@ -348,7 +344,7 @@ const STARI_JALON: Record<string, string> = {
                         <input
                           type="hidden"
                           name="redirect"
-                          value={`/profesor/studenti?sectiune=cronologie&student=${cerereTimeline?.id}`}
+                          value={`/profesor/studenti?sectiune=cronologie&student=${timelineRequest?.id}`}
                         />
 
                         <div class="field">
@@ -370,7 +366,7 @@ const STARI_JALON: Record<string, string> = {
                           <div class="field" style="flex:1;min-width:160px">
                             <label class="label" for={`status-${j.id}`}>Stare</label>
                             <select class="select" id={`status-${j.id}`} name="status">
-                              {Object.entries(STARI_JALON).map(([v, t]) => (
+                              {Object.entries(MILESTONE_LABELS).map(([v, t]) => (
                                 <option value={v} selected={j.status === v}>{t}</option>
                               ))}
                             </select>
@@ -409,11 +405,11 @@ const STARI_JALON: Record<string, string> = {
               <div class="panel__footer">
                 <form method="POST" action="/api/jaloane" class="row row--wrap" style="gap:var(--s-3);align-items:flex-end">
                   <input type="hidden" name="actiune" value="adauga" />
-                  <input type="hidden" name="cerere_id" value={cerereTimeline?.id} />
+                  <input type="hidden" name="cerere_id" value={timelineRequest?.id} />
                   <input
                     type="hidden"
                     name="redirect"
-                    value={`/profesor/studenti?sectiune=cronologie&student=${cerereTimeline?.id}`}
+                    value={`/profesor/studenti?sectiune=cronologie&student=${timelineRequest?.id}`}
                   />
                   <div class="field" style="flex:2;min-width:220px">
                     <label class="label" for="jalon-nou">Jalon nou</label>
@@ -451,7 +447,7 @@ const STARI_JALON: Record<string, string> = {
           <div class="empty">
             <p class="empty__title">Nicio temă propusă</p>
             <p class="empty__text">
-              Temele propuse apar în catalogul public de supervisors, iar studenții pot depune cereri
+              Temele propuse apar în catalogul public de coordonatori, iar studenții pot depune cereri
               direct pe ele.
             </p>
           </div>
@@ -768,11 +764,11 @@ const STARI_JALON: Record<string, string> = {
     z-index: 1;
   }
 
-  .jalon--finalizat .jalon__punct {
+  .jalon--done .jalon__punct {
     background: var(--ok);
     border-color: var(--ok);
   }
-  .jalon--in_lucru .jalon__punct {
+  .jalon--in_progress .jalon__punct {
     background: var(--red);
     border-color: var(--red);
   }
@@ -804,7 +800,7 @@ const STARI_JALON: Record<string, string> = {
     font-size: var(--t-sm);
     font-weight: 600;
   }
-  .jalon--finalizat .jalon__titlu {
+  .jalon--done .jalon__titlu {
     color: var(--ink-muted);
   }
 
