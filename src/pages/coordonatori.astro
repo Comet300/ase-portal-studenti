@@ -607,19 +607,36 @@ const freeTeachers = teachers.filter((t) => !t.is_full).length
     border-top: 1px solid var(--border);
   }
 
+  /* Numele se scurtează înainte ca butonul să cadă pe rândul următor: altfel
+     un nume lung rupe alinierea picioarelor de card pe tot rândul. */
   .card-tema__profesor {
     display: flex;
     align-items: center;
     gap: var(--s-2);
     text-decoration: none;
     color: var(--ink);
+    flex: 1 1 0;
     min-width: 0;
+  }
+  .card-tema__profesor > span {
+    min-width: 0;
+  }
+  .card-tema__profesor strong,
+  .card-tema__profesor small {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .card-tema__profesor strong {
     font-size: var(--t-xs);
   }
   .card-tema__profesor small {
     font-size: 11px;
+  }
+  .card-tema__pied .btn,
+  .card-tema__pied .badge {
+    flex: none;
   }
   .card-tema__profesor:hover strong {
     color: var(--red);
