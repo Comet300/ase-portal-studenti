@@ -25,13 +25,13 @@ interface Slot {
 // între student și coordonatorul lui, nu un catalog open.
 const slots = await query<Slot>(
   `SELECT s.id, s.starts_at, s.ends_at, s.mode, s.location, s.meeting_url, s.capacity,
-          (SELECT count(*)::int FROM booked r WHERE r.slot_id = s.id AND r.status = 'booked') AS taken,
+          (SELECT count(*)::int FROM bookings r WHERE r.slot_id = s.id AND r.status = 'booked') AS taken,
           p.id AS teacher_id, p.name AS teacher_name,
           EXISTS (
-            SELECT 1 FROM booked r
+            SELECT 1 FROM bookings r
              WHERE r.slot_id = s.id AND r.student_id = $1 AND r.status = 'booked'
           ) AS booked_by_me,
-          (SELECT r.subject FROM booked r
+          (SELECT r.subject FROM bookings r
             WHERE r.slot_id = s.id AND r.student_id = $1 AND r.status = 'booked') AS subject
      FROM consultation_slots s
      JOIN users p ON p.id = s.teacher_id
