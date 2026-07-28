@@ -1,7 +1,7 @@
 import type { APIRoute } from 'astro'
 import { isTeacher } from '../../lib/auth'
 import { execute } from '../../lib/db'
-import { redirect } from '../../lib/http'
+import { redirect, redirectWithNotice } from '../../lib/http'
 
 /** Account settings. Email and role are not editable here — they identify the user. */
 export const POST: APIRoute = async ({ request, locals, url }) => {
@@ -17,10 +17,7 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
   const clamp = (n: number) => (Number.isFinite(n) ? Math.min(30, Math.max(0, Math.trunc(n))) : 0)
 
   if (!name) {
-    return redirect(
-      new URL(`/profesor/arhiva?notificare=${encodeURIComponent('Numele nu poate fi gol.')}&tip=error`, url),
-      303,
-    )
+    return redirectWithNotice('/profesor/arhiva', 'Numele nu poate fi gol.', true)
   }
 
   await execute(
@@ -30,5 +27,5 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
     [u!.id, name, office, clamp(bachelor), clamp(master)],
   )
 
-  return redirect(new URL('/profesor/arhiva?salvat=1', url), 303)
+  return redirect('/profesor/arhiva?salvat=1')
 }

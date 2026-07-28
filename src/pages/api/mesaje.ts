@@ -21,7 +21,7 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
   if (!conversation) return new Response('Conversația nu a fost găsită', { status: 404 })
 
   if (!body && !(file instanceof File && file.size > 0)) {
-    return redirect(new URL(redirectTo, url), 303)
+    return redirect(redirectTo)
   }
 
   const messageId = await transaction(async (client) => {
@@ -69,5 +69,5 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
     })
   }
 
-  return redirect(new URL(redirectTo, url), 303)
+  return redirect(redirectTo)
 }

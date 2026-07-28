@@ -1,7 +1,7 @@
 import type { APIRoute } from 'astro'
 import { isTeacher } from '../../lib/auth'
 import { execute } from '../../lib/db'
-import { redirect } from '../../lib/http'
+import { redirect, redirectWithNotice } from '../../lib/http'
 
 /**
  * Cronologia editabilă a unei lucrări.
@@ -12,10 +12,7 @@ import { redirect } from '../../lib/http'
  */
 
 const inapoi = (url: URL, redirect: string, mesaj: string, eroare = false) =>
-  redirect(
-    new URL(`${redirectTo}?notificare=${encodeURIComponent(mesaj)}${eroare ? '&tip=error' : ''}`, url),
-    303,
-  )
+  redirectWithNotice(redirectTo, mesaj, eroare)
 
 export const POST: APIRoute = async ({ request, locals, url }) => {
   const u = locals.user

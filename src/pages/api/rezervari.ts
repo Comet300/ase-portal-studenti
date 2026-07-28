@@ -3,7 +3,7 @@ import { queryOne } from '../../lib/db'
 import { buildIcs } from '../../lib/ics'
 import { template, sendEmail } from '../../lib/mail'
 import { formatDate, formatTime } from '../../lib/repo'
-import { redirect } from '../../lib/http'
+import { redirect, redirectWithNotice } from '../../lib/http'
 
 /** Rezervarea și anularea unui interval de consultație, cu invitație în calendar. */
 export const POST: APIRoute = async ({ request, locals, url }) => {
@@ -16,10 +16,7 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
   const subiect = String(date.get('subiect') ?? '').trim()
 
   const inapoi = (mesaj: string, eroare = false) =>
-    redirect(
-      new URL(`/consultatii?notificare=${encodeURIComponent(mesaj)}${error ? '&kind=error' : ''}`, url),
-      303,
-    )
+    redirectWithNotice('/consultatii', mesaj, error)
 
   if (action === 'anuleaza') {
     const cancelledRow = await queryOne<{ id: string }>(

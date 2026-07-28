@@ -1,7 +1,7 @@
 import type { APIRoute } from 'astro'
 import { queryOne } from '../../../lib/db'
 import { template, sendEmail } from '../../../lib/mail'
-import { redirect } from '../../../lib/http'
+import { redirect, redirectWithNotice } from '../../../lib/http'
 
 /** Depunerea unei cereri de coordonare de către student. */
 export const POST: APIRoute = async ({ request, locals, url }) => {
@@ -19,10 +19,7 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
   const scop = String(date.get('scop_obiective') ?? '').trim()
 
   const inapoi = (mesaj: string, eroare = false) =>
-    redirect(
-      new URL(`/cererile-mele?notificare=${encodeURIComponent(mesaj)}${error ? '&kind=error' : ''}`, url),
-      303,
-    )
+    redirectWithNotice('/cererile-mele', mesaj, error)
 
   if (!teacherId || !titleRo || objectivesField.length < 40) {
     return back('Completează coordonatorul, titlul și descrierea (minimum 40 de caractere).', true)

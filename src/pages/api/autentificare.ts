@@ -15,7 +15,7 @@ export const POST: APIRoute = async ({ request, url }) => {
   const redirectTo = String(date.get('redirect') ?? '')
 
   if (!email || !email.includes('@')) {
-    return redirect(new URL('/autentificare?eroare=Adresă+de+email+invalidă.', url), 303)
+    return redirect('/autentificare?eroare=Adresă+de+email+invalidă.')
   }
 
   const utilizator = await findUserByEmail(email)
@@ -40,5 +40,5 @@ export const POST: APIRoute = async ({ request, url }) => {
     })
   }
 
-  return redirect(new URL('/autentificare?trimis=1', url), 303)
+  return redirect('/autentificare?trimis=1')
 }
