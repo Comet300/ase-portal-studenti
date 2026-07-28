@@ -18,7 +18,7 @@ export const POST: APIRoute = async ({ request, cookies, url }) => {
 
   const date = await request.formData()
   const utilizatorId = String(date.get('utilizator_id') ?? '')
-  const redirect = String(date.get('redirect') ?? '')
+  const redirectTo = String(date.get('redirect') ?? '')
 
   const utilizator = await queryOne<{ id: string; rol: string }>(
     `SELECT id, role FROM users WHERE id = $1 AND is_demo = true`,
@@ -43,5 +43,5 @@ export const POST: APIRoute = async ({ request, cookies, url }) => {
   })
 
   const implicit = utilizator.role === 'student' ? '/cererile-mele' : '/profesor'
-  return redirect(new URL(redirect || implicit, url), 303)
+  return redirect(new URL(redirectTo || implicit, url), 303)
 }

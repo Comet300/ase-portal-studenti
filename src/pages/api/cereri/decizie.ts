@@ -21,7 +21,7 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
   const cerereId = String(date.get('cerere_id') ?? '')
   const decizie = String(date.get('decizie') ?? '')
   const motiv = String(date.get('motiv') ?? '').trim()
-  const redirect = String(date.get('redirect') ?? '/profesor/studenti')
+  const redirectTo = String(date.get('redirect') ?? '/profesor/studenti')
 
   if (decizie !== 'approved' && decizie !== 'rejected') {
     return new Response('Decizie invalidă', { status: 400 })
@@ -30,7 +30,7 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
   if (decizie === 'rejected' && motiv.length < 10) {
     return redirect(
       new URL(
-        `${redirect}?notificare=${encodeURIComponent('Motivul respingerii este obligatoriu (minimum 10 caractere).')}&tip=error`,
+        `${redirectTo}?notificare=${encodeURIComponent('Motivul respingerii este obligatoriu (minimum 10 caractere).')}&tip=error`,
         url,
       ),
       303,
@@ -75,7 +75,7 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
 
   if (!cerere) {
     return redirect(
-      new URL(`${redirect}?notificare=${encodeURIComponent('Cererea nu mai poate fi modificată.')}&tip=error`, url),
+      new URL(`${redirectTo}?notificare=${encodeURIComponent('Cererea nu mai poate fi modificată.')}&tip=error`, url),
       303,
     )
   }
@@ -110,7 +110,7 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
 
   return redirect(
     new URL(
-      `${redirect}?notificare=${encodeURIComponent(
+      `${redirectTo}?notificare=${encodeURIComponent(
         decizie === 'approved' ? 'Cerere aprobată. Studentul a fost notificat.' : 'Cerere respinsă. Studentul a fost notificat.',
       )}`,
       url,

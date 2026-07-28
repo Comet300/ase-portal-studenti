@@ -13,7 +13,7 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
   const date = await request.formData()
   const conversationId = String(date.get('conversatie_id') ?? '')
   const body = String(date.get('corp') ?? '').trim()
-  const redirect = String(date.get('redirect') ?? '/messages')
+  const redirectTo = String(date.get('redirect') ?? '/mesaje')
   const file = date.get('fisier')
 
   // Apartenența la conversație este verificată în interogare.
@@ -21,7 +21,7 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
   if (!conversation) return new Response('Conversația nu a fost găsită', { status: 404 })
 
   if (!body && !(file instanceof File && file.size > 0)) {
-    return redirect(new URL(redirect, url), 303)
+    return redirect(new URL(redirectTo, url), 303)
   }
 
   const messageId = await transaction(async (client) => {
@@ -64,10 +64,10 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
          <p style="padding:12px 16px;background:#f8f9fa;border-radius:4px;white-space:pre-wrap">${
            body.slice(0, 500) || '(fișier atașat)'
          }</p>`,
-        { text: 'Răspunde în portal', url: `${base}${redirect}` },
+        { text: 'Răspunde în portal', url: `${base}${redirectTo}` },
       ),
     })
   }
 
-  return redirect(new URL(redirect, url), 303)
+  return redirect(new URL(redirectTo, url), 303)
 }
