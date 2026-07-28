@@ -1,5 +1,5 @@
 import type { APIRoute } from 'astro'
-import { COOKIE_SESIUNE, creeazaSesiune, DEMO_MODE } from '../../lib/auth'
+import { SESSION_COOKIE, createSession, DEMO_MODE } from '../../lib/auth'
 import { queryOne } from '../../lib/db'
 
 /**
@@ -20,7 +20,7 @@ export const POST: APIRoute = async ({ request, cookies, url }) => {
   const redirect = String(date.get('redirect') ?? '')
 
   const utilizator = await queryOne<{ id: string; rol: string }>(
-    `SELECT id, rol FROM utilizatori WHERE id = $1 AND cont_demo = true`,
+    `SELECT id, role FROM users WHERE id = $1 AND is_demo = true`,
     [utilizatorId],
   )
 
@@ -31,9 +31,9 @@ export const POST: APIRoute = async ({ request, cookies, url }) => {
     )
   }
 
-  const sesiuneId = await creeazaSesiune(utilizator.id)
+  const sesiuneId = await createSession(utilizator.id)
 
-  cookies.set(COOKIE_SESIUNE, sesiuneId, {
+  cookies.set(SESSION_COOKIE, sesiuneId, {
     path: '/',
     httpOnly: true,
     sameSite: 'lax',
@@ -41,6 +41,6 @@ export const POST: APIRoute = async ({ request, cookies, url }) => {
     maxAge: 60 * 60 * 24 * 30,
   })
 
-  const implicit = utilizator.rol === 'student' ? '/cererile-mele' : '/profesor'
+  const implicit = utilizator.role === 'student' ? '/cererile-mele' : '/profesor'
   return Response.redirect(new URL(redirect || implicit, url), 303)
 }

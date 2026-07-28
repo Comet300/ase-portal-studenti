@@ -1,0 +1,266 @@
+---
+import StudentLayout from '../layouts/StudentLayout.astro'
+import { formatDate, stages, currentStage, studentMilestones, studentRequests } from '../lib/repo'
+
+const u = Astro.locals.user
+const [stageList, etapa] = await Promise.all([stages(), currentStage()])
+
+// Un student autentificat vede propria situație în locul textului general.
+const cereri = u?.role === 'student' ? await studentRequests(u.id) : []
+const cerereActiva = cereri.find((c) => c.status === 'approved' || c.status === 'pending')
+const jaloane = u?.role === 'student' ? await studentMilestones(u.id) : []
+const urmatorulJalon = jaloane.find((j) => j.status !== 'done')
+
+const RESOURCES = [
+  { title: 'Ghid de redactare', text: 'Structura lucrării, citare, formatare.', href: '/ghid#redactare' },
+  { title: 'Regulament privind IA', text: 'Ce este permis și ce trebuie declarat.', href: '/ghid#ia' },
+  { title: 'Antiplagiat', text: 'Procedura de verificare și pragurile admise.', href: '/ghid#antiplagiat' },
+  { title: 'Formulare', text: 'Cereri, declarații și anexe descărcabile.', href: '/ghid#formulare' },
+]
+---
+
+<StudentLayout
+  title="Acasă"
+  description="Sesiunea de Finalizare a Studiilor 2026 — Facultatea de Marketing, ASE București"
+  active="acasa"
+>
+  <div class="container stack stack--loose">
+    <section class="hero">
+      <div class="hero__text">
+        <p class="hero__sesiune">Sesiunea de Finalizare a Studiilor 2026</p>
+        <h1 class="hero__titlu">Tot ce ține de lucrarea ta, într-un singur loc</h1>
+        <p class="page-lede">
+          Alegi coordonatorul, depui cererea, urmărești termenele și discuți cu profesorul — fără
+          drumuri la secretariat și fără fire de email pierdute.
+        </p>
+        <div class="row row--wrap" style="gap:var(--s-3)">
+          {
+            u ? (
+              <a href="/cererile-mele" class="btn btn--primary">Cererile mele</a>
+            ) : (
+              <a href="/autentificare" class="btn btn--primary">Intră în cont</a>
+            )
+          }
+          <a href="/supervisors" class="btn btn--secondary">Vezi coordonatorii</a>
+        </div>
+      </div>
+
+      {
+        u?.role === 'student' && (
+          <aside class="situatie">
+            <h2 class="situatie__titlu">Situația ta</h2>
+            {activeRequest ? (
+              <>
+                <p class="situatie__linie">
+                  <span class="muted">Coordonator</span>
+                  <strong>{activeRequest.teacher_name}</strong>
+                </p>
+                <p class="situatie__linie">
+                  <span class="muted">Cerere</span>
+                  <strong>{activeRequest.status === 'approved' ? 'Aprobată' : 'În așteptare'}</strong>
+                </p>
+                {nextMilestone && (
+                  <p class="situatie__linie">
+                    <span class="muted">Următorul termen</span>
+                    <strong>{nextMilestone.title} · {formatDate(nextMilestone.due_on)}</strong>
+                  </p>
+                )}
+              </>
+            ) : (
+              <>
+                <p class="muted" style="font-size:var(--t-sm)">
+                  Nu ai încă o request activă. Primul pas este să alegi un coordonator și să depui
+                  cererea de coordonare.
+                </p>
+                <a href="/supervisors" class="btn btn--primary btn--sm">Alege coordonator</a>
+              </>
+            )}
+          </aside>
+        )
+      }
+    </section>
+
+    <section class="stack">
+      <h2 class="section-title">Calendarul sesiunii</h2>
+      <ol class="calendar">
+        {
+          stageList.map((e, i) => {
+            const active = etapa?.id === e.id
+            const past = e.ends_on ? new Date(e.ends_on) < new Date() : false
+            return (
+              <li class:list={['etapa', { 'is-activa': activa, 'is-trecuta': trecuta }]}>
+                <span class="etapa__index numeric" aria-hidden="true">
+                  {String(i + 1).padStart(2, '0')}
+                </span>
+                <div class="etapa__corp">
+                  <div class="row row--between row--wrap" style="gap:var(--s-2)">
+                    <h3 class="etapa__titlu">{e.title}</h3>
+                    {active && <span class="badge badge--asteptare">În curs</span>}
+                    {past && <span class="badge badge--aprobata">Încheiată</span>}
+                  </div>
+                  <p class="etapa__interval numeric">{e.interval_label}</p>
+                  {e.description && <p class="etapa__descriere">{e.description}</p>}
+                </div>
+              </li>
+            )
+          })
+        }
+      </ol>
+    </section>
+
+    <section class="stack">
+      <h2 class="section-title">Resurse academice</h2>
+      <div class="grid-auto">
+        {
+          RESURSE.map((r) => (
+            <a href={r.href} class="resursa">
+              <strong>{r.title}</strong>
+              <span class="muted">{r.text}</span>
+            </a>
+          ))
+        }
+      </div>
+    </section>
+  </div>
+</StudentLayout>
+
+<style>
+  .hero {
+    display: grid;
+    grid-template-columns: minmax(0, 1.6fr) minmax(260px, 1fr);
+    gap: var(--s-6);
+    align-items: start;
+  }
+
+  .hero__text {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-4);
+  }
+
+  .hero__sesiune {
+    font-size: var(--t-sm);
+    font-weight: 600;
+    color: var(--red);
+  }
+
+  .hero__titlu {
+    font-family: var(--serif);
+    font-size: var(--t-3xl);
+    letter-spacing: -0.015em;
+    max-width: 22ch;
+  }
+
+  .situatie {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-3);
+    padding: var(--s-5);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--r-lg);
+  }
+
+  .situatie__titlu {
+    font-size: var(--t-sm);
+    font-weight: 600;
+    color: var(--ink-soft);
+  }
+
+  .situatie__linie {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    font-size: var(--t-sm);
+  }
+  .situatie__linie .muted {
+    font-size: var(--t-xs);
+  }
+
+  .calendar {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .etapa {
+    display: flex;
+    gap: var(--s-4);
+    padding: var(--s-4) 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .etapa:last-child {
+    border-bottom: 0;
+  }
+
+  /* Numerotarea este reală aici: etapele sunt o secvență cu ordine obligatorie. */
+  .etapa__index {
+    font-family: var(--serif);
+    font-size: var(--t-xl);
+    color: var(--border-strong);
+    line-height: 1.2;
+    flex: none;
+    width: 2.2rem;
+  }
+  .etapa.is-activa .etapa__index {
+    color: var(--red);
+  }
+  .etapa.is-trecuta .etapa__index {
+    color: var(--ok);
+  }
+
+  .etapa__corp {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-1);
+    min-width: 0;
+  }
+
+  .etapa__titlu {
+    font-size: var(--t-md);
+    font-weight: 600;
+  }
+
+  .etapa__interval {
+    font-size: var(--t-sm);
+    color: var(--ink-muted);
+  }
+
+  .etapa__descriere {
+    font-size: var(--t-sm);
+    color: var(--ink-soft);
+    max-width: 70ch;
+    text-wrap: pretty;
+  }
+
+  .resursa {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-1);
+    padding: var(--s-4);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--r-lg);
+    text-decoration: none;
+    color: var(--ink);
+    transition: border-color var(--fast) var(--ease);
+  }
+  .resursa:hover {
+    border-color: var(--border-strong);
+    color: var(--ink);
+  }
+  .resursa strong {
+    font-size: var(--t-sm);
+  }
+  .resursa .muted {
+    font-size: var(--t-xs);
+  }
+
+  @media (max-width: 860px) {
+    .hero {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+</style>

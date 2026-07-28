@@ -1,46 +1,46 @@
 ---
 import ProfesorLayout from '../../layouts/ProfesorLayout.astro'
 import {
-  acumRelativ,
-  cereriProfesor,
-  dataRo,
-  etapaCurenta,
-  etape,
-  oraRo,
-  sloturiProfesor,
-  statisticiProfesor,
-  studentiCoordonati,
+  timeAgo,
+  teacherRequests,
+  formatDate,
+  currentStage,
+  stages,
+  formatTime,
+  teacherSlots,
+  teacherStats,
+  supervisedStudents,
 } from '../../lib/repo'
-import { initiale } from '../../lib/auth'
+import { initials } from '../../lib/auth'
 
-const u = Astro.locals.utilizator!
-const [stat, cereri, studenti, sloturi, listaEtape, etapa] = await Promise.all([
-  statisticiProfesor(u.id),
-  cereriProfesor(u.id, 'in_asteptare'),
-  studentiCoordonati(u.id),
-  sloturiProfesor(u.id),
-  etape(),
-  etapaCurenta(),
+const u = Astro.locals.user!
+const [stat, cereri, studenti, sloturi, stageList, etapa] = await Promise.all([
+  teacherStats(u.id),
+  teacherRequests(u.id, 'pending'),
+  supervisedStudents(u.id),
+  teacherSlots(u.id),
+  stages(),
+  currentStage(),
 ])
 
 const azi = new Date().toDateString()
-const sloturiAzi = sloturi.filter((s) => new Date(s.start_la).toDateString() === azi && !s.anulat)
-const urmatoareleSloturi = sloturi.filter((s) => new Date(s.start_la) > new Date() && !s.anulat).slice(0, 4)
+const sloturiAzi = sloturi.filter((s) => new Date(s.starts_at).toDateString() === azi && !s.is_cancelled)
+const urmatoareleSloturi = sloturi.filter((s) => new Date(s.starts_at) > new Date() && !s.is_cancelled).slice(0, 4)
 
-const capacitate = (u.capacitate_licenta ?? 0) + (u.capacitate_master ?? 0)
+const capacitate = (u.bachelor_capacity ?? 0) + (u.master_capacity ?? 0)
 const ocupate = studenti.length
 const procent = capacitate > 0 ? Math.min(100, Math.round((ocupate / capacitate) * 100)) : 0
 
-const prenume = u.nume.replace(/^(Prof\.|Conf\.|Lect\.|Asist\.)\s*univ\.\s*dr\.\s*/i, '').split(' ')[0]
-const necitite = studenti.reduce((s, x) => s + x.mesaje_necitite, 0)
+const prenume = u.name.replace(/^(Prof\.|Conf\.|Lect\.|Asist\.)\s*univ\.\s*dr\.\s*/i, '').split(' ')[0]
+const necitite = studenti.reduce((s, x) => s + x.unread, 0)
 ---
 
 <ProfesorLayout
-  titlu={`Bine ai revenit, ${prenume}`}
+  title={`Bine ai revenit, ${prenume}`}
   lede={etapa
-    ? `Etapa curentă: ${etapa.titlu} · ${etapa.interval_text}`
+    ? `Etapa curentă: ${etapa.title} · ${etapa.interval_label}`
     : 'Sesiunea de Finalizare a Studiilor 2026'}
-  activ="dashboard"
+  active="dashboard"
 >
   <div slot="actiuni" class="row">
     <a href="/profesor/studenti" class="btn btn--primary btn--sm">Deschide cererile</a>
@@ -52,11 +52,11 @@ const necitite = studenti.reduce((s, x) => s + x.mesaje_necitite, 0)
       <h2 class="section-title">Ce cere atenția ta</h2>
       <div class="grid-auto">
         <a href="/profesor/studenti?status=in_asteptare" class="metric metric--link">
-          <span class="metric__valoare numeric">{stat?.in_asteptare ?? 0}</span>
+          <span class="metric__valoare numeric">{stat?.pending ?? 0}</span>
           <span class="metric__eticheta">cereri în așteptare</span>
           {
-            (stat?.in_asteptare ?? 0) > 0 && (
-              <span class="metric__nota">Cea mai veche: {acumRelativ(cereri.at(-1)?.depusa_la ?? null)}</span>
+            (stat?.pending ?? 0) > 0 && (
+              <span class="metric__nota">Cea mai veche: {timeAgo(cereri.at(-1)?.submitted_at ?? null)}</span>
             )
           }
         </a>
@@ -64,20 +64,20 @@ const necitite = studenti.reduce((s, x) => s + x.mesaje_necitite, 0)
         <a href="/profesor/mesaje" class="metric metric--link">
           <span class="metric__valoare numeric">{necitite}</span>
           <span class="metric__eticheta">mesaje necitite</span>
-          <span class="metric__nota">de la {studenti.filter((s) => s.mesaje_necitite > 0).length} studenți</span>
+          <span class="metric__nota">de la {studenti.filter((s) => s.unread > 0).length} studenți</span>
         </a>
 
         <div class="metric">
           <span class="metric__valoare numeric">{sloturiAzi.length}</span>
           <span class="metric__eticheta">consultații astăzi</span>
           <span class="metric__nota">
-            {sloturiAzi.length > 0 ? `Prima la ${oraRo(sloturiAzi[0].start_la)}` : 'Nicio programare'}
+            {sloturiAzi.length > 0 ? `Prima la ${formatTime(sloturiAzi[0].starts_at)}` : 'Nicio programare'}
           </span>
         </div>
 
         <div class="metric">
           <span class="metric__valoare numeric">
-            {stat?.ore_raspuns_mediu != null ? `${stat.ore_raspuns_mediu}h` : '—'}
+            {stat?.avg_response_hours != null ? `${stat.avg_response_hours}h` : '—'}
           </span>
           <span class="metric__eticheta">timp mediu de răspuns</span>
           <span class="metric__nota">la cererile decise</span>
@@ -106,17 +106,17 @@ const necitite = studenti.reduce((s, x) => s + x.mesaje_necitite, 0)
             <ul class="lista">
               {cereri.slice(0, 5).map((c) => (
                 <li class="lista__item">
-                  <span class="avatar" aria-hidden="true">{initiale(c.student_nume)}</span>
+                  <span class="avatar" aria-hidden="true">{initials(c.student_name)}</span>
                   <span class="lista__corp">
-                    <a href={`/profesor/studenti?cerere=${c.id}`} class="lista__titlu">{c.titlu_ro}</a>
+                    <a href={`/profesor/studenti?cerere=${c.id}`} class="lista__titlu">{c.title_ro}</a>
                     <span class="lista__meta">
-                      {c.student_nume} · {c.numar_matricol} ·{' '}
-                      {c.program === 'master' ? 'Master' : 'Licență'} · depusă {acumRelativ(c.depusa_la)}
+                      {c.student_name} · {c.student_number} ·{' '}
+                      {c.program === 'master' ? 'Master' : 'Licență'} · depusă {timeAgo(c.submitted_at)}
                     </span>
                   </span>
                   <form method="POST" action="/api/cereri/decizie" class="row">
                     <input type="hidden" name="cerere_id" value={c.id} />
-                    <input type="hidden" name="decizie" value="aprobata" />
+                    <input type="hidden" name="decizie" value="approved" />
                     <input type="hidden" name="redirect" value="/profesor" />
                     <button class="btn btn--primary btn--sm" type="submit">Acceptă</button>
                   </form>
@@ -148,18 +148,18 @@ const necitite = studenti.reduce((s, x) => s + x.mesaje_necitite, 0)
               {urmatoareleSloturi.map((s) => (
                 <li class="lista__item lista__item--compact">
                   <span class="data-chip">
-                    <strong>{new Date(s.start_la).getDate()}</strong>
-                    <small>{dataRo(s.start_la).split(' ')[1]?.slice(0, 3)}</small>
+                    <strong>{new Date(s.starts_at).getDate()}</strong>
+                    <small>{formatDate(s.starts_at).split(' ')[1]?.slice(0, 3)}</small>
                   </span>
                   <span class="lista__corp">
                     <span class="lista__titlu lista__titlu--static">
-                      {oraRo(s.start_la)}–{oraRo(s.sfarsit_la)}
+                      {formatTime(s.starts_at)}–{formatTime(s.ends_at)}
                     </span>
                     <span class="lista__meta">
-                      {s.student_nume ?? 'Liber'} · {s.mod === 'online' ? 'Online' : (s.locatie ?? 'Cabinet')}
+                      {s.student_name ?? 'Liber'} · {s.mode === 'online' ? 'Online' : (s.location ?? 'Cabinet')}
                     </span>
                   </span>
-                  {s.rezervari > 0 && <span class="badge badge--aprobata">Rezervat</span>}
+                  {s.booked > 0 && <span class="badge badge--aprobata">Rezervat</span>}
                 </li>
               ))}
             </ul>
@@ -205,15 +205,15 @@ const necitite = studenti.reduce((s, x) => s + x.mesaje_necitite, 0)
         </div>
         <ol class="etape">
           {
-            listaEtape.map((e) => {
+            stageList.map((e) => {
               const activa = etapa?.id === e.id
-              const trecuta = e.data_sfarsit ? new Date(e.data_sfarsit) < new Date() : false
+              const trecuta = e.ends_on ? new Date(e.ends_on) < new Date() : false
               return (
                 <li class:list={['etapa', { 'is-activa': activa, 'is-trecuta': trecuta }]}>
                   <span class="etapa__punct" aria-hidden="true" />
                   <span class="etapa__corp">
-                    <strong>{e.titlu}</strong>
-                    <small>{e.interval_text}</small>
+                    <strong>{e.title}</strong>
+                    <small>{e.interval_label}</small>
                   </span>
                   {activa && <span class="badge badge--asteptare">În curs</span>}
                 </li>

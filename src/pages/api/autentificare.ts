@@ -1,6 +1,6 @@
 import type { APIRoute } from 'astro'
-import { creeazaMagicLink, utilizatorDupaEmail } from '../../lib/auth'
-import { sablon, trimiteEmail } from '../../lib/mail'
+import { createMagicLink, findUserByEmail } from '../../lib/auth'
+import { template, sendEmail } from '../../lib/mail'
 
 /**
  * Cere un magic link.
@@ -17,18 +17,18 @@ export const POST: APIRoute = async ({ request, url }) => {
     return Response.redirect(new URL('/autentificare?eroare=Adresă+de+email+invalidă.', url), 303)
   }
 
-  const utilizator = await utilizatorDupaEmail(email)
+  const utilizator = await findUserByEmail(email)
 
   if (utilizator) {
-    const token = await creeazaMagicLink(email, redirect || undefined)
+    const token = await createMagicLink(email, redirect || undefined)
     const baza = process.env.APP_BASE_URL ?? url.origin
     const link = `${baza}/intra?token=${token}`
 
-    await trimiteEmail({
+    await sendEmail({
       to: email,
       subject: 'Link de autentificare — Portal Studenți',
-      html: sablon(
-        `Bine ai revenit, ${utilizator.nume.split(' ')[0]}`,
+      html: template(
+        `Bine ai revenit, ${utilizator.name.split(' ')[0]}`,
         `<p>Apasă butonul de mai jos pentru a intra în portal. Linkul este valabil
          <strong>20 de minute</strong> și poate fi folosit o singură dată.</p>
          <p style="color:#5b6169;font-size:13px">Dacă nu ai cerut tu acest link, ignoră mesajul —

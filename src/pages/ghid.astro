@@ -1,0 +1,390 @@
+---
+import StudentLayout from '../layouts/StudentLayout.astro'
+import { stages } from '../lib/repo'
+
+const stageList = await stages()
+
+const DOCS = [
+  {
+    title: 'Model — request de coordonare',
+    text: 'Se pre-completează cu datele contului tău. Cererea oficială se depune în portal.',
+    href: '/documente/model-cerere-coordonare.html',
+    kind: 'Document',
+  },
+  {
+    title: 'Declarație de originalitate',
+    text: 'Obligatorie la predarea lucrării, semnată olograf.',
+    href: '/documente/declaratie-originalitate.html',
+    kind: 'Document',
+  },
+  {
+    title: 'Ghid de redactare',
+    text: 'Structură, formatare, citare APA, tabele și figuri.',
+    href: '/documente/ghid-redactare.html',
+    kind: 'Document',
+  },
+  {
+    title: 'Calendarul sesiunii',
+    text: 'Toate etapele, ca fișier de calendar pentru telefon sau laptop.',
+    href: '/documente/calendar-sesiune.ics',
+    kind: 'Calendar',
+  },
+]
+---
+
+<StudentLayout title="Ghid & Regulament" active="ghid">
+  <div class="container stack stack--loose">
+    <header class="stack stack--tight">
+      <h1 class="page-title">Ghid & Regulament</h1>
+      <p class="page-lede">
+        Reguli de redactare, utilizarea instrumentelor de inteligență artificială, procedura
+        antiplagiat și documentele de care ai nevoie.
+      </p>
+    </header>
+
+    <div class="taburi" role="tablist" aria-label="Secțiuni ghid">
+      <button class="tab is-activ" role="tab" aria-selected="true" aria-controls="p-redactare" id="t-redactare">
+        Redactare
+      </button>
+      <button class="tab" role="tab" aria-selected="false" aria-controls="p-ia" id="t-ia">
+        Regulament IA
+      </button>
+      <button class="tab" role="tab" aria-selected="false" aria-controls="p-antiplagiat" id="t-antiplagiat">
+        Antiplagiat
+      </button>
+      <button class="tab" role="tab" aria-selected="false" aria-controls="p-documente" id="t-documente">
+        Documente
+      </button>
+    </div>
+
+    <section class="panel" role="tabpanel" id="p-redactare" aria-labelledby="t-redactare">
+      <div class="panel__body prose stack">
+        <h2 class="section-title">Structura lucrării</h2>
+        <ol class="lista-num">
+          <li><strong>Introducere</strong> — problema de cercetare, obiective, structura lucrării (2–3 pagini).</li>
+          <li><strong>Capitolul teoretic</strong> — sinteza literaturii de specialitate și cadrul conceptual.</li>
+          <li><strong>Capitolul metodologic</strong> — design, instrument, eșantion, procedură de colectare.</li>
+          <li><strong>Capitolul empiric</strong> — rezultate, interpretare, discuție.</li>
+          <li><strong>Concluzii</strong> — răspuns la obiective, limite, direcții viitoare.</li>
+          <li><strong>Bibliografie și anexe</strong>.</li>
+        </ol>
+
+        <h2 class="section-title">Formatare</h2>
+        <dl class="specificatii">
+          <div><dt>Format</dt><dd>A4, margini 2,5 / 3 / 2 cm</dd></div>
+          <div><dt>Font</dt><dd>Times New Roman 12 pt, spațiere 1,5</dd></div>
+          <div><dt>Întindere</dt><dd>40–60 pagini (licență) · 60–80 pagini (master)</dd></div>
+          <div><dt>Citare</dt><dd>APA, ediția a 7-a</dd></div>
+        </dl>
+
+        <p class="muted" style="font-size:var(--t-sm)">
+          Varianta completă, tipăribilă:
+          <a href="/documente/ghid-redactare.html">Ghid de redactare</a>.
+        </p>
+      </div>
+    </section>
+
+    <section class="panel" role="tabpanel" id="p-ia" aria-labelledby="t-ia" hidden>
+      <div class="panel__body prose stack">
+        <h2 class="section-title">Utilizarea instrumentelor de inteligență artificială</h2>
+        <p>
+          Instrumentele de kind AI generativ pot fi folosite ca sprijin, nu ca autor. Regula de bază:
+          rămâi responsabil pentru fiecare afirmație din lucrare, indiferent cine a formulat-o prima
+          dată.
+        </p>
+
+        <h3 class="section-title" style="font-size:var(--t-md)">Permis, cu declarare</h3>
+        <ul>
+          <li>Corectură lingvistică, reformulare pentru claritate, traducere.</li>
+          <li>Sugestii de structură sau de plan al capitolelor.</li>
+          <li>Explicarea unor concepte sau metode statistice.</li>
+          <li>Asistență la scrierea codului de prelucrare a datelor.</li>
+        </ul>
+
+        <h3 class="section-title" style="font-size:var(--t-md)">Nepermis</h3>
+        <ul>
+          <li>Generarea de text prezentat ca redactare proprie, fără declarare.</li>
+          <li>Generarea de date, rezultate sau citate.</li>
+          <li>Referințe bibliografice produse de model și necontrolate la sursă.</li>
+          <li>Interpretarea rezultatelor preluată integral, fără verificare.</li>
+        </ul>
+
+        <h3 class="section-title" style="font-size:var(--t-md)">Cum se declară</h3>
+        <p>
+          Într-o secțiune scurtă, înainte de bibliografie: instrumentul folosit, în ce objectivesField și la ce
+          părți ale lucrării. O frază precisă este suficientă.
+        </p>
+        <blockquote class="citat">
+          Pentru corectura lingvistică a capitolelor 2 și 3 am folosit un instrument de kind AI
+          generativ. Conținutul științific, analiza datelor și interpretarea rezultatele îmi
+          aparțin.
+        </blockquote>
+      </div>
+    </section>
+
+    <section class="panel" role="tabpanel" id="p-antiplagiat" aria-labelledby="t-antiplagiat" hidden>
+      <div class="panel__body prose stack">
+        <h2 class="section-title">Procedura antiplagiat</h2>
+        <p>
+          Fiecare lucrare este verificată înainte de susținere. Raportul ajunge la coordonator, care
+          decide dacă lucrarea poate fi susținută.
+        </p>
+
+        <ol class="lista-num">
+          <li>Încarci forma finală în portal, în format PDF, până la termenul din calendar.</li>
+          <li>Lucrarea este trimisă automat spre verificare.</li>
+          <li>Coordonatorul primește raportul și îl analizează împreună cu tine.</li>
+          <li>Dacă sunt necesare corecturi, primești termen pentru o nouă încărcare.</li>
+        </ol>
+
+        <h3 class="section-title" style="font-size:var(--t-md)">Ce contează în raport</h3>
+        <p>
+          Un percent de similitudine nu înseamnă automat plagiat: citările corecte apar și ele ca
+          similitudini. Se analizează sursele coincidenței, nu doar cifra. Preluarea fără citare,
+          indiferent de percent, este plagiat.
+        </p>
+
+        <div class="atentie">
+          <strong>De reținut</strong>
+          <p>
+            Parafrazarea fără citarea sursei este tot plagiat. Dacă ideea nu este a ta, sursa se
+            indică — chiar dacă formularea îți aparține.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel" role="tabpanel" id="p-documente" aria-labelledby="t-documente" hidden>
+      <div class="panel__body stack">
+        <h2 class="section-title">Documente</h2>
+        <ul class="documente">
+          {
+            DOCUMENTE.map((d) => (
+              <li>
+                <a href={d.href} class="document" download={d.href.endsWith('.ics') ? '' : undefined}>
+                  <span class="document__tip">{d.tip}</span>
+                  <span class="document__corp">
+                    <strong>{d.title}</strong>
+                    <small class="muted">{d.text}</small>
+                  </span>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" />
+                  </svg>
+                </a>
+              </li>
+            ))
+          }
+        </ul>
+
+        <h2 class="section-title">Termenele sesiunii</h2>
+        <ul class="termene">
+          {
+            stageList.map((e) => (
+              <li>
+                <strong>{e.title}</strong>
+                <span class="muted numeric">{e.interval_label}</span>
+              </li>
+            ))
+          }
+        </ul>
+      </div>
+    </section>
+  </div>
+</StudentLayout>
+
+<script>
+  const tabs = [...document.querySelectorAll<HTMLButtonElement>('[role="tab"]')]
+  const panouri = taburi.map((t) => document.getElementById(t.getAttribute('aria-controls')!)!)
+
+  function arata(index: number) {
+    taburi.forEach((t, i) => {
+      const active = i === index
+      t.classList.toggle('is-activ', activ)
+      t.setAttribute('aria-selected', String(activ))
+      panouri[i].hidden = !active
+    })
+    history.replaceState({}, '', `#${taburi[index].id.replace('t-', '')}`)
+  }
+
+  taburi.forEach((t, i) => {
+    t.addEventListener('click', () => arata(i))
+    // Săgețile stânga/dreapta trec între file, cum se așteaptă la un tablist.
+    t.addEventListener('keydown', (e) => {
+      if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return
+      e.preventDefault()
+      const next = (i + (e.key === 'ArrowRight' ? 1 : taburi.length - 1)) % taburi.length
+      taburi[next].focus()
+      arata(next)
+    })
+  })
+
+  // Linkurile din alte pagini (/ghid#antiplagiat) deschid fila potrivită.
+  const ancora = location.hash.replace('#', '')
+  const initial = taburi.findIndex((t) => t.id === `t-${ancora}`)
+  if (initial >= 0) showTab(initialTab)
+</script>
+
+<style>
+  .taburi {
+    display: flex;
+    gap: var(--s-1);
+    flex-wrap: wrap;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .tab {
+    padding: var(--s-3) var(--s-4);
+    border: 0;
+    background: none;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+    font-size: var(--t-sm);
+    font-weight: 500;
+    color: var(--ink-muted);
+    cursor: pointer;
+    transition: color var(--fast) var(--ease), border-color var(--fast) var(--ease);
+  }
+  .tab:hover {
+    color: var(--ink);
+  }
+  .tab.is-activ {
+    color: var(--red);
+    font-weight: 600;
+    border-bottom-color: var(--red);
+  }
+
+  .lista-num {
+    padding-left: var(--s-5);
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-2);
+    font-size: var(--t-sm);
+  }
+
+  .prose ul {
+    padding-left: var(--s-5);
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-2);
+    font-size: var(--t-sm);
+  }
+
+  .specificatii {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: var(--s-3);
+    margin: 0;
+  }
+  .specificatii > div {
+    padding: var(--s-3);
+    background: var(--surface-sunken);
+    border-radius: var(--r-md);
+  }
+  .specificatii dt {
+    font-size: var(--t-xs);
+    color: var(--ink-muted);
+  }
+  .specificatii dd {
+    margin: 0;
+    font-size: var(--t-sm);
+    font-weight: 600;
+  }
+
+  .citat {
+    margin: 0;
+    padding: var(--s-4);
+    background: var(--surface-sunken);
+    border-radius: var(--r-md);
+    font-style: italic;
+    font-size: var(--t-sm);
+    color: var(--ink-soft);
+  }
+
+  .atentie {
+    padding: var(--s-4);
+    background: var(--warn-tint);
+    border-radius: var(--r-md);
+    font-size: var(--t-sm);
+  }
+  .atentie strong {
+    color: var(--warn);
+    display: block;
+    margin-bottom: var(--s-1);
+  }
+
+  .documente {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: var(--s-3);
+  }
+
+  .document {
+    display: flex;
+    align-items: center;
+    gap: var(--s-3);
+    padding: var(--s-4);
+    border: 1px solid var(--border);
+    border-radius: var(--r-md);
+    text-decoration: none;
+    color: var(--ink);
+    height: 100%;
+    transition: border-color var(--fast) var(--ease), background var(--fast) var(--ease);
+  }
+  .document:hover {
+    border-color: var(--border-strong);
+    background: var(--surface-sunken);
+    color: var(--ink);
+  }
+  .document svg {
+    width: 18px;
+    height: 18px;
+    color: var(--ink-muted);
+    flex: none;
+    margin-left: auto;
+  }
+
+  .document__tip {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--red);
+    background: var(--red-tint);
+    padding: 3px 7px;
+    border-radius: var(--r-sm);
+    flex: none;
+  }
+
+  .document__corp {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+  }
+  .document__corp strong {
+    font-size: var(--t-sm);
+  }
+  .document__corp small {
+    font-size: var(--t-xs);
+  }
+
+  .termene {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+  .termene li {
+    display: flex;
+    justify-content: space-between;
+    gap: var(--s-4);
+    padding: var(--s-3) 0;
+    border-bottom: 1px solid var(--border);
+    font-size: var(--t-sm);
+  }
+  .termene li:last-child {
+    border-bottom: 0;
+  }
+</style>

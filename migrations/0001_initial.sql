@@ -1,202 +1,200 @@
 -- =============================================================================
--- Portal Studenți — schema inițială
+-- Portal Studenți — initial schema
 -- =============================================================================
--- Fără extensii: gen_random_uuid() este inclus în PostgreSQL 13+, deci schema
--- se aplică pe o imagine PostgreSQL standard.
+-- No extensions: gen_random_uuid() ships with PostgreSQL 13+, so this applies
+-- to a stock image.
 --
--- Autorizarea se face în aplicație, nu prin row-level security: fiecare
--- interogare cu proprietar poartă condiția în aceeași instrucțiune.
+-- Authorization lives in the application, not in row-level security: every
+-- owner-scoped statement carries its condition inline.
 -- =============================================================================
 
--- --- utilizatori -------------------------------------------------------------
-
-CREATE TABLE utilizatori (
-  id                 uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  email              text NOT NULL UNIQUE,
-  nume               text NOT NULL,
-  rol                text NOT NULL CHECK (rol IN ('student', 'profesor', 'director')),
+CREATE TABLE users (
+  id                uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  email             text NOT NULL UNIQUE,
+  name              text NOT NULL,
+  role              text NOT NULL CHECK (role IN ('student', 'teacher', 'head')),
 
   -- student
-  numar_matricol     text,
-  program            text CHECK (program IN ('licenta', 'master')),
-  specializare       text,
-  an_studiu          integer,
+  student_number    text,
+  program           text CHECK (program IN ('bachelor', 'master')),
+  specialization    text,
+  study_year        integer,
 
-  -- cadru didactic
-  titlu_academic     text,
-  departament        text,
-  capacitate_licenta integer NOT NULL DEFAULT 0,
-  capacitate_master  integer NOT NULL DEFAULT 0,
-  birou              text,
-  cont_demo          boolean NOT NULL DEFAULT false,
+  -- teacher
+  academic_title    text,
+  department        text,
+  bachelor_capacity integer NOT NULL DEFAULT 0,
+  master_capacity   integer NOT NULL DEFAULT 0,
+  office            text,
+  is_demo           boolean NOT NULL DEFAULT false,
 
-  creat_la           timestamptz NOT NULL DEFAULT now()
+  created_at        timestamptz NOT NULL DEFAULT now()
 );
 
-CREATE INDEX idx_utilizatori_rol ON utilizatori (rol);
+CREATE INDEX idx_users_role ON users (role);
 
--- --- autentificare -----------------------------------------------------------
+-- --- authentication ----------------------------------------------------------
 
--- Tokenul ajunge la utilizator prin email; în bază păstrăm doar amprenta lui,
--- ca o citire a tabelei să nu permită autentificarea nimănui.
-CREATE TABLE tokenuri_magic_link (
+-- The token reaches the user by email; only its digest is stored, so reading
+-- this table authenticates nobody.
+CREATE TABLE magic_link_tokens (
   id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   email       text NOT NULL,
   token_hash  text NOT NULL UNIQUE,
-  redirect_la text,
-  expira_la   timestamptz NOT NULL,
-  folosit_la  timestamptz,
-  creat_la    timestamptz NOT NULL DEFAULT now()
+  redirect_to text,
+  expires_at  timestamptz NOT NULL,
+  used_at     timestamptz,
+  created_at  timestamptz NOT NULL DEFAULT now()
 );
 
-CREATE INDEX idx_tokenuri_expira ON tokenuri_magic_link (expira_la);
+CREATE INDEX idx_magic_link_expires ON magic_link_tokens (expires_at);
 
-CREATE TABLE sesiuni (
-  id            text PRIMARY KEY,
-  utilizator_id uuid NOT NULL REFERENCES utilizatori(id) ON DELETE CASCADE,
-  expira_la     timestamptz NOT NULL,
-  creat_la      timestamptz NOT NULL DEFAULT now()
+CREATE TABLE sessions (
+  id         text PRIMARY KEY,
+  user_id    uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  expires_at timestamptz NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now()
 );
 
-CREATE INDEX idx_sesiuni_utilizator ON sesiuni (utilizator_id);
+CREATE INDEX idx_sessions_user ON sessions (user_id);
 
--- --- calendarul sesiunii -----------------------------------------------------
+-- --- session calendar --------------------------------------------------------
 
-CREATE TABLE etape_sesiune (
-  id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  ordine       integer NOT NULL,
-  titlu        text NOT NULL,
-  descriere    text,
-  interval_text text NOT NULL,
-  data_inceput date,
-  data_sfarsit date
+CREATE TABLE session_stages (
+  id             uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  position       integer NOT NULL,
+  title          text NOT NULL,
+  description    text,
+  interval_label text NOT NULL,
+  starts_on      date,
+  ends_on        date
 );
 
--- --- teme propuse ------------------------------------------------------------
+-- --- proposed topics ---------------------------------------------------------
 
-CREATE TABLE teme (
-  id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  profesor_id  uuid NOT NULL REFERENCES utilizatori(id) ON DELETE CASCADE,
-  titlu        text NOT NULL,
-  descriere    text,
-  nivel        text NOT NULL CHECK (nivel IN ('licenta', 'master')),
-  metode       text,
-  prerechizite text,
-  locuri       integer NOT NULL DEFAULT 1,
-  activa       boolean NOT NULL DEFAULT true,
-  creat_la     timestamptz NOT NULL DEFAULT now()
+CREATE TABLE topics (
+  id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  teacher_id    uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  title         text NOT NULL,
+  description   text,
+  level         text NOT NULL CHECK (level IN ('bachelor', 'master')),
+  methods       text,
+  prerequisites text,
+  seats         integer NOT NULL DEFAULT 1,
+  is_active     boolean NOT NULL DEFAULT true,
+  created_at    timestamptz NOT NULL DEFAULT now()
 );
 
-CREATE INDEX idx_teme_profesor ON teme (profesor_id);
+CREATE INDEX idx_topics_teacher ON topics (teacher_id);
 
--- --- cereri ------------------------------------------------------------------
+-- --- supervision requests ----------------------------------------------------
 
-CREATE TABLE cereri (
-  id                uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  numar             text NOT NULL UNIQUE,
-  student_id        uuid NOT NULL REFERENCES utilizatori(id) ON DELETE CASCADE,
-  profesor_id       uuid NOT NULL REFERENCES utilizatori(id) ON DELETE CASCADE,
-  tema_id           uuid REFERENCES teme(id) ON DELETE SET NULL,
-  titlu_ro          text NOT NULL,
-  titlu_en          text,
-  scop_obiective    text NOT NULL,
-  status            text NOT NULL DEFAULT 'in_asteptare'
-                    CHECK (status IN ('ciorna', 'in_asteptare', 'aprobata', 'respinsa')),
-  motiv_respingere  text,
-  depusa_la         timestamptz NOT NULL DEFAULT now(),
-  decisa_la         timestamptz,
-  actualizat_la     timestamptz NOT NULL DEFAULT now()
+CREATE TABLE requests (
+  id               uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  number           text NOT NULL UNIQUE,
+  student_id       uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  teacher_id       uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  topic_id         uuid REFERENCES topics(id) ON DELETE SET NULL,
+  title_ro         text NOT NULL,
+  title_en         text,
+  objectives       text NOT NULL,
+  status           text NOT NULL DEFAULT 'pending'
+                   CHECK (status IN ('draft', 'pending', 'approved', 'rejected')),
+  rejection_reason text,
+  submitted_at     timestamptz NOT NULL DEFAULT now(),
+  decided_at       timestamptz,
+  updated_at       timestamptz NOT NULL DEFAULT now()
 );
 
-CREATE INDEX idx_cereri_student ON cereri (student_id);
-CREATE INDEX idx_cereri_profesor ON cereri (profesor_id, status);
+CREATE INDEX idx_requests_student ON requests (student_id);
+CREATE INDEX idx_requests_teacher ON requests (teacher_id, status);
 
--- Un student poate avea o singură cerere activă (nerespinsă) la un moment dat.
-CREATE UNIQUE INDEX idx_cereri_una_activa
-  ON cereri (student_id) WHERE status IN ('in_asteptare', 'aprobata');
+-- A student can only have one live request at a time.
+CREATE UNIQUE INDEX idx_requests_one_active
+  ON requests (student_id) WHERE status IN ('pending', 'approved');
 
--- --- jaloane (cronologia editabilă) ------------------------------------------
+-- --- milestones (the editable timeline) --------------------------------------
 
-CREATE TABLE jaloane (
+CREATE TABLE milestones (
   id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  cerere_id   uuid NOT NULL REFERENCES cereri(id) ON DELETE CASCADE,
-  titlu       text NOT NULL,
-  descriere   text,
-  termen      date,
-  status      text NOT NULL DEFAULT 'planificat'
-              CHECK (status IN ('planificat', 'in_lucru', 'finalizat')),
-  ordine      integer NOT NULL DEFAULT 0,
-  creat_la    timestamptz NOT NULL DEFAULT now()
+  request_id  uuid NOT NULL REFERENCES requests(id) ON DELETE CASCADE,
+  title       text NOT NULL,
+  description text,
+  due_on      date,
+  status      text NOT NULL DEFAULT 'planned'
+              CHECK (status IN ('planned', 'in_progress', 'done')),
+  position    integer NOT NULL DEFAULT 0,
+  created_at  timestamptz NOT NULL DEFAULT now()
 );
 
-CREATE INDEX idx_jaloane_cerere ON jaloane (cerere_id, ordine);
+CREATE INDEX idx_milestones_request ON milestones (request_id, position);
 
--- --- consultații -------------------------------------------------------------
+-- --- consultations -----------------------------------------------------------
 
-CREATE TABLE sloturi_consultatii (
-  id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  profesor_id uuid NOT NULL REFERENCES utilizatori(id) ON DELETE CASCADE,
-  start_la    timestamptz NOT NULL,
-  sfarsit_la  timestamptz NOT NULL,
-  mod         text NOT NULL DEFAULT 'fizic' CHECK (mod IN ('fizic', 'online')),
-  locatie     text,
-  link_online text,
-  capacitate  integer NOT NULL DEFAULT 1,
-  anulat      boolean NOT NULL DEFAULT false,
-  creat_la    timestamptz NOT NULL DEFAULT now()
+CREATE TABLE consultation_slots (
+  id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  teacher_id   uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  starts_at    timestamptz NOT NULL,
+  ends_at      timestamptz NOT NULL,
+  mode         text NOT NULL DEFAULT 'in_person' CHECK (mode IN ('in_person', 'online')),
+  location     text,
+  meeting_url  text,
+  capacity     integer NOT NULL DEFAULT 1,
+  is_cancelled boolean NOT NULL DEFAULT false,
+  created_at   timestamptz NOT NULL DEFAULT now()
 );
 
-CREATE INDEX idx_sloturi_profesor ON sloturi_consultatii (profesor_id, start_la);
+CREATE INDEX idx_slots_teacher ON consultation_slots (teacher_id, starts_at);
 
-CREATE TABLE rezervari (
+CREATE TABLE bookings (
   id         uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  slot_id    uuid NOT NULL REFERENCES sloturi_consultatii(id) ON DELETE CASCADE,
-  student_id uuid NOT NULL REFERENCES utilizatori(id) ON DELETE CASCADE,
-  subiect    text,
-  status     text NOT NULL DEFAULT 'rezervata' CHECK (status IN ('rezervata', 'anulata')),
-  creat_la   timestamptz NOT NULL DEFAULT now(),
+  slot_id    uuid NOT NULL REFERENCES consultation_slots(id) ON DELETE CASCADE,
+  student_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  subject    text,
+  status     text NOT NULL DEFAULT 'booked' CHECK (status IN ('booked', 'cancelled')),
+  created_at timestamptz NOT NULL DEFAULT now(),
   UNIQUE (slot_id, student_id)
 );
 
-CREATE INDEX idx_rezervari_student ON rezervari (student_id);
+CREATE INDEX idx_bookings_student ON bookings (student_id);
 
--- --- mesagerie ---------------------------------------------------------------
+-- --- messaging ---------------------------------------------------------------
 
-CREATE TABLE conversatii (
-  id             uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  student_id     uuid NOT NULL REFERENCES utilizatori(id) ON DELETE CASCADE,
-  profesor_id    uuid NOT NULL REFERENCES utilizatori(id) ON DELETE CASCADE,
-  ultim_mesaj_la timestamptz,
-  creat_la       timestamptz NOT NULL DEFAULT now(),
-  UNIQUE (student_id, profesor_id)
+CREATE TABLE conversations (
+  id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  student_id      uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  teacher_id      uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  last_message_at timestamptz,
+  created_at      timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (student_id, teacher_id)
 );
 
-CREATE INDEX idx_conversatii_profesor ON conversatii (profesor_id, ultim_mesaj_la DESC);
-CREATE INDEX idx_conversatii_student ON conversatii (student_id, ultim_mesaj_la DESC);
+CREATE INDEX idx_conversations_teacher ON conversations (teacher_id, last_message_at DESC);
+CREATE INDEX idx_conversations_student ON conversations (student_id, last_message_at DESC);
 
-CREATE TABLE mesaje (
-  id             uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  conversatie_id uuid NOT NULL REFERENCES conversatii(id) ON DELETE CASCADE,
-  expeditor_id   uuid NOT NULL REFERENCES utilizatori(id) ON DELETE CASCADE,
-  corp           text NOT NULL,
-  citit_la       timestamptz,
-  creat_la       timestamptz NOT NULL DEFAULT now()
+CREATE TABLE messages (
+  id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  conversation_id uuid NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+  sender_id       uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  body            text NOT NULL,
+  read_at         timestamptz,
+  created_at      timestamptz NOT NULL DEFAULT now()
 );
 
-CREATE INDEX idx_mesaje_conversatie ON mesaje (conversatie_id, creat_la);
+CREATE INDEX idx_messages_conversation ON messages (conversation_id, created_at);
 
--- --- fișiere -----------------------------------------------------------------
+-- --- attachments -------------------------------------------------------------
 
-CREATE TABLE fisiere (
-  id             uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  incarcat_de    uuid NOT NULL REFERENCES utilizatori(id) ON DELETE CASCADE,
-  conversatie_id uuid REFERENCES conversatii(id) ON DELETE CASCADE,
-  mesaj_id       uuid REFERENCES mesaje(id) ON DELETE CASCADE,
-  nume_original  text NOT NULL,
-  nume_stocat    text NOT NULL,
-  mime           text,
-  marime         bigint,
-  creat_la       timestamptz NOT NULL DEFAULT now()
+CREATE TABLE files (
+  id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  uploaded_by     uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  conversation_id uuid REFERENCES conversations(id) ON DELETE CASCADE,
+  message_id      uuid REFERENCES messages(id) ON DELETE CASCADE,
+  original_name   text NOT NULL,
+  stored_name     text NOT NULL,
+  mime            text,
+  size_bytes      bigint,
+  created_at      timestamptz NOT NULL DEFAULT now()
 );
 
-CREATE INDEX idx_fisiere_conversatie ON fisiere (conversatie_id);
+CREATE INDEX idx_files_conversation ON files (conversation_id);

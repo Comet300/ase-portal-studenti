@@ -2,12 +2,12 @@
 import '../styles/app.css'
 
 interface Props {
-  titlu: string
-  descriere?: string
+  title: string
+  description?: string
 }
 
-const { titlu, descriere } = Astro.props
-const titluComplet = `${titlu} · Portal Studenți — Sesiunea de Finalizare a Studiilor 2026`
+const { title, description } = Astro.props
+const fullTitle = `${title} · Portal Studenți — Sesiunea de Finalizare a Studiilor 2026`
 ---
 
 <!doctype html>
@@ -15,8 +15,8 @@ const titluComplet = `${titlu} · Portal Studenți — Sesiunea de Finalizare a 
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>{titluComplet}</title>
-    {descriere && <meta name="description" content={descriere} />}
+    <title>{fullTitle}</title>
+    {description && <meta name="description" content={description} />}
     <meta name="theme-color" content="#990000" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />

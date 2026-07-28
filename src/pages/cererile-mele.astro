@@ -1,0 +1,472 @@
+---
+import StudentLayout from '../layouts/StudentLayout.astro'
+import {
+  STATUS_CLASS,
+  STATUS_LABELS,
+  studentRequests,
+  supervisors,
+  formatDate,
+  studentMilestones,
+  publicTopics,
+} from '../lib/repo'
+
+const u = Astro.locals.user!
+
+// Un cadru didactic care ajunge aici își vede propriile cereri (nu are), deci
+// îl trimitem în zona lui în loc să-i arătăm un ecran gol fără sens.
+if (u.role !== 'student') return Astro.redirect('/profesor', 302)
+
+const [cereri, jaloane, profesori, teme] = await Promise.all([
+  studentRequests(u.id),
+  studentMilestones(u.id),
+  supervisors(),
+  publicTopics(),
+])
+
+const coordonatorPreselectat = Astro.url.searchParams.get('coordonator') ?? ''
+const areCerereActiva = cereri.some((c) => c.status === 'pending' || c.status === 'approved')
+const cerereAprobata = cereri.find((c) => c.status === 'approved')
+
+const MILESTONE_STATES: Record<string, string> = {
+  planificat: 'Planificat',
+  in_lucru: 'În lucru',
+  finalizat: 'Finalizat',
+}
+---
+
+<StudentLayout title="Cererile mele" active="cereri">
+  <div class="container stack stack--loose">
+    <header class="row row--between row--wrap" style="gap:var(--s-4)">
+      <div class="stack stack--tight">
+        <h1 class="page-title">Cererile mele</h1>
+        <p class="page-lede">
+          Cererea de coordonare, decizia coordonatorului și termenele lucrării tale.
+        </p>
+      </div>
+      {
+        !hasActiveRequest && (
+          <button class="btn btn--primary" type="button" id="deschide-cerere">
+            Depune request nouă
+          </button>
+        )
+      }
+    </header>
+
+    {
+      requests.length === 0 ? (
+        <section class="panel">
+          <div class="empty">
+            <p class="empty__title">Nu ai depus încă nicio request</p>
+            <p class="empty__text">
+              Alege un coordonator din catalog și depune cererea de coordonare. Vei primi un email
+              când primești un răspuns, iar termenele lucrării apar tot aici.
+            </p>
+            <div class="row" style="gap:var(--s-2)">
+              <a href="/supervisors" class="btn btn--secondary btn--sm">Vezi coordonatorii</a>
+              <button class="btn btn--primary btn--sm" type="button" id="deschide-cerere-gol">
+                Depune request
+              </button>
+            </div>
+          </div>
+        </section>
+      ) : (
+        <section class="panel">
+          <div class="panel__header">
+            <h2 class="section-title">Cereri depuse</h2>
+          </div>
+          <ul class="cereri">
+            {cereri.map((c) => (
+              <li class="cerere">
+                <div class="row row--between row--wrap" style="gap:var(--s-3)">
+                  <span class="numeric muted" style="font-size:var(--t-xs)">
+                    {c.number} · depusă {formatDate(c.submitted_at)}
+                  </span>
+                  <span class:list={['badge', STATUS_CLASS[c.status]]}>
+                    {STATUS_LABELS[c.status]}
+                  </span>
+                </div>
+
+                <h3 class="cerere__titlu">{c.title_ro}</h3>
+                {c.title_en && <p class="cerere__en">{c.title_en}</p>}
+
+                <p class="muted" style="font-size:var(--t-sm)">
+                  Coordonator: <strong>{c.teacher_name}</strong>
+                </p>
+
+                {c.status === 'rejected' && c.rejection_reason && (
+                  <div class="motiv">
+                    <strong>Motivul respingerii</strong>
+                    <p>{c.rejection_reason}</p>
+                    <a href="/supervisors" class="btn btn--secondary btn--sm">Depune o request nouă</a>
+                  </div>
+                )}
+
+                {c.status === 'approved' && (
+                  <div class="row row--wrap" style="gap:var(--s-2)">
+                    <a class="btn btn--secondary btn--sm" href="/mesaje">Scrie coordonatorului</a>
+                    <a class="btn btn--ghost btn--sm" href="/consultatii">Programează o consultație</a>
+                  </div>
+                )}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )
+    }
+
+    {
+      cerereAprobata && jaloane.length > 0 && (
+        <section class="panel">
+          <div class="panel__header">
+            <h2 class="section-title">Termenele lucrării</h2>
+            <span class="muted" style="font-size:var(--t-sm)">
+              {jaloane.filter((j) => j.status === 'done').length} din {milestones.length} finalizate
+            </span>
+          </div>
+          <ol class="cronologie">
+            {jaloane.map((j) => (
+              <li class:list={['jalon', `jalon--${j.status}`]}>
+                <span class="jalon__punct" aria-hidden="true" />
+                <div class="jalon__corp">
+                  <div class="row row--between row--wrap" style="gap:var(--s-2)">
+                    <strong class="jalon__titlu">{j.title}</strong>
+                    <span
+                      class:list={[
+                        'badge',
+                        j.status === 'done'
+                          ? 'badge--aprobata'
+                          : j.status === 'in_progress'
+                            ? 'badge--asteptare'
+                            : 'badge--ciorna',
+                      ]}
+                    >
+                      {MILESTONE_STATES[j.status]}
+                    </span>
+                  </div>
+                  <span class="muted" style="font-size:var(--t-xs)">
+                    Termen: {j.due_on ? formatDate(j.due_on) : 'nestabilit'}
+                  </span>
+                  {j.description && <p class="jalon__descriere">{j.description}</p>}
+                </div>
+              </li>
+            ))}
+          </ol>
+        </section>
+      )
+    }
+  </div>
+
+  <dialog id="dialog-cerere">
+    <form method="POST" action="/api/cereri/depune" class="formular" id="formular-cerere">
+      <div class="formular__cap">
+        <h2 class="section-title">Cerere de coordonare</h2>
+        <button class="btn btn--ghost btn--sm" type="button" data-inchide aria-label="Închide">✕</button>
+      </div>
+
+      <div class="pas" data-pas="1">
+        <div class="field">
+          <label class="label" for="profesor_id">Coordonator științific</label>
+          <select class="select" id="profesor_id" name="profesor_id" required>
+            <option value="">Alege un cadru didactic…</option>
+            {
+              profesori.map((p) => (
+                <option value={p.id} selected={p.id === coordonatorPreselectat}>
+                  {p.name}
+                </option>
+              ))
+            }
+          </select>
+        </div>
+
+        <div class="field">
+          <label class="label" for="tema_id">Temă din catalog <span class="muted">(opțional)</span></label>
+          <select class="select" id="tema_id" name="tema_id">
+            <option value="">Propun o temă proprie</option>
+            {
+              teme.map((t) => (
+                <option value={t.id} data-profesor={t.teacher_id} data-title={t.title}>
+                  {t.title}
+                </option>
+              ))
+            }
+          </select>
+          <span class="hint">Dacă alegi o temă, titlul se completează automat și îl poți ajusta.</span>
+        </div>
+
+        <div class="field">
+          <label class="label" for="titlu_ro">Titlul lucrării (română)</label>
+          <input
+            class="input"
+            id="titlu_ro"
+            name="titlu_ro"
+            required
+            maxlength="200"
+            placeholder="Ex: Impactul inteligenței artificiale în strategiile de personalizare"
+          />
+        </div>
+
+        <div class="field">
+          <label class="label" for="titlu_en">Titlul lucrării (engleză)</label>
+          <input class="input" id="titlu_en" name="titlu_en" maxlength="200" placeholder="Opțional" />
+        </div>
+
+        <div class="field">
+          <label class="label" for="scop_obiective">Scopul și obiectivele lucrării</label>
+          <textarea
+            class="textarea"
+            id="scop_obiective"
+            name="scop_obiective"
+            required
+            minlength="40"
+            placeholder="Descrie direcția generală a cercetării, problema abordată și minimum 3 obiective urmărite…"
+          ></textarea>
+          <span class="hint"><span id="contor">0</span> caractere · minimum 40</span>
+        </div>
+
+        <div class="row" style="justify-content:flex-end;gap:var(--s-2)">
+          <button class="btn btn--secondary" type="button" data-inchide>Renunță</button>
+          <button class="btn btn--primary" type="button" id="spre-pas-2">Continuă</button>
+        </div>
+      </div>
+
+      <div class="pas" data-pas="2" hidden>
+        <p class="muted" style="font-size:var(--t-sm)">
+          Verifică datele. După depunere, cererea ajunge la coordonator și nu mai poate fi
+          modificată — doar retrasă.
+        </p>
+
+        <dl class="previzualizare">
+          <dt>Student</dt>
+          <dd>{u.name} · {u.student_number} · {u.program === 'master' ? 'Master' : 'Licență'}</dd>
+          <dt>Coordonator</dt>
+          <dd id="pv-profesor">—</dd>
+          <dt>Titlul lucrării</dt>
+          <dd id="pv-title">—</dd>
+          <dt>Scop și obiective</dt>
+          <dd id="pv-scop">—</dd>
+        </dl>
+
+        <div class="row" style="justify-content:flex-end;gap:var(--s-2)">
+          <button class="btn btn--secondary" type="button" id="inapoi-pas-1">Înapoi</button>
+          <button class="btn btn--primary" type="submit">Depune cererea</button>
+        </div>
+      </div>
+    </form>
+  </dialog>
+</StudentLayout>
+
+<script>
+  const dialog = document.getElementById('dialog-cerere') as HTMLDialogElement | null
+  const form = document.getElementById('formular-cerere') as HTMLFormElement | null
+
+  const deschide = () => dialog?.showModal()
+  document.getElementById('deschide-cerere')?.addEventListener('click', deschide)
+  document.getElementById('deschide-cerere-gol')?.addEventListener('click', deschide)
+  dialog?.querySelectorAll('[data-inchide]').forEach((b) => b.addEventListener('click', () => dialog.close()))
+
+  // Dacă s-a venit din catalog cu un coordonator ales, formularul se openDialog direct.
+  if (new URLSearchParams(location.search).get('coordonator')) openDialog()
+
+  const step1 = dialog?.querySelector<HTMLElement>('[data-pas="1"]')
+  const step2 = dialog?.querySelector<HTMLElement>('[data-pas="2"]')
+  const profesor = document.getElementById('profesor_id') as HTMLSelectElement
+  const tema = document.getElementById('tema_id') as HTMLSelectElement
+  const title = document.getElementById('titlu_ro') as HTMLInputElement
+  const scop = document.getElementById('scop_obiective') as HTMLTextAreaElement
+  const contor = document.getElementById('contor')
+
+  scop?.addEventListener('input', () => {
+    if (contor) contor.textContent = String(scop.value.length)
+  })
+
+  // Temele se restrâng la coordonatorul ales, ca să nu se poată cere o temă
+  // care aparține altcuiva.
+  function sincronizeazaTeme() {
+    const optiuni = [...tema.options]
+    for (const o of optiuni) {
+      if (!o.value) continue
+      o.hidden = Boolean(profesor.value) && o.dataset.profesor !== profesor.value
+    }
+    if (tema.selectedOptions[0]?.hidden) tema.value = ''
+  }
+
+  profesor?.addEventListener('change', sincronizeazaTeme)
+  sincronizeazaTeme()
+
+  tema?.addEventListener('change', () => {
+    const t = tema.selectedOptions[0]?.dataset.title
+    if (t && !title.value) title.value = t
+  })
+
+  document.getElementById('spre-pas-2')?.addEventListener('click', () => {
+    // Validarea nativă rulează înainte de previzualizare.
+    if (!teacherSelect.value || !title.value || objectivesField.value.length < 40) {
+      form?.reportValidity()
+      return
+    }
+    const set = (id: string, val: string) => {
+      const el = document.getElementById(id)
+      if (el) el.textContent = val
+    }
+    set('pv-profesor', profesor.selectedOptions[0]?.textContent ?? '—')
+    set('pv-title', title.value)
+    set('pv-scop', scop.value)
+    if (pas1) pas1.hidden = true
+    if (pas2) pas2.hidden = false
+  })
+
+  document.getElementById('inapoi-pas-1')?.addEventListener('click', () => {
+    if (step1) step1.hidden = false
+    if (step2) step2.hidden = true
+  })
+</script>
+
+<style>
+  .requests {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  .cerere {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-2);
+    padding: var(--s-5);
+    border-bottom: 1px solid var(--border);
+  }
+  .cerere:last-child {
+    border-bottom: 0;
+  }
+
+  .cerere__titlu {
+    font-family: var(--serif);
+    font-size: var(--t-lg);
+    font-weight: 600;
+    text-wrap: pretty;
+  }
+
+  .cerere__en {
+    font-size: var(--t-sm);
+    color: var(--ink-muted);
+    font-style: italic;
+    margin-top: -4px;
+  }
+
+  .motiv {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-2);
+    align-items: flex-start;
+    padding: var(--s-4);
+    background: var(--danger-tint);
+    border-radius: var(--r-md);
+    font-size: var(--t-sm);
+  }
+  .motiv strong {
+    color: var(--danger);
+  }
+
+  .cronologie {
+    list-style: none;
+    margin: 0;
+    padding: var(--s-5);
+  }
+
+  .jalon {
+    display: flex;
+    gap: var(--s-4);
+    padding-bottom: var(--s-5);
+    position: relative;
+  }
+  .jalon:last-child {
+    padding-bottom: 0;
+  }
+
+  .jalon:not(:last-child)::before {
+    content: '';
+    position: absolute;
+    left: 5px;
+    top: 20px;
+    bottom: 0;
+    width: 1px;
+    background: var(--border-strong);
+  }
+
+  .jalon__punct {
+    width: 11px;
+    height: 11px;
+    margin-top: 5px;
+    border-radius: 50%;
+    border: 2px solid var(--border-strong);
+    background: var(--surface);
+    flex: none;
+    z-index: 1;
+  }
+  .jalon--finalizat .jalon__punct {
+    background: var(--ok);
+    border-color: var(--ok);
+  }
+  .jalon--in_lucru .jalon__punct {
+    background: var(--red);
+    border-color: var(--red);
+  }
+
+  .jalon__corp {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    flex: 1;
+    min-width: 0;
+  }
+
+  .jalon__titlu {
+    font-size: var(--t-sm);
+  }
+
+  .jalon__descriere {
+    font-size: var(--t-sm);
+    color: var(--ink-soft);
+    margin-top: var(--s-1);
+    max-width: 70ch;
+  }
+
+  .formular {
+    display: flex;
+    flex-direction: column;
+    padding: var(--s-5);
+  }
+
+  .formular__cap {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--s-3);
+    margin-bottom: var(--s-4);
+  }
+
+  .pas {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-4);
+  }
+
+  .previzualizare {
+    display: grid;
+    grid-template-columns: minmax(120px, auto) 1fr;
+    gap: var(--s-2) var(--s-4);
+    padding: var(--s-4);
+    background: var(--surface-sunken);
+    border-radius: var(--r-md);
+    font-size: var(--t-sm);
+    margin: 0;
+  }
+  .previzualizare dt {
+    color: var(--ink-muted);
+    font-size: var(--t-xs);
+  }
+  .previzualizare dd {
+    margin: 0;
+    text-wrap: pretty;
+  }
+</style>

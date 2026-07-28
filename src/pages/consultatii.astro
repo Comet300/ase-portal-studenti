@@ -1,0 +1,262 @@
+---
+import StudentLayout from '../layouts/StudentLayout.astro'
+import { query } from '../lib/db'
+import { formatDate, formatTime } from '../lib/repo'
+
+const u = Astro.locals.user!
+if (u.role !== 'student') return Astro.redirect('/teacherSelect/students?section=consultatii', 302)
+
+interface Slot {
+  id: string
+  starts_at: string
+  ends_at: string
+  mod: 'in_person' | 'online'
+  location: string | null
+  meeting_url: string | null
+  capacity: number
+  taken: number
+  teacher_id: string
+  teacher_name: string
+  booked_by_me: boolean
+  subject: string | null
+}
+
+// Doar intervalele coordonatorului care i-a aprobat cererea: consultațiile sunt
+// între student și coordonatorul lui, nu un catalog open.
+const slots = await query<Slot>(
+  `SELECT s.id, s.starts_at, s.ends_at, s.mode, s.location, s.meeting_url, s.capacity,
+          (SELECT count(*)::int FROM booked r WHERE r.slot_id = s.id AND r.status = 'booked') AS taken,
+          p.id AS teacher_id, p.name AS teacher_name,
+          EXISTS (
+            SELECT 1 FROM booked r
+             WHERE r.slot_id = s.id AND r.student_id = $1 AND r.status = 'booked'
+          ) AS booked_by_me,
+          (SELECT r.subject FROM booked r
+            WHERE r.slot_id = s.id AND r.student_id = $1 AND r.status = 'booked') AS subject
+     FROM consultation_slots s
+     JOIN users p ON p.id = s.teacher_id
+    WHERE s.is_cancelled = false
+      AND s.starts_at > now()
+      AND EXISTS (
+        SELECT 1 FROM requests c
+         WHERE c.student_id = $1 AND c.teacher_id = s.teacher_id AND c.status = 'approved'
+      )
+    ORDER BY s.starts_at`,
+  [u.id],
+)
+
+const aleMele = sloturi.filter((s) => s.booked_by_me)
+const libere = sloturi.filter((s) => !s.booked_by_me && s.taken < s.capacity)
+
+// Grupare pe day, ca lista să fie citibilă când sunt multe intervale.
+const byDay = new Map<string, Slot[]>()
+for (const s of free) {
+  const key = formatDate(s.starts_at)
+  byDay.set(key, [...(byDay.get(key) ?? []), s])
+}
+---
+
+<StudentLayout title="Consultații" active="consultatii">
+  <div class="container stack stack--loose">
+    <header class="stack stack--tight">
+      <h1 class="page-title">Consultații</h1>
+      <p class="page-lede">
+        Rezervă un interval la coordonatorul tău. Primești invitația în calendar pe email.
+      </p>
+    </header>
+
+    {
+      aleMele.length > 0 && (
+        <section class="panel">
+          <div class="panel__header">
+            <h2 class="section-title">Rezervările mele</h2>
+          </div>
+          <ul class="sloturi">
+            {aleMele.map((s) => (
+              <li class="slot slot--rezervat">
+                <span class="data-chip">
+                  <strong class="numeric">{new Date(s.starts_at).getDate()}</strong>
+                  <small>{formatDate(s.starts_at).split(' ')[1]?.slice(0, 3)}</small>
+                </span>
+                <div class="slot__corp">
+                  <strong class="numeric">
+                    {formatTime(s.starts_at)}–{formatTime(s.ends_at)}
+                  </strong>
+                  <span class="muted">
+                    {s.teacher_name} ·{' '}
+                    {s.mode === 'online' ? (s.meeting_url ?? 'Online') : (s.location ?? 'Cabinet')}
+                  </span>
+                  {s.subject && <span class="muted">Subiect: {s.subject}</span>}
+                </div>
+                <form method="POST" action="/api/rezervari">
+                  <input type="hidden" name="actiune" value="anuleaza" />
+                  <input type="hidden" name="slot_id" value={s.id} />
+                  <button class="btn btn--danger btn--sm" type="submit">Anulează</button>
+                </form>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )
+    }
+
+    <section class="panel">
+      <div class="panel__header">
+        <h2 class="section-title">Intervale disponibile</h2>
+      </div>
+
+      {
+        free.length === 0 ? (
+          <div class="empty">
+            <p class="empty__title">Niciun interval disponibil</p>
+            <p class="empty__text">
+              Coordonatorul tău nu are momentan intervale free publicate. Îi poți scrie direct din
+              secțiunea Mesaje ca să stabiliți o întâlnire.
+            </p>
+            <a href="/mesaje" class="btn btn--secondary btn--sm">Deschide mesajele</a>
+          </div>
+        ) : (
+          <div class="zile">
+            {[...peZile.entries()].map(([zi, listaSloturi]) => (
+              <section class="zi">
+                <h3 class="zi__titlu">{day}</h3>
+                <ul class="sloturi">
+                  {listaSloturi.map((s) => (
+                    <li class="slot">
+                      <div class="slot__corp">
+                        <strong class="numeric">
+                          {formatTime(s.starts_at)}–{formatTime(s.ends_at)}
+                        </strong>
+                        <span class="muted">
+                          {s.mode === 'online' ? 'Online' : (s.location ?? 'Cabinet')} · {s.teacher_name}
+                        </span>
+                      </div>
+                      <button class="btn btn--primary btn--sm" type="button" data-rezerva={s.id}>
+                        Rezervă
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            ))}
+          </div>
+        )
+      }
+    </section>
+  </div>
+
+  <dialog id="dialog-rezerva">
+    <form method="POST" action="/api/rezervari" class="dialog">
+      <h2 class="section-title">Rezervă consultația</h2>
+      <input type="hidden" name="slot_id" id="dialog-slot" />
+      <div class="field">
+        <label class="label" for="subiect">Despre ce vrei să discuți? <span class="muted">(opțional)</span></label>
+        <textarea
+          class="textarea"
+          id="subiect"
+          name="subiect"
+          rows="3"
+          style="min-height:88px"
+          placeholder="Ex: validarea chestionarului și structura capitolului empiric"
+        ></textarea>
+        <span class="hint">Coordonatorul vede subiectul înainte de întâlnire.</span>
+      </div>
+      <div class="row" style="justify-content:flex-end;gap:var(--s-2)">
+        <button class="btn btn--secondary" type="button" data-inchide>Renunță</button>
+        <button class="btn btn--primary" type="submit">Confirmă rezervarea</button>
+      </div>
+    </form>
+  </dialog>
+</StudentLayout>
+
+<script>
+  const dialog = document.getElementById('dialog-rezerva') as HTMLDialogElement | null
+  document.querySelectorAll<HTMLButtonElement>('[data-rezerva]').forEach((b) => {
+    b.addEventListener('click', () => {
+      const camp = document.getElementById('dialog-slot') as HTMLInputElement | null
+      if (camp) camp.value = b.dataset.rezerva ?? ''
+      dialog?.showModal()
+    })
+  })
+  dialog?.querySelector('[data-inchide]')?.addEventListener('click', () => dialog.close())
+</script>
+
+<style>
+  .zile {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .zi {
+    border-bottom: 1px solid var(--border);
+  }
+  .zi:last-child {
+    border-bottom: 0;
+  }
+
+  .zi__titlu {
+    font-size: var(--t-sm);
+    font-weight: 600;
+    color: var(--ink-soft);
+    padding: var(--s-3) var(--s-5) 0;
+  }
+
+  .sloturi {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  .slot {
+    display: flex;
+    align-items: center;
+    gap: var(--s-3);
+    padding: var(--s-3) var(--s-5);
+  }
+  .slot--rezervat {
+    border-bottom: 1px solid var(--border);
+  }
+  .slot--rezervat:last-child {
+    border-bottom: 0;
+  }
+
+  .slot__corp {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    flex: 1;
+    min-width: 0;
+  }
+  .slot__corp strong {
+    font-size: var(--t-sm);
+  }
+  .slot__corp .muted {
+    font-size: var(--t-xs);
+  }
+
+  .data-chip {
+    display: grid;
+    place-items: center;
+    width: 40px;
+    height: 40px;
+    border-radius: var(--r-md);
+    background: var(--red-tint);
+    line-height: 1;
+    flex: none;
+  }
+  .data-chip strong {
+    font-size: var(--t-sm);
+    color: var(--red);
+  }
+  .data-chip small {
+    font-size: 10px;
+    color: var(--red);
+  }
+
+  .dialog {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-4);
+    padding: var(--s-5);
+  }
+</style>

@@ -1,21 +1,21 @@
 ---
 import BaseLayout from './BaseLayout.astro'
-import { initiale, DEMO_MODE } from '../lib/auth'
+import { initials, DEMO_MODE } from '../lib/auth'
 
 interface Props {
-  titlu: string
+  title: string
   lede?: string
-  activ?: string
+  active?: string
 }
 
-const { titlu, lede, activ } = Astro.props
-const u = Astro.locals.utilizator!
+const { title, lede, active } = Astro.props
+const u = Astro.locals.user!
 
 const linkuri = [
   { href: '/profesor', cheie: 'dashboard', text: 'Dashboard', icon: 'grid' },
   { href: '/profesor/studenti', cheie: 'studenti', text: 'Studenți & Cereri', icon: 'users' },
   { href: '/profesor/mesaje', cheie: 'mesaje', text: 'Mesaje', icon: 'chat' },
-  ...(u.rol === 'director'
+  ...(u.role === 'head'
     ? [{ href: '/profesor/departament', cheie: 'departament', text: 'Departament', icon: 'chart' }]
     : []),
   { href: '/profesor/arhiva', cheie: 'arhiva', text: 'Arhivă & Setări', icon: 'archive' },
@@ -30,7 +30,7 @@ const cai: Record<string, string> = {
 }
 ---
 
-<BaseLayout titlu={titlu}>
+<BaseLayout title={title}>
   <div class="shell">
     <aside class="sidebar" id="sidebar">
       <a href="/profesor" class="brand">
@@ -44,7 +44,7 @@ const cai: Record<string, string> = {
       <nav class="nav" aria-label="Navigație cadru didactic">
         {
           linkuri.map((l) => (
-            <a href={l.href} class:list={['nav__link', { 'is-active': activ === l.cheie }]}>
+            <a href={l.href} class:list={['nav__link', { 'is-active': active === l.cheie }]}>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
                 <path d={cai[l.icon]} />
               </svg>
@@ -62,10 +62,10 @@ const cai: Record<string, string> = {
           Portalul studenților
         </a>
         <div class="user">
-          <span class="user__avatar">{initiale(u.nume)}</span>
+          <span class="user__avatar">{initials(u.name)}</span>
           <span class="user__meta">
-            <strong>{u.nume}</strong>
-            <small>{u.rol === 'director' ? 'Director de departament' : 'Cadru didactic'}</small>
+            <strong>{u.name}</strong>
+            <small>{u.role === 'head' ? 'Director de departament' : 'Cadru didactic'}</small>
           </span>
           <form method="POST" action="/api/deconectare">
             <button class="btn btn--ghost btn--sm" type="submit" title="Deconectare" aria-label="Deconectare">
@@ -86,7 +86,7 @@ const cai: Record<string, string> = {
           >
         </button>
         <div>
-          <h1 class="page-title">{titlu}</h1>
+          <h1 class="page-title">{title}</h1>
           {lede && <p class="page-lede">{lede}</p>}
         </div>
         <slot name="actiuni" />

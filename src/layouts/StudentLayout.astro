@@ -1,15 +1,15 @@
 ---
 import BaseLayout from './BaseLayout.astro'
-import { initiale } from '../lib/auth'
+import { initials } from '../lib/auth'
 
 interface Props {
-  titlu: string
-  descriere?: string
-  activ?: string
+  title: string
+  description?: string
+  active?: string
 }
 
-const { titlu, descriere, activ } = Astro.props
-const u = Astro.locals.utilizator
+const { title, description, active } = Astro.props
+const u = Astro.locals.user
 
 const linkuri = [
   { href: '/', text: 'Acasă', cheie: 'acasa' },
@@ -21,7 +21,7 @@ const linkuri = [
 ]
 ---
 
-<BaseLayout titlu={titlu} descriere={descriere}>
+<BaseLayout title={title} description={description}>
   <header class="topbar">
     <div class="topbar__inner container">
       <a href="/" class="brand">
@@ -35,7 +35,7 @@ const linkuri = [
       <nav class="nav" aria-label="Navigație principală">
         {
           linkuri.map((l) => (
-            <a href={l.href} class:list={['nav__link', { 'is-active': activ === l.cheie }]}>
+            <a href={l.href} class:list={['nav__link', { 'is-active': active === l.cheie }]}>
               {l.text}
             </a>
           ))
@@ -46,13 +46,13 @@ const linkuri = [
         {
           u ? (
             <>
-              {(u.rol === 'profesor' || u.rol === 'director') && (
+              {(u.role === 'teacher' || u.role === 'head') && (
                 <a href="/profesor" class="btn btn--secondary btn--sm">
                   Zona cadrelor didactice
                 </a>
               )}
-              <a href="/contul-meu" class="avatar" title={u.nume}>
-                {initiale(u.nume)}
+              <a href="/contul-meu" class="avatar" title={u.name}>
+                {initials(u.name)}
               </a>
             </>
           ) : (
@@ -72,7 +72,7 @@ const linkuri = [
     <nav class="meniu-mobil" id="meniu-mobil" aria-label="Navigație mobilă" hidden>
       {
         linkuri.map((l) => (
-          <a href={l.href} class:list={['meniu-mobil__link', { 'is-active': activ === l.cheie }]}>
+          <a href={l.href} class:list={['meniu-mobil__link', { 'is-active': active === l.cheie }]}>
             {l.text}
           </a>
         ))

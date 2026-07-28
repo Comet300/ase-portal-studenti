@@ -1,37 +1,36 @@
 import { defineMiddleware } from 'astro:middleware'
-import { COOKIE_SESIUNE, utilizatorDinSesiune } from './lib/auth'
+import { SESSION_COOKIE, getUserFromSession } from './lib/auth'
 
 /**
- * Rutele de student sunt deschise tuturor rolurilor; zona profesorului cere rolul
- * `profesor` sau `director`, iar zona de departament cere `director`. Un utilizator
- * autentificat care nu are dreptul primește 404, nu 403: nu confirmăm existența
- * unei zone pe care nu o poate folosi.
+ * Student routes are open to every role; the teacher area requires `teacher` or
+ * `head`, and the department view requires `head`. A signed-in user without the
+ * right role gets 404 rather than 403: we do not confirm an area they cannot use.
  */
 
-const NECESITA_AUTENTIFICARE = ['/cererile-mele', '/mesaje', '/consultatii', '/contul-meu']
-const ZONA_PROFESOR = '/profesor'
-const ZONA_DIRECTOR = '/profesor/departament'
+const REQUIRES_SESSION = ['/cererile-mele', '/mesaje', '/consultatii', '/contul-meu']
+const TEACHER_AREA = '/profesor'
+const HEAD_AREA = '/profesor/departament'
 
 export const onRequest = defineMiddleware(async (context, next) => {
-  const sesiuneId = context.cookies.get(COOKIE_SESIUNE)?.value
-  context.locals.utilizator = await utilizatorDinSesiune(sesiuneId)
+  const sessionId = context.cookies.get(SESSION_COOKIE)?.value
+  const user = await getUserFromSession(sessionId)
+  context.locals.user = user
 
-  const cale = context.url.pathname
-  const u = context.locals.utilizator
+  const path = context.url.pathname
 
-  const cereLogin =
-    NECESITA_AUTENTIFICARE.some((p) => cale === p || cale.startsWith(p + '/')) ||
-    cale.startsWith(ZONA_PROFESOR)
+  const needsLogin =
+    REQUIRES_SESSION.some((p) => path === p || path.startsWith(p + '/')) ||
+    path.startsWith(TEACHER_AREA)
 
-  if (cereLogin && !u) {
-    return context.redirect(`/autentificare?redirect=${encodeURIComponent(cale)}`, 302)
+  if (needsLogin && !user) {
+    return context.redirect(`/autentificare?redirect=${encodeURIComponent(path)}`, 302)
   }
 
-  if (cale.startsWith(ZONA_PROFESOR) && u && u.rol === 'student') {
+  if (path.startsWith(TEACHER_AREA) && user?.role === 'student') {
     return new Response('Pagina nu a fost găsită', { status: 404 })
   }
 
-  if (cale.startsWith(ZONA_DIRECTOR) && u && u.rol !== 'director') {
+  if (path.startsWith(HEAD_AREA) && user && user.role !== 'head') {
     return new Response('Pagina nu a fost găsită', { status: 404 })
   }
 
