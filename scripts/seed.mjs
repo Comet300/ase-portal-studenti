@@ -201,6 +201,25 @@ for (const [i, nume] of STUDENT_NAMES.entries()) {
   )
 }
 
+/* A demo student with no supervisor at all.
+ *
+ * Deliberately kept out of `studentIds`, so the request loop below never gives
+ * them one: every empty state on the student side — no request, no coordinator,
+ * no thread, no bookable consultation — is reachable from the sign-in page
+ * instead of only existing in theory.
+ */
+const unassignedStudentId = await upsertUser([
+  'ana.lupu@stud.ase.ro', 'Ana-Maria Lupu', 'student',
+  'MK-2026-0099',
+  'bachelor', BACHELOR_TRACKS[0], 3,
+  null, 'Marketing', null, 0, 0,
+  true,
+])
+
+// Idempotency guard: if an earlier run (or a manual test) left this account with
+// a request, clear it so the account keeps meaning "not yet started".
+await q(`DELETE FROM requests WHERE student_id = $1`, [unassignedStudentId])
+
 // Teme
 for (const [i, [titlu, nivel, metode, prereq, locuri]] of TOPICS.entries()) {
   const profesorId = teacherIds[i % teacherIds.length]
