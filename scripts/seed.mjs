@@ -126,7 +126,7 @@ async function upsertUser(campuri) {
     `INSERT INTO users (email, name, role, student_number, program, specialization, study_year,
                               academic_title, department, office, bachelor_capacity, master_capacity, is_demo)
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
-     ON CONFLICT (email) DO UPDATE SET name = EXCLUDED.nume
+     ON CONFLICT (email) DO UPDATE SET name = EXCLUDED.name
      RETURNING id`,
     campuri,
   )
