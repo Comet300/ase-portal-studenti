@@ -51,9 +51,9 @@ const STARI_JALON: Record<string, string> = {
 ---
 
 <ProfesorLayout
-  titlu="Studenți & Cereri"
+  title="Studenți & Cereri"
   lede="Triaj cereri, studenți coordonați, cronologia lucrărilor, teme și program de consultații."
-  activ="studenti"
+  active="studenti"
 >
   <nav class="taburi" aria-label="Secțiuni">
     {
@@ -159,7 +159,7 @@ const STARI_JALON: Record<string, string> = {
                     <tr>
                       <td class="numeric muted">{c.number}</td>
                       <td>{c.student_name}</td>
-                      <td class="celula-titlu">{c.title_ro}</td>
+                      <td class="celula-title">{c.title_ro}</td>
                       <td>
                         <span class:list={['badge', STATUS_CLASS[c.status]]}>
                           {STATUS_LABELS[c.status]}
@@ -226,7 +226,7 @@ const STARI_JALON: Record<string, string> = {
                           </div>
                         </div>
                       </td>
-                      <td class="celula-titlu">{s.title_ro}</td>
+                      <td class="celula-title">{s.title_ro}</td>
                       <td>
                         <div class="progres">
                           <div class="bara" role="img" aria-label={`Progres ${procent}%`}>
@@ -352,8 +352,8 @@ const STARI_JALON: Record<string, string> = {
                         />
 
                         <div class="field">
-                          <label class="label" for={`titlu-${j.id}`}>Titlu</label>
-                          <input class="input" id={`titlu-${j.id}`} name="titlu" value={j.title} required />
+                          <label class="label" for={`title-${j.id}`}>Titlu</label>
+                          <input class="input" id={`title-${j.id}`} name="title" value={j.title} required />
                         </div>
 
                         <div class="row row--wrap" style="gap:var(--s-3);align-items:flex-end">
@@ -420,7 +420,7 @@ const STARI_JALON: Record<string, string> = {
                     <input
                       class="input"
                       id="jalon-nou"
-                      name="titlu"
+                      name="title"
                       placeholder="Ex: Predarea capitolului empiric"
                       required
                     />
@@ -451,7 +451,7 @@ const STARI_JALON: Record<string, string> = {
           <div class="empty">
             <p class="empty__title">Nicio temă propusă</p>
             <p class="empty__text">
-              Temele propuse apar în catalogul public de coordonatori, iar studenții pot depune cereri
+              Temele propuse apar în catalogul public de supervisors, iar studenții pot depune cereri
               direct pe ele.
             </p>
           </div>
@@ -701,7 +701,7 @@ const STARI_JALON: Record<string, string> = {
     flex: none;
   }
 
-  .celula-titlu {
+  .celula-title {
     max-width: 34ch;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -822,7 +822,7 @@ const STARI_JALON: Record<string, string> = {
     padding: var(--s-4) var(--s-3) var(--s-5);
   }
 
-  .teme {
+  .topic_count {
     list-style: none;
     margin: 0;
     padding: var(--s-5);

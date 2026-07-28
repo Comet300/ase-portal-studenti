@@ -100,7 +100,7 @@ const JALOANE = [
   ['Predarea formei finale', 'Lucrare completă, verificare antiplagiat.', 4],
 ]
 
-const MESAJE_DEMO = [
+const DEMO_MESSAGES = [
   ['student', 'Bună ziua, doamna profesoară! Am actualizat capitolul de analiză cantitativă conform discuției de săptămâna trecută. Aș dori să vă întreb dacă metodologia corespunde cerințelor pentru sesiunea 2026.'],
   ['teacher', 'Bună ziua! Am primit notificarea, voi parcurge materialul până joi. Vă rog să încărcați și fișierul cu rezultatele SPSS pentru verificare.'],
   ['student', 'Am încărcat fișierul. Am folosit un eșantion de 214 respondenți, iar alfa Cronbach este 0,87 pentru scala principală.'],
@@ -252,16 +252,16 @@ for (const { student_id, teacher_id } of approved) {
   if (!rows[0]) continue
   const conversatieId = rows[0].id
 
-  for (const [i, [rol, corp]] of MESAJE_DEMO.entries()) {
+  for (const [i, [role, body]] of DEMO_MESSAGES.entries()) {
     await q(
       `INSERT INTO messages (conversation_id, sender_id, body, read_at, created_at)
        VALUES ($1, $2, $3, $4, now() - ($5 || ' hours')::interval)`,
       [
         conversatieId,
         role === 'student' ? student_id : teacher_id,
-        corp,
-        i < MESAJE_DEMO.length - 1 ? new Date().toISOString() : null,
-        String((MESAJE_DEMO.length - i) * 6),
+        body,
+        i < DEMO_MESSAGES.length - 1 ? new Date().toISOString() : null,
+        String((DEMO_MESSAGES.length - i) * 6),
       ],
     )
   }

@@ -3,12 +3,12 @@ import BaseLayout from './BaseLayout.astro'
 import { initials, DEMO_MODE } from '../lib/auth'
 
 interface Props {
-  titlu: string
+  title: string
   lede?: string
-  activ?: string
+  active?: string
 }
 
-const { title, lede, activ } = Astro.props
+const { title, lede, active } = Astro.props
 const u = Astro.locals.user!
 
 const linkuri = [
@@ -30,7 +30,7 @@ const cai: Record<string, string> = {
 }
 ---
 
-<BaseLayout titlu={titlu}>
+<BaseLayout title={title}>
   <div class="shell">
     <aside class="sidebar" id="sidebar">
       <a href="/profesor" class="brand">
@@ -44,7 +44,7 @@ const cai: Record<string, string> = {
       <nav class="nav" aria-label="Navigație cadru didactic">
         {
           linkuri.map((l) => (
-            <a href={l.href} class:list={['nav__link', { 'is-active': activ === l.cheie }]}>
+            <a href={l.href} class:list={['nav__link', { 'is-active': active === l.cheie }]}>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
                 <path d={cai[l.icon]} />
               </svg>
@@ -86,7 +86,7 @@ const cai: Record<string, string> = {
           >
         </button>
         <div>
-          <h1 class="page-title">{titlu}</h1>
+          <h1 class="page-title">{title}</h1>
           {lede && <p class="page-lede">{lede}</p>}
         </div>
         <slot name="actiuni" />

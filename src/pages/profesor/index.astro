@@ -36,11 +36,11 @@ const necitite = studenti.reduce((s, x) => s + x.unread, 0)
 ---
 
 <ProfesorLayout
-  titlu={`Bine ai revenit, ${prenume}`}
+  title={`Bine ai revenit, ${prenume}`}
   lede={etapa
     ? `Etapa curentă: ${etapa.title} · ${etapa.interval_label}`
     : 'Sesiunea de Finalizare a Studiilor 2026'}
-  activ="dashboard"
+  active="dashboard"
 >
   <div slot="actiuni" class="row">
     <a href="/profesor/studenti" class="btn btn--primary btn--sm">Deschide cererile</a>
