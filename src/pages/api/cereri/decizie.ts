@@ -17,17 +17,17 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
   const u = locals.user
   if (!isTeacher(u)) return new Response('Neautorizat', { status: 401 })
 
-  const date = await request.formData()
-  const cerereId = String(date.get('cerere_id') ?? '')
-  const decision = String(date.get('decision') ?? '')
-  const motiv = String(date.get('motiv') ?? '').trim()
-  const redirectTo = String(date.get('redirect') ?? '/profesor/studenti')
+  const form = await request.formData()
+  const requestId = String(form.get('cerere_id') ?? '')
+  const decision = String(form.get('decizie') ?? '')
+  const reason = String(form.get('motiv') ?? '').trim()
+  const redirectTo = String(form.get('redirect') ?? '/profesor/studenti')
 
   if (decision !== 'approved' && decision !== 'rejected') {
     return new Response('Decizie invalidă', { status: 400 })
   }
 
-  if (decision === 'rejected' && motiv.length < 10) {
+  if (decision === 'rejected' && reason.length < 10) {
     return redirectWithNotice(redirectTo, 'Motivul respingerii este obligatoriu (minimum 10 caractere).', true)
   }
 
@@ -42,7 +42,7 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
               updated_at = now()
         WHERE id = $2 AND teacher_id = $1 AND status = 'pending'
         RETURNING id, student_id, title_ro, number`,
-      [u!.id, cerereId, decision, decision === 'rejected' ? motiv : null],
+      [u!.id, requestId, decision, decision === 'rejected' ? reason : null],
     )
 
     const c = rows[0]
@@ -92,7 +92,7 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
              <p>În portal găsești acum jaloanele lucrării și poți programa consultații.</p>`
           : `<p>Bună, ${student.name.split(' ')[0]}. Cererea <strong>${cerere.number}</strong> pentru lucrarea
              „${cerere.title_ro}” a fost respinsă de ${u!.name}.</p>
-             <p><strong>Motiv:</strong> ${motiv}</p>
+             <p><strong>Motiv:</strong> ${reason}</p>
              <p>Poți depune o cerere nouă, către același coordonator sau către altul.</p>`,
         { text: 'Deschide portalul', url: `${baza}/cererile-mele` },
       ),
