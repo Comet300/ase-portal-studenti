@@ -118,7 +118,7 @@ const overloaded = withSeats.filter((t) => t.seats > 0 && t.taken > t.seats)
 const fullyBooked = withSeats.filter((t) => t.seats > 0 && t.taken >= t.seats)
 const withoutSeats = withSeats.filter((t) => t.seats === 0)
 
-const exportUrl = `/profesor/departament/export.csv?${new URLSearchParams({
+const exportUrl = `/profesor/departament/export-cereri?${new URLSearchParams({
   ...(teacherFilter ? { coordonator: teacherFilter } : {}),
   ...(programFilter ? { program: programFilter } : {}),
   ...(statusFilter ? { status: statusFilter } : {}),
@@ -136,7 +136,7 @@ const sectiuni = [
   active="departament"
 >
   <div slot="actiuni" class="row" style="gap:var(--s-2)">
-    <a class="btn btn--secondary btn--sm" href="/profesor/coordonari.csv">Export coordonări</a>
+    <a class="btn btn--secondary btn--sm" href="/profesor/export-coordonari">Export coordonări</a>
     <a class="btn btn--ghost btn--sm" href={exportUrl}>Export cereri</a>
   </div>
 
