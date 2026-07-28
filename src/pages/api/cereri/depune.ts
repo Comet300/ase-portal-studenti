@@ -79,14 +79,14 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
                              invitation_id, decided_at, expires_at)
        VALUES ((SELECT id FROM academic_years WHERE is_current),
                $1, $2, $3, NULLIF($4, '')::uuid, $5, NULLIF($6, ''), $7, $8, $9,
-               NULLIF($10, '')::uuid,
+               $10,
                CASE WHEN $9 = 'approved' THEN now() END,
                CASE WHEN $9 = 'pending' THEN now() + ($11 || ' days')::interval END)
        RETURNING id`,
       [
         number, u.id, teacherId, topicId, titleRo, titleEn, objectives, motivation,
         preApproved ? 'approved' : 'pending',
-        invitation?.id ?? '',
+        invitation?.id ?? null,
         String(DECISION_WINDOW_DAYS),
       ],
     )

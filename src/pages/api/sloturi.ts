@@ -146,7 +146,7 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
     await execute(
       `INSERT INTO bookings (slot_id, student_id, subject) VALUES ($1, $2, NULLIF($3, ''))
        ON CONFLICT (slot_id, student_id) DO UPDATE SET status = 'booked'`,
-      [slot.id, studentId, note],
+      [slot.id, student.id, note],
     )
 
     const place = whereItIs(mode, location, meetingUrl)
@@ -194,7 +194,7 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
     ])
 
     await postEvent({
-      studentId,
+      studentId: student.id,
       teacherId: u!.id,
       senderId: u!.id,
       eventType: 'consultation_scheduled',

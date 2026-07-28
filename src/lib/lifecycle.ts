@@ -66,7 +66,10 @@ export function studentInvitations(studentId: string): Promise<Invitation[]> {
 }
 
 /** The invitation, but only if it is this student's and still open. */
-export function openInvitationFor(studentId: string, invitationId: string): Promise<Invitation | null> {
+export function openInvitationFor(
+  studentId: string,
+  invitationId: string | null,
+): Promise<Invitation | null> {
   return queryOne<Invitation>(
     `SELECT ${INVITATION_FIELDS} ${INVITATION_JOINS}
       WHERE i.id = $2 AND i.student_id = $1 AND i.status = 'pending' AND i.expires_at > now()`,
@@ -111,7 +114,7 @@ export function seatRequests(options: { teacherId?: string } = {}): Promise<Seat
  */
 export async function grantSeats(
   headId: string,
-  seatRequestId: string,
+  seatRequestId: string | null,
   note: string,
 ): Promise<SeatRequest | null> {
   return transaction(async (client) => {
