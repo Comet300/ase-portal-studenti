@@ -1,78 +1,77 @@
 import type { APIRoute } from 'astro'
 import { isTeacher } from '../../lib/auth'
 import { execute } from '../../lib/db'
-import { redirect, redirectWithNotice } from '../../lib/http'
+import { redirectWithNotice } from '../../lib/http'
 
 /**
- * Cronologia editabilă a unei lucrări.
+ * The editable milestone timeline.
  *
- * Jaloanele nu au coloană de proprietar — aparțin cererii, iar cererea aparține
- * coordonatorului. De aceea fiecare instrucțiune poartă un `EXISTS` către
- * `cereri`, în aceeași frază cu scrierea.
+ * Milestones have no owner column — they belong to a request, and the request
+ * belongs to a supervisor. Every statement therefore carries an EXISTS against
+ * `requests`, in the same sentence as the write it protects.
  */
-
-const inapoi = (url: URL, redirect: string, mesaj: string, eroare = false) =>
-  redirectWithNotice(redirectTo, mesaj, eroare)
-
-export const POST: APIRoute = async ({ request, locals, url }) => {
+export const POST: APIRoute = async ({ request, locals }) => {
   const u = locals.user
   if (!isTeacher(u)) return new Response('Neautorizat', { status: 401 })
 
-  const date = await request.formData()
-  const actiune = String(date.get('actiune') ?? '')
-  const redirectTo = String(date.get('redirect') ?? '/profesor/studenti')
+  const form = await request.formData()
+  const action = String(form.get('actiune') ?? '')
+  const redirectTo = String(form.get('redirect') ?? '/profesor/studenti')
 
-  if (actiune === 'adauga') {
-    const cerereId = String(date.get('cerere_id') ?? '')
-    const titlu = String(date.get('titlu') ?? '').trim()
-    const termen = String(date.get('termen') ?? '').trim()
-    const descriere = String(date.get('descriere') ?? '').trim()
+  const back = (message: string, isError = false) =>
+    redirectWithNotice(redirectTo, message, isError)
 
-    if (!titlu) return inapoi(url, redirectTo, 'Titlul jalonului este obligatoriu.', true)
+  if (action === 'adauga') {
+    const requestId = String(form.get('cerere_id') ?? '')
+    const title = String(form.get('titlu') ?? '').trim()
+    const dueOn = String(form.get('termen') ?? '').trim()
+    const description = String(form.get('descriere') ?? '').trim()
+
+    if (!title) return back('Titlul jalonului este obligatoriu.', true)
 
     const n = await execute(
       `INSERT INTO milestones (request_id, title, description, due_on, position)
        SELECT $2, $3, $4, NULLIF($5, '')::date,
               COALESCE((SELECT max(position) + 1 FROM milestones WHERE request_id = $2), 0)
-        WHERE EXISTS (SELECT 1 FROM requests c WHERE c.id = $2 AND c.teacher_id = $1)`,
-      [u!.id, cerereId, title, descriere || null, termen],
+        WHERE EXISTS (SELECT 1 FROM requests r WHERE r.id = $2 AND r.teacher_id = $1)`,
+      [u!.id, requestId, title, description || null, dueOn],
     )
-    return inapoi(url, redirectTo, n ? 'Jalon adăugat.' : 'Cererea nu a fost găsită.', !n)
+    return back(n ? 'Jalon adăugat.' : 'Cererea nu a fost găsită.', !n)
   }
 
-  if (actiune === 'actualizeaza') {
-    const jalonId = String(date.get('jalon_id') ?? '')
-    const titlu = String(date.get('titlu') ?? '').trim()
-    const termen = String(date.get('termen') ?? '').trim()
-    const descriere = String(date.get('descriere') ?? '').trim()
-    const status = String(date.get('status') ?? '')
+  if (action === 'actualizeaza') {
+    const milestoneId = String(form.get('jalon_id') ?? '')
+    const title = String(form.get('titlu') ?? '').trim()
+    const dueOn = String(form.get('termen') ?? '').trim()
+    const description = String(form.get('descriere') ?? '').trim()
+    const status = String(form.get('status') ?? '')
 
     if (!['planned', 'in_progress', 'done'].includes(status)) {
-      return inapoi(url, redirectTo, 'Stare invalidă.', true)
+      return back('Stare invalidă.', true)
     }
 
     const n = await execute(
-      `UPDATE milestones j
-          SET title = COALESCE(NULLIF($3, ''), j.title),
+      `UPDATE milestones m
+          SET title = COALESCE(NULLIF($3, ''), m.title),
               description = NULLIF($4, ''),
               due_on = NULLIF($5, '')::date,
               status = $6
-        WHERE j.id = $2
-          AND EXISTS (SELECT 1 FROM requests c WHERE c.id = j.request_id AND c.teacher_id = $1)`,
-      [u!.id, jalonId, title, description, due_on, status],
+        WHERE m.id = $2
+          AND EXISTS (SELECT 1 FROM requests r WHERE r.id = m.request_id AND r.teacher_id = $1)`,
+      [u!.id, milestoneId, title, description, dueOn, status],
     )
-    return inapoi(url, redirectTo, n ? 'Jalon actualizat.' : 'Jalonul nu a fost găsit.', !n)
+    return back(n ? 'Jalon actualizat.' : 'Jalonul nu a fost găsit.', !n)
   }
 
-  if (actiune === 'sterge') {
-    const jalonId = String(date.get('jalon_id') ?? '')
+  if (action === 'sterge') {
+    const milestoneId = String(form.get('jalon_id') ?? '')
     const n = await execute(
-      `DELETE FROM milestones j
-        WHERE j.id = $2
-          AND EXISTS (SELECT 1 FROM requests c WHERE c.id = j.request_id AND c.teacher_id = $1)`,
-      [u!.id, jalonId],
+      `DELETE FROM milestones m
+        WHERE m.id = $2
+          AND EXISTS (SELECT 1 FROM requests r WHERE r.id = m.request_id AND r.teacher_id = $1)`,
+      [u!.id, milestoneId],
     )
-    return inapoi(url, redirectTo, n ? 'Jalon șters.' : 'Jalonul nu a fost găsit.', !n)
+    return back(n ? 'Jalon șters.' : 'Jalonul nu a fost găsit.', !n)
   }
 
   return new Response('Acțiune necunoscută', { status: 400 })

@@ -51,7 +51,7 @@ const linkuri = [
                   Zona cadrelor didactice
                 </a>
               )}
-              <a href="/contul-meu" class="avatar" title={u.name}>
+              <a href={u.role === 'student' ? '/cererile-mele' : '/profesor/arhiva'} class="avatar" title={u.name}>
                 {initials(u.name)}
               </a>
             </>

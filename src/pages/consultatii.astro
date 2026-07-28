@@ -10,7 +10,7 @@ interface Slot {
   id: string
   starts_at: string
   ends_at: string
-  mod: 'in_person' | 'online'
+  mode: 'in_person' | 'online'
   location: string | null
   meeting_url: string | null
   capacity: number
@@ -117,11 +117,11 @@ for (const s of free) {
           </div>
         ) : (
           <div class="zile">
-            {[...peZile.entries()].map(([zi, listaSloturi]) => (
+            {[...byDay.entries()].map(([dayLabel, daySlots]: [string, Slot[]]) => (
               <section class="zi">
-                <h3 class="zi__titlu">{day}</h3>
+                <h3 class="zi__titlu">{dayLabel}</h3>
                 <ul class="sloturi">
-                  {listaSloturi.map((s) => (
+                  {daySlots.map((s) => (
                     <li class="slot">
                       <div class="slot__corp">
                         <strong class="numeric">
