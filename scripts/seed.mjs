@@ -230,13 +230,17 @@ const DEMO_MESSAGES = [
 console.log('[seed] pornit')
 
 console.log('[seed] etape')
-// Etape
+/* Etape — identificate prin titlu, nu prin poziție.
+ *
+ * Poziția se schimbă de fiecare dată când cineva reordonează calendarul din
+ * portal, iar o poziție rămasă liberă ar face ca următoarea pornire să insereze
+ * din nou o etapă care există deja, sub alt număr. */
 for (const [i, [titlu, descriere, interval, di, ds]] of STAGES.entries()) {
   await q(
     `INSERT INTO session_stages (academic_year_id, position, title, description, interval_label, starts_on, ends_on)
      SELECT $1, $2, $3, $4, $5, $6::date, $7::date
       WHERE NOT EXISTS (
-        SELECT 1 FROM session_stages WHERE academic_year_id = $1 AND position = $2
+        SELECT 1 FROM session_stages WHERE academic_year_id = $1 AND title = $3
       )`,
     [currentYear.id, i + 1, titlu, descriere, interval, di, ds],
   )
