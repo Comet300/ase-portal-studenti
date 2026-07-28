@@ -1,0 +1,363 @@
+---
+import Avatar from '../../components/Avatar.astro'
+import StudentLayout from '../../layouts/StudentLayout.astro'
+import { ROLE_LABELS } from '../../lib/auth'
+import { queryOne, query } from '../../lib/db'
+import { formatDate, teacherSeats } from '../../lib/repo'
+import { groupLabel, languageLabel, levelLabel } from '../../lib/years'
+
+/**
+ * One profile page for both roles.
+ *
+ * A coordinator's profile is a decision aid: a student reads it before writing.
+ * A student's profile is context: a coordinator reads it before accepting. They
+ * differ in what they carry, not in how they are built — same shell, same
+ * vocabulary, so neither side feels like the afterthought.
+ *
+ * Visible to anyone signed in. Nothing here is private: it is the same
+ * information the catalogue, the pairings list and the archive already show.
+ */
+
+const me = Astro.locals.user!
+const id = Astro.params.id!
+
+const person = await queryOne<{
+  id: string
+  name: string
+  email: string
+  role: 'student' | 'teacher' | 'head'
+  academic_title: string | null
+  department: string | null
+  office: string | null
+  bio: string | null
+  avatar_path: string | null
+  interests: string | null
+  website: string | null
+  student_number: string | null
+  program: string | null
+  specialization: string | null
+  study_language: string
+  study_group: string | null
+  study_year: number | null
+}>(
+  `SELECT id, name, email, role, academic_title, department, office, bio, avatar_path,
+          interests, website, student_number, program, specialization,
+          study_language, study_group, study_year
+     FROM users WHERE id = $1`,
+  [id],
+)
+
+if (!person) return new Response('Pagina nu a fost găsită', { status: 404 })
+
+const isTeacherProfile = person.role !== 'student'
+const isMe = person.id === me.id
+
+const seats = isTeacherProfile ? await teacherSeats(person.id) : null
+
+const topics = isTeacherProfile
+  ? await query<{ id: string; title: string; level: string; language: string; methods: string | null }>(
+      `SELECT id, title, level, language, methods
+         FROM topics
+        WHERE teacher_id = $1 AND is_active
+          AND academic_year_id = (SELECT id FROM academic_years WHERE is_current)
+        ORDER BY title`,
+      [person.id],
+    )
+  : []
+
+const supervised = isTeacherProfile
+  ? await query<{ student_id: string; student_name: string; title_ro: string }>(
+      `SELECT s.id AS student_id, s.name AS student_name, r.title_ro
+         FROM requests r JOIN users s ON s.id = r.student_id
+        WHERE r.teacher_id = $1 AND r.status = 'approved'
+          AND r.academic_year_id = (SELECT id FROM academic_years WHERE is_current)
+        ORDER BY s.name`,
+      [person.id],
+    )
+  : []
+
+const coordination = !isTeacherProfile
+  ? await queryOne<{
+      teacher_id: string
+      teacher_name: string
+      title_ro: string
+      decided_at: string | null
+    }>(
+      `SELECT t.id AS teacher_id, t.name AS teacher_name, r.title_ro, r.decided_at
+         FROM requests r JOIN users t ON t.id = r.teacher_id
+        WHERE r.student_id = $1 AND r.status = 'approved'
+          AND r.academic_year_id = (SELECT id FROM academic_years WHERE is_current)`,
+      [person.id],
+    )
+  : null
+
+const editHref = isTeacherProfile ? '/profesor/arhiva' : '/contul-meu'
+---
+
+<StudentLayout title={person.name} description={`Profilul ${person.name}`}>
+  <div class="container stack stack--loose">
+    <section class="panel">
+      <div class="panel__body identitate">
+        <Avatar name={person.name} src={person.avatar_path} size="lg" />
+        <div class="stack stack--tight" style="gap:4px;flex:1;min-width:0">
+          <h1 class="identitate__nume">{person.name}</h1>
+          <p class="muted">
+            {ROLE_LABELS[person.role]}
+            {person.department ? ` · ${person.department}` : ''}
+          </p>
+          {
+            !isTeacherProfile && (
+              <p class="muted" style="font-size:var(--t-sm)">
+                {person.student_number} · {groupLabel(person)}
+                {person.study_group ? ` · grupa ${person.study_group}` : ''}
+              </p>
+            )
+          }
+          {
+            isTeacherProfile && seats && (
+              <p class="muted" style="font-size:var(--t-sm)">
+                {seats.total_taken} din {seats.total_seats} locuri ocupate
+                {seats.free > 0 ? ` · ${seats.free} libere` : ' · fără locuri disponibile'}
+              </p>
+            )
+          }
+        </div>
+
+        <div class="row row--wrap" style="gap:var(--s-2)">
+          {isMe && <a class="btn btn--secondary btn--sm" href={editHref}>Editează profilul</a>}
+          {
+            !isMe && me.role === 'student' && isTeacherProfile && seats?.free !== 0 && (
+              <a class="btn btn--primary btn--sm" href={`/cererile-mele?coordonator=${person.id}`}>
+                Depune cerere
+              </a>
+            )
+          }
+        </div>
+      </div>
+
+      <dl class="detalii">
+        <div>
+          <dt>Email instituțional</dt>
+          <dd><a href={`mailto:${person.email}`}>{person.email}</a></dd>
+        </div>
+        {
+          isTeacherProfile && (
+            <div>
+              <dt>Birou</dt>
+              <dd>{person.office ?? '—'}</dd>
+            </div>
+          )
+        }
+        {
+          isTeacherProfile && person.website && (
+            <div>
+              <dt>Pagină web</dt>
+              <dd>
+                <a href={person.website} target="_blank" rel="noopener">
+                  {person.website.replace(/^https?:\/\//, '')}
+                </a>
+              </dd>
+            </div>
+          )
+        }
+        {
+          !isTeacherProfile && (
+            <div>
+              <dt>Limba de studiu</dt>
+              <dd>{languageLabel(person.study_language)}</dd>
+            </div>
+          )
+        }
+      </dl>
+    </section>
+
+    {
+      person.bio && (
+        <section class="panel">
+          <div class="panel__header">
+            <h2 class="section-title">Despre</h2>
+          </div>
+          <p class="panel__body descriere">{person.bio}</p>
+        </section>
+      )
+    }
+
+    {
+      person.interests && (
+        <section class="panel">
+          <div class="panel__header">
+            <h2 class="section-title">
+              {isTeacherProfile ? 'Direcții de cercetare' : 'Domenii de interes'}
+            </h2>
+          </div>
+          <p class="panel__body descriere">{person.interests}</p>
+        </section>
+      )
+    }
+
+    {/* --------------------------------------------------- cadru didactic */}
+    {
+      isTeacherProfile && (
+        <section class="panel">
+          <div class="panel__header">
+            <h2 class="section-title">Teme propuse în sesiunea curentă</h2>
+            <span class="muted" style="font-size:var(--t-sm)">{topics.length}</span>
+          </div>
+
+          {topics.length === 0 ? (
+            <div class="empty">
+              <p class="empty__title">Nicio temă publicată</p>
+              <p class="empty__text">
+                {isMe
+                  ? 'Publică teme din „Studenți & Cereri”, secțiunea Teme propuse.'
+                  : 'Poți propune o temă proprie când depui cererea.'}
+              </p>
+            </div>
+          ) : (
+            <ul class="teme">
+              {topics.map((t) => (
+                <li>
+                  <div class="stack stack--tight" style="gap:2px">
+                    <strong>{t.title}</strong>
+                    {t.methods && (
+                      <span class="muted" style="font-size:var(--t-xs)">Metode: {t.methods}</span>
+                    )}
+                  </div>
+                  <span class="badge badge--info">
+                    {levelLabel(t.level)}
+                    {t.language !== 'ro' ? ` · ${languageLabel(t.language)}` : ''}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      )
+    }
+
+    {
+      isTeacherProfile && supervised.length > 0 && (
+        <section class="panel">
+          <div class="panel__header">
+            <h2 class="section-title">Studenți coordonați</h2>
+            <span class="muted" style="font-size:var(--t-sm)">{supervised.length}</span>
+          </div>
+          <ul class="teme">
+            {supervised.map((s) => (
+              <li>
+                <div class="stack stack--tight" style="gap:2px">
+                  <strong>
+                    <a href={`/profil/${s.student_id}`}>{s.student_name}</a>
+                  </strong>
+                  <span class="muted" style="font-size:var(--t-xs)">{s.title_ro}</span>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )
+    }
+
+    {/* ---------------------------------------------------------- student */}
+    {
+      !isTeacherProfile && (
+        <section class="panel">
+          <div class="panel__header">
+            <h2 class="section-title">Lucrarea de finalizare</h2>
+          </div>
+          {coordination ? (
+            <div class="panel__body stack stack--tight">
+              <strong style="font-family:var(--serif);font-size:var(--t-md)">
+                {coordination.title_ro}
+              </strong>
+              <p class="muted" style="font-size:var(--t-sm)">
+                Coordonator:{' '}
+                <a href={`/profil/${coordination.teacher_id}`}>{coordination.teacher_name}</a>
+                {coordination.decided_at
+                  ? ` · confirmată ${formatDate(coordination.decided_at)}`
+                  : ''}
+              </p>
+            </div>
+          ) : (
+            <div class="empty">
+              <p class="empty__title">Fără coordonator confirmat</p>
+              <p class="empty__text">
+                {isMe
+                  ? 'Alege un coordonator din catalog și depune cererea.'
+                  : 'Studentul nu are încă o coordonare confirmată în sesiunea curentă.'}
+              </p>
+              {isMe && <a class="btn btn--primary btn--sm" href="/coordonatori">Vezi coordonatorii</a>}
+            </div>
+          )}
+        </section>
+      )
+    }
+  </div>
+</StudentLayout>
+
+<style>
+  .identitate {
+    display: flex;
+    align-items: center;
+    gap: var(--s-4);
+    flex-wrap: wrap;
+  }
+
+  .identitate__nume {
+    font-family: var(--serif);
+    font-size: var(--t-xl);
+    font-weight: 600;
+    line-height: 1.2;
+  }
+
+  .detalii {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: var(--s-4);
+    margin: 0;
+    padding: 0 var(--s-5) var(--s-5);
+  }
+  .detalii dt {
+    font-size: var(--t-xs);
+    color: var(--ink-muted);
+  }
+  .detalii dd {
+    margin: 0;
+    font-size: var(--t-sm);
+    font-weight: 500;
+    overflow-wrap: anywhere;
+  }
+
+  .descriere {
+    font-size: var(--t-sm);
+    color: var(--ink-soft);
+    white-space: pre-wrap;
+    text-wrap: pretty;
+    max-width: 72ch;
+  }
+
+  .teme {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+  .teme li {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--s-4);
+    padding: var(--s-3) var(--s-5);
+    border-bottom: 1px solid var(--border);
+    font-size: var(--t-sm);
+  }
+  .teme li:last-child {
+    border-bottom: 0;
+  }
+  .teme a {
+    color: inherit;
+    text-decoration: none;
+  }
+  .teme a:hover {
+    color: var(--red);
+  }
+</style>

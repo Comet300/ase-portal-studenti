@@ -1,33 +1,47 @@
 ---
+import Avatar from '../../components/Avatar.astro'
 import ProfesorLayout from '../../layouts/ProfesorLayout.astro'
-import { initials } from '../../lib/auth'
+import { INVITATION_WINDOW_DAYS, teacherInvitations } from '../../lib/lifecycle'
 import {
   STATUS_CLASS,
   MILESTONE_LABELS,
+  INVITATION_LABELS,
   STATUS_LABELS,
   timeAgo,
   teacherRequests,
   formatDate,
   requestMilestones,
   formatTime,
+  studentDirectory,
+  teacherSeats,
   teacherSlots,
   supervisedStudents,
   teacherTopics,
 } from '../../lib/repo'
+import { LANGUAGE_LABELS, groupLabel, languageLabel } from '../../lib/years'
 
 const u = Astro.locals.user!
 const sectiune = Astro.url.searchParams.get('sectiune') ?? 'cereri'
 const studentDeschis = Astro.url.searchParams.get('student')
 
-const [toateCererile, studenti, teme, sloturi] = await Promise.all([
-  teacherRequests(u.id),
-  supervisedStudents(u.id),
-  teacherTopics(u.id),
-  teacherSlots(u.id),
-])
+const [toateCererile, studenti, teme, sloturi, locuri, invitatii, directorStudenti] =
+  await Promise.all([
+    teacherRequests(u.id),
+    supervisedStudents(u.id),
+    teacherTopics(u.id),
+    teacherSlots(u.id),
+    teacherSeats(u.id),
+    teacherInvitations(u.id),
+    studentDirectory(),
+  ])
 
 const inAsteptare = toateCererile.filter((c) => c.status === 'pending')
 const decise = toateCererile.filter((c) => c.status !== 'pending')
+
+// Doar studenții care nu au încă un coordonator pot primi o propunere; ceilalți
+// nici nu apar în selector, ca invitația să nu poată fi trimisă degeaba.
+const invitabili = directorStudenti.filter((s) => s.request_status !== 'approved')
+const invitatiiDeschise = invitatii.filter((i) => i.status === 'pending')
 
 // Cronologia se încarcă pentru studentul deschis; implicit, primul coordonat.
 const timelineRequest = studentDeschis
@@ -39,11 +53,29 @@ const sectiuni = [
   { cheie: 'cereri', text: 'Cereri', contor: inAsteptare.length },
   { cheie: 'studenti', text: 'Studenți coordonați', contor: studenti.length },
   { cheie: 'cronologie', text: 'Cronologie', contor: null },
+  { cheie: 'invitatii', text: 'Propuneri trimise', contor: invitatiiDeschise.length },
   { cheie: 'teme', text: 'Teme propuse', contor: teme.filter((t) => t.is_active).length },
   { cheie: 'consultatii', text: 'Consultații', contor: sloturi.filter((s) => !s.is_cancelled).length },
 ]
 
 const caleCurenta = `/profesor/studenti?sectiune=${sectiune}`
+const azi = new Date().toISOString().slice(0, 10)
+const cuStudent = Astro.url.searchParams.get('cu') ?? ''
+
+/**
+ * How long is left to answer a request.
+ *
+ * A pending request is not open-ended: after a week without a decision the
+ * portal refuses it on the coordinator's behalf. The queue has to say so before
+ * that happens, and say it louder in the last two days.
+ */
+function deadline(expiresAt: string | null | undefined) {
+  if (!expiresAt) return null
+  const days = Math.ceil((new Date(expiresAt).getTime() - Date.now()) / 86_400_000)
+  const text =
+    days <= 0 ? 'expiră astăzi' : days === 1 ? '1 zi rămasă' : `${days} zile rămase`
+  return { days, text, clasa: days <= 2 ? 'badge--respinsa' : 'badge--asteptare' }
+}
 ---
 
 <ProfesorLayout
@@ -87,49 +119,63 @@ const caleCurenta = `/profesor/studenti?sectiune=${sectiune}`
             </div>
           ) : (
             <ul class="cereri">
-              {inAsteptare.map((c) => (
-                <li class="cerere">
-                  <div class="cerere__cap">
-                    <span class="avatar" aria-hidden="true">{initials(c.student_name)}</span>
-                    <div class="cerere__ident">
-                      <strong>{c.student_name}</strong>
-                      <span class="muted">
-                        {c.student_number} · {c.program === 'master' ? 'Master' : 'Licență'} ·{' '}
-                        {c.specialization}
+              {inAsteptare.map((c) => {
+                const termen = deadline(c.expires_at)
+                return (
+                  <li class="cerere">
+                    <div class="cerere__cap">
+                      <Avatar name={c.student_name} />
+                      <div class="cerere__ident">
+                        <strong>{c.student_name}</strong>
+                        <span class="muted">
+                          {c.student_number} · {groupLabel(c)}
+                        </span>
+                      </div>
+                      <span class="cerere__termen">
+                        <span class="muted">depusă {timeAgo(c.submitted_at)}</span>
+                        {termen && (
+                          <span class:list={['badge', termen.clasa]}>{termen.text}</span>
+                        )}
                       </span>
                     </div>
-                    <span class="muted" style="font-size:var(--t-xs)">
-                      depusă {timeAgo(c.submitted_at)}
-                    </span>
-                  </div>
 
-                  <h3 class="cerere__titlu">{c.title_ro}</h3>
-                  {c.title_en && <p class="cerere__titlu-en">{c.title_en}</p>}
-                  <p class="cerere__scop">{c.objectives}</p>
+                    <h3 class="cerere__titlu">{c.title_ro}</h3>
+                    {c.title_en && <p class="cerere__titlu-en">{c.title_en}</p>}
+                    <p class="cerere__scop">{c.objectives}</p>
 
-                  <div class="cerere__actiuni">
-                    <form method="POST" action="/api/cereri/decizie">
-                      <input type="hidden" name="cerere_id" value={c.id} />
-                      <input type="hidden" name="decizie" value="approved" />
-                      <input type="hidden" name="redirect" value={caleCurenta} />
-                      <button class="btn btn--primary btn--sm" type="submit">
+                    {c.motivation && (
+                      <div class="cerere__motivatie">
+                        <strong>De ce a ales această temă</strong>
+                        <p>{c.motivation}</p>
+                      </div>
+                    )}
+
+                    <div class="cerere__actiuni">
+                      <button
+                        class="btn btn--primary btn--sm"
+                        type="button"
+                        data-decizie="approved"
+                        data-cerere={c.id}
+                        data-nume={c.student_name}
+                      >
                         Acceptă coordonarea
                       </button>
-                    </form>
-                    <button
-                      class="btn btn--danger btn--sm"
-                      type="button"
-                      data-respinge={c.id}
-                      data-nume={c.student_name}
-                    >
-                      Respinge
-                    </button>
-                    <a class="btn btn--ghost btn--sm" href={`mailto:${c.student_email}`}>
-                      Scrie pe email
-                    </a>
-                  </div>
-                </li>
-              ))}
+                      <button
+                        class="btn btn--danger btn--sm"
+                        type="button"
+                        data-decizie="rejected"
+                        data-cerere={c.id}
+                        data-nume={c.student_name}
+                      >
+                        Respinge
+                      </button>
+                      <a class="btn btn--ghost btn--sm" href={`/profil/${c.student_id}`}>
+                        Vezi profilul
+                      </a>
+                    </div>
+                  </li>
+                )
+              })}
             </ul>
           )}
         </section>
@@ -148,6 +194,7 @@ const caleCurenta = `/profesor/studenti?sectiune=${sectiune}`
                     <th>Titlul lucrării</th>
                     <th>Stare</th>
                     <th>Decisă</th>
+                    <th><span class="visually-hidden">Document</span></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -162,6 +209,13 @@ const caleCurenta = `/profesor/studenti?sectiune=${sectiune}`
                         </span>
                       </td>
                       <td class="muted">{formatDate(c.decided_at)}</td>
+                      <td style="text-align:right">
+                        {c.status === 'approved' && (
+                          <a class="btn btn--ghost btn--sm" href={`/documente/cerere/${c.id}`} target="_blank">
+                            Cerere tipăribilă
+                          </a>
+                        )}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -180,7 +234,9 @@ const caleCurenta = `/profesor/studenti?sectiune=${sectiune}`
         <div class="panel__header">
           <h2 class="section-title">Studenți coordonați</h2>
           <span class="muted" style="font-size:var(--t-sm)">
-            {studenti.length} din {(u.bachelor_capacity ?? 0) + (u.master_capacity ?? 0)} locuri
+            {locuri.total_taken} din {locuri.total_seats} locuri · licență{' '}
+            {locuri.bachelor_taken}/{locuri.bachelor_seats} · master{' '}
+            {locuri.master_taken}/{locuri.master_seats}
           </span>
         </div>
 
@@ -213,11 +269,11 @@ const caleCurenta = `/profesor/studenti?sectiune=${sectiune}`
                     <tr>
                       <td>
                         <div class="row" style="gap:var(--s-3)">
-                          <span class="avatar" aria-hidden="true">{initials(s.student_name)}</span>
+                          <Avatar name={s.student_name} href={`/profil/${s.student_id}`} />
                           <div class="stack stack--tight" style="gap:0">
                             <strong>{s.student_name}</strong>
                             <span class="muted" style="font-size:var(--t-xs)">
-                              {s.student_number} · {s.program === 'master' ? 'Master' : 'Licență'}
+                              {s.student_number} · {groupLabel(s)}
                             </span>
                           </div>
                         </div>
@@ -250,6 +306,12 @@ const caleCurenta = `/profesor/studenti?sectiune=${sectiune}`
                           </a>
                           <a class="btn btn--ghost btn--sm" href={`/profesor/mesaje?student=${s.student_id}`}>
                             Mesaje
+                          </a>
+                          <a
+                            class="btn btn--ghost btn--sm"
+                            href={`/profesor/studenti?sectiune=consultatii&cu=${s.student_id}`}
+                          >
+                            Programează
                           </a>
                         </div>
                       </td>
@@ -435,6 +497,144 @@ const caleCurenta = `/profesor/studenti?sectiune=${sectiune}`
     )
   }
 
+  {/* --------------------------------------------------------- invitații */}
+  {
+    sectiune === 'invitatii' && (
+      <div class="stack">
+        <section class="panel">
+          <div class="panel__header">
+            <h2 class="section-title">Propune coordonarea unui student</h2>
+            <span class="muted" style="font-size:var(--t-sm)">
+              {locuri.free} {locuri.free === 1 ? 'loc liber' : 'locuri libere'}
+            </span>
+          </div>
+
+          {locuri.free === 0 ? (
+            <div class="empty">
+              <p class="empty__title">Nu mai ai locuri libere</p>
+              <p class="empty__text">
+                Nu poți invita un student cât timp toate locurile sunt ocupate. Cere locuri
+                suplimentare directorului de departament din pagina Arhivă & Profil.
+              </p>
+              <a class="btn btn--secondary btn--sm" href="/profesor/arhiva">Cere locuri</a>
+            </div>
+          ) : (
+            <form method="POST" action="/api/invitatii" class="panel__body stack">
+              <input type="hidden" name="actiune" value="trimite" />
+
+              <div class="row row--wrap" style="gap:var(--s-3)">
+                <div class="field" style="flex:2;min-width:260px">
+                  <label class="label" for="student_id">Student</label>
+                  <select class="select" id="student_id" name="student_id" required>
+                    <option value="">Alege un student fără coordonator…</option>
+                    {invitabili.map((s) => (
+                      <option value={s.id}>
+                        {s.name} — {groupLabel(s)}
+                        {s.request_status === 'pending' ? ' · are o cerere depusă' : ''}
+                      </option>
+                    ))}
+                  </select>
+                  <span class="hint">
+                    Apar doar studenții care nu au încă un coordonator confirmat.
+                  </span>
+                </div>
+                <div class="field" style="flex:2;min-width:240px">
+                  <label class="label" for="tema_id">Temă propusă <span class="muted">(opțional)</span></label>
+                  <select class="select" id="tema_id" name="tema_id">
+                    <option value="">Fără temă anume</option>
+                    {teme
+                      .filter((t) => t.is_active)
+                      .map((t) => (
+                        <option value={t.id}>{t.title}</option>
+                      ))}
+                  </select>
+                </div>
+              </div>
+
+              <div class="field">
+                <label class="label" for="mesaj">Mesajul propunerii</label>
+                <textarea
+                  class="textarea"
+                  id="mesaj"
+                  name="mesaj"
+                  rows="3"
+                  minlength="30"
+                  required
+                  placeholder="Spune-i de ce l-ai ales și ce temă ai în minte. Studentul decide pe baza acestui mesaj."
+                />
+                <span class="hint">
+                  Studentul primește propunerea pe email și în conversație. Expiră după{' '}
+                  {INVITATION_WINDOW_DAYS} de zile.
+                </span>
+              </div>
+
+              <div class="row" style="justify-content:flex-end">
+                <button class="btn btn--primary" type="submit">Trimite propunerea</button>
+              </div>
+            </form>
+          )}
+        </section>
+
+        <section class="panel">
+          <div class="panel__header">
+            <h2 class="section-title">Propuneri trimise</h2>
+          </div>
+
+          {invitatii.length === 0 ? (
+            <div class="empty">
+              <p class="empty__title">Nicio propunere trimisă</p>
+              <p class="empty__text">
+                Catalogul funcționează într-o singură direcție: studentul te caută. O propunere
+                pornește pairing-ul din partea ta, iar studentul tot el decide.
+              </p>
+            </div>
+          ) : (
+            <ul class="invitatii">
+              {invitatii.map((i) => (
+                <li>
+                  <div class="row row--between row--wrap" style="gap:var(--s-2)">
+                    <div class="row" style="gap:var(--s-3)">
+                      <Avatar name={i.student_name} size="xs" />
+                      <div class="stack stack--tight" style="gap:0">
+                        <strong style="font-size:var(--t-sm)">{i.student_name}</strong>
+                        <span class="muted" style="font-size:var(--t-xs)">
+                          {i.student_number} · trimisă {timeAgo(i.created_at)}
+                        </span>
+                      </div>
+                    </div>
+                    <span
+                      class:list={[
+                        'badge',
+                        i.status === 'accepted'
+                          ? 'badge--aprobata'
+                          : i.status === 'pending'
+                            ? 'badge--asteptare'
+                            : 'badge--respinsa',
+                      ]}
+                    >
+                      {INVITATION_LABELS[i.status]}
+                    </span>
+                  </div>
+
+                  {i.topic_title && (
+                    <p class="muted" style="font-size:var(--t-xs)">Temă propusă: {i.topic_title}</p>
+                  )}
+                  <p class="invitatii__mesaj">{i.message}</p>
+
+                  {i.response_reason && (
+                    <p class="reason">
+                      <strong>Motivul refuzului:</strong> {i.response_reason}
+                    </p>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      </div>
+    )
+  }
+
   {/* -------------------------------------------------------------- teme */}
   {
     sectiune === 'teme' && (
@@ -456,7 +656,10 @@ const caleCurenta = `/profesor/studenti?sectiune=${sectiune}`
             {teme.map((t) => (
               <li class:list={['tema', { 'is-inactiva': !t.is_active }]}>
                 <div class="tema__cap">
-                  <span class="badge badge--info">{t.level === 'master' ? 'Master' : 'Licență'}</span>
+                  <span class="badge badge--info">
+                    {t.level === 'master' ? 'Master' : 'Licență'}
+                    {t.language !== 'ro' ? ` · ${languageLabel(t.language)}` : ''}
+                  </span>
                   <span class="muted numeric" style="font-size:var(--t-xs)">
                     {t.taken}/{t.seats} locuri
                   </span>
@@ -493,6 +696,15 @@ const caleCurenta = `/profesor/studenti?sectiune=${sectiune}`
                 <option value="master">Master</option>
               </select>
             </div>
+            <div class="field" style="flex:1;min-width:140px">
+              <label class="label" for="tema-limba">Limba lucrării</label>
+              <select class="select" id="tema-limba" name="limba">
+                {Object.entries(LANGUAGE_LABELS).map(([cod, text]) => (
+                  <option value={cod}>{text}</option>
+                ))}
+              </select>
+              <span class="hint">Tema apare doar studenților din programele cu această limbă.</span>
+            </div>
             <div class="field" style="flex:1;min-width:100px">
               <label class="label" for="tema-locuri">Locuri</label>
               <input class="input" id="tema-locuri" name="locuri" type="number" min="1" max="20" value="2" />
@@ -515,147 +727,323 @@ const caleCurenta = `/profesor/studenti?sectiune=${sectiune}`
   {/* -------------------------------------------------------- consultații */}
   {
     sectiune === 'consultatii' && (
-      <section class="panel" id="consultatii">
-        <div class="panel__header">
-          <h2 class="section-title">Program de consultații</h2>
-        </div>
+      <div class="stack" id="consultatii">
+        {/* Programarea cu un student anume vine prima: e acțiunea cerută cel mai
+            des, iar orele deschise sunt fondul pe care se așază. */}
+        <section class="panel">
+          <div class="panel__header">
+            <h2 class="section-title">Programează o consultație</h2>
+          </div>
 
-        {sloturi.length === 0 ? (
-          <div class="empty">
-            <p class="empty__title">Niciun interval publicat</p>
-            <p class="empty__text">
-              Publică intervale, iar studenții coordonați își pot rezerva singuri un loc. Primesc
-              automat invitație în calendar.
+          {studenti.length === 0 ? (
+            <div class="empty">
+              <p class="empty__title">Niciun student coordonat</p>
+              <p class="empty__text">
+                Poți programa o consultație doar cu studenții pe care îi coordonezi. Acceptă o
+                cerere și opțiunea devine disponibilă.
+              </p>
+            </div>
+          ) : (
+            <form method="POST" action="/api/sloturi" class="panel__body stack" id="form-programare">
+              <input type="hidden" name="actiune" value="programeaza" />
+
+              <div class="row row--wrap" style="gap:var(--s-3)">
+                <div class="field" style="flex:2;min-width:260px">
+                  <label class="label" for="prog-student">Cu cine</label>
+                  <select class="select" id="prog-student" name="student_id" required>
+                    <option value="">Alege un student coordonat…</option>
+                    {studenti.map((s) => (
+                      <option value={s.student_id} selected={s.student_id === cuStudent}>
+                        {s.student_name} — {s.title_ro}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div class="field" style="min-width:160px">
+                  <label class="label" for="prog-zi">Ziua</label>
+                  <input class="input" id="prog-zi" name="zi" type="date" min={azi} required />
+                </div>
+                <div class="field" style="min-width:100px">
+                  <label class="label" for="prog-ora">Ora</label>
+                  <input class="input" id="prog-ora" name="ora_start" type="number" min="7" max="21" value="14" />
+                </div>
+                <div class="field" style="min-width:110px">
+                  <label class="label" for="prog-durata">Durata</label>
+                  <select class="select" id="prog-durata" name="durata">
+                    <option value="1">1 oră</option>
+                    <option value="2">2 ore</option>
+                    <option value="3">3 ore</option>
+                  </select>
+                </div>
+              </div>
+
+              <div class="row row--wrap" style="gap:var(--s-3)">
+                <div class="field" style="min-width:150px">
+                  <label class="label" for="prog-mod">Unde</label>
+                  <select class="select" id="prog-mod" name="mod" data-mod>
+                    <option value="in_person">La facultate</option>
+                    <option value="online">Online</option>
+                  </select>
+                </div>
+                <div class="field" style="flex:2;min-width:260px" data-camp-locatie>
+                  <label class="label" for="prog-locatie">Clădirea, etajul și sala</label>
+                  <input class="input" id="prog-locatie" name="locatie" value={u.office ?? ''}
+                    placeholder="Clădirea Ion Angelescu, Piața Romană 6, etaj 2, sala 2203" />
+                </div>
+                <div class="field" style="flex:2;min-width:240px">
+                  <label class="label" for="prog-link">
+                    Link întâlnire <span class="muted" data-link-optional>(opțional)</span>
+                  </label>
+                  <input class="input" id="prog-link" name="link_online" type="url" placeholder="https://meet…" />
+                  <span class="hint">Se trimite în invitația de calendar, alături de adresă.</span>
+                </div>
+              </div>
+
+              <div class="field">
+                <label class="label" for="prog-subiect">Subiectul consultației <span class="muted">(opțional)</span></label>
+                <input class="input" id="prog-subiect" name="subiect"
+                  placeholder="Ex: discutăm metodologia și eșantionul" />
+              </div>
+
+              <div class="row" style="justify-content:flex-end">
+                <button class="btn btn--primary" type="submit">Programează și trimite invitația</button>
+              </div>
+            </form>
+          )}
+        </section>
+
+        <section class="panel">
+          <div class="panel__header">
+            <h2 class="section-title">Program de consultații</h2>
+            <span class="muted" style="font-size:var(--t-sm)">
+              {sloturi.filter((s) => !s.is_cancelled).length} intervale
+            </span>
+          </div>
+
+          {sloturi.length === 0 ? (
+            <div class="empty">
+              <p class="empty__title">Niciun interval publicat</p>
+              <p class="empty__text">
+                Publică intervale, iar studenții coordonați își pot rezerva singuri un loc. Primesc
+                automat invitație în calendar.
+              </p>
+            </div>
+          ) : (
+            <div class="table-wrap">
+              <table class="table">
+                <thead>
+                  <tr>
+                    <th>Data</th>
+                    <th>Interval</th>
+                    <th>Unde</th>
+                    <th>Rezervare</th>
+                    <th><span class="visually-hidden">Acțiuni</span></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {sloturi.map((s) => (
+                    <tr>
+                      <td>{formatDate(s.starts_at)}</td>
+                      <td class="numeric">
+                        {formatTime(s.starts_at)}–{formatTime(s.ends_at)}
+                      </td>
+                      <td>
+                        <div class="stack stack--tight" style="gap:0">
+                          <span>{s.mode === 'online' ? 'Online' : (s.location ?? 'Cabinet')}</span>
+                          {s.meeting_url && (
+                            <a href={s.meeting_url} class="muted" style="font-size:var(--t-xs)" target="_blank" rel="noopener">
+                              link întâlnire
+                            </a>
+                          )}
+                          {s.note && (
+                            <span class="muted" style="font-size:var(--t-xs)">{s.note}</span>
+                          )}
+                        </div>
+                      </td>
+                      <td>
+                        {s.is_cancelled ? (
+                          <span class="badge badge--respinsa">Anulat</span>
+                        ) : s.booked > 0 ? (
+                          <span class="badge badge--aprobata">{s.student_name}</span>
+                        ) : s.invited_name ? (
+                          <span class="badge badge--asteptare">rezervat pentru {s.invited_name}</span>
+                        ) : (
+                          <span class="muted">Liber</span>
+                        )}
+                      </td>
+                      <td style="text-align:right">
+                        {!s.is_cancelled && (
+                          <form method="POST" action="/api/sloturi">
+                            <input type="hidden" name="actiune" value="anuleaza" />
+                            <input type="hidden" name="slot_id" value={s.id} />
+                            <button class="btn btn--ghost btn--sm" type="submit">Anulează</button>
+                          </form>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          <div class="panel__footer">
+            <form method="POST" action="/api/sloturi" class="stack">
+              <input type="hidden" name="actiune" value="publica" />
+              <div class="row row--wrap" style="gap:var(--s-3);align-items:flex-end">
+                <div class="field" style="flex:1;min-width:160px">
+                  <label class="label" for="slot-zi">Ore deschise în ziua</label>
+                  <input class="input" id="slot-zi" name="zi" type="date" min={azi} required />
+                </div>
+                <div class="field" style="min-width:96px">
+                  <label class="label" for="slot-start">De la</label>
+                  <input class="input" id="slot-start" name="ora_start" type="number" min="7" max="21" value="14" />
+                </div>
+                <div class="field" style="min-width:96px">
+                  <label class="label" for="slot-final">Până la</label>
+                  <input class="input" id="slot-final" name="ora_final" type="number" min="8" max="22" value="16" />
+                </div>
+                <div class="field" style="min-width:150px">
+                  <label class="label" for="slot-mod">Unde</label>
+                  <select class="select" id="slot-mod" name="mod" data-mod>
+                    <option value="in_person">La facultate</option>
+                    <option value="online">Online</option>
+                  </select>
+                </div>
+              </div>
+
+              <div class="row row--wrap" style="gap:var(--s-3);align-items:flex-end">
+                <div class="field" style="flex:2;min-width:260px" data-camp-locatie>
+                  <label class="label" for="slot-locatie">Clădirea, etajul și sala</label>
+                  <input class="input" id="slot-locatie" name="locatie" value={u.office ?? ''}
+                    placeholder="Clădirea Ion Angelescu, Piața Romană 6, etaj 2, sala 2203" />
+                </div>
+                <div class="field" style="flex:2;min-width:240px">
+                  <label class="label" for="slot-link">
+                    Link întâlnire <span class="muted" data-link-optional>(opțional)</span>
+                  </label>
+                  <input class="input" id="slot-link" name="link_online" type="url" placeholder="https://meet…" />
+                </div>
+                <button class="btn btn--primary" type="submit">Publică intervalele</button>
+              </div>
+            </form>
+            <p class="hint" style="margin-top:var(--s-2)">
+              Se creează câte un interval de o oră. Studenții coordonați îl pot rezerva și primesc
+              invitație în calendar, cu adresa și linkul completate aici.
             </p>
           </div>
-        ) : (
-          <div class="table-wrap">
-            <table class="table">
-              <thead>
-                <tr>
-                  <th>Data</th>
-                  <th>Interval</th>
-                  <th>Mod</th>
-                  <th>Rezervare</th>
-                  <th><span class="visually-hidden">Acțiuni</span></th>
-                </tr>
-              </thead>
-              <tbody>
-                {sloturi.map((s) => (
-                  <tr>
-                    <td>{formatDate(s.starts_at)}</td>
-                    <td class="numeric">
-                      {formatTime(s.starts_at)}–{formatTime(s.ends_at)}
-                    </td>
-                    <td>{s.mode === 'online' ? 'Online' : (s.location ?? 'Cabinet')}</td>
-                    <td>
-                      {s.is_cancelled ? (
-                        <span class="badge badge--respinsa">Anulat</span>
-                      ) : s.booked > 0 ? (
-                        <span class="badge badge--aprobata">{s.student_name}</span>
-                      ) : (
-                        <span class="muted">Liber</span>
-                      )}
-                    </td>
-                    <td style="text-align:right">
-                      {!s.is_cancelled && (
-                        <form method="POST" action="/api/sloturi">
-                          <input type="hidden" name="actiune" value="anuleaza" />
-                          <input type="hidden" name="slot_id" value={s.id} />
-                          <button class="btn btn--ghost btn--sm" type="submit">Anulează</button>
-                        </form>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-
-        <div class="panel__footer">
-          <form method="POST" action="/api/sloturi" class="row row--wrap" style="gap:var(--s-3);align-items:flex-end">
-            <input type="hidden" name="actiune" value="publica" />
-            <div class="field" style="flex:1;min-width:160px">
-              <label class="label" for="slot-zi">Ziua</label>
-              <input class="input" id="slot-zi" name="zi" type="date" required />
-            </div>
-            <div class="field" style="min-width:96px">
-              <label class="label" for="slot-start">De la</label>
-              <input class="input" id="slot-start" name="ora_start" type="number" min="7" max="21" value="14" />
-            </div>
-            <div class="field" style="min-width:96px">
-              <label class="label" for="slot-final">Până la</label>
-              <input class="input" id="slot-final" name="ora_final" type="number" min="8" max="22" value="16" />
-            </div>
-            <div class="field" style="min-width:130px">
-              <label class="label" for="slot-mod">Mod</label>
-              <select class="select" id="slot-mod" name="mod">
-                <option value="in_person">La cabinet</option>
-                <option value="online">Online</option>
-              </select>
-            </div>
-            <div class="field" style="flex:2;min-width:200px">
-              <label class="label" for="slot-locatie">Sala sau linkul întâlnirii</label>
-              <input class="input" id="slot-locatie" name="location" value={u.office ?? ''}
-                placeholder="Corp Ion Angelescu, sala…" />
-            </div>
-            <input type="hidden" name="link_online" value="" />
-            <button class="btn btn--primary" type="submit">Publică intervalele</button>
-          </form>
-          <p class="hint" style="margin-top:var(--s-2)">
-            Se creează câte un interval de o oră. Studenții coordonați îl pot rezerva și primesc
-            invitație în calendar.
-          </p>
-        </div>
-      </section>
+        </section>
+      </div>
     )
   }
 
-  {/* Respingerea cere un motiv — studentul trebuie să știe ce să corecteze. */}
-  <dialog id="dialog-respinge">
+  {/* Ambele decizii trec prin aceeași fereastră, pentru că ambele merită un
+      mesaj: o respingere fără motiv lasă studentul să ghicească, iar o acceptare
+      fără un cuvânt e o schimbare de stare acolo unde se aștepta o propoziție. */}
+  <dialog id="dialog-decizie">
     <form method="POST" action="/api/cereri/decizie" class="dialog">
-      <h2 class="section-title">Respinge cererea</h2>
-      <p class="muted" style="font-size:var(--t-sm)">
-        Motivul ajunge la <strong id="dialog-nume">student</strong> prin email și rămâne vizibil în
-        portal. Scrie ce ar trebui schimbat.
+      <h2 class="section-title" id="dialog-titlu">Decizia ta</h2>
+      <p class="muted" style="font-size:var(--t-sm)" id="dialog-explicatie">
+        Mesajul ajunge la student prin email și rămâne în conversație.
       </p>
+
       <input type="hidden" name="cerere_id" id="dialog-cerere" />
-      <input type="hidden" name="decizie" value="rejected" />
+      <input type="hidden" name="decizie" id="dialog-decizie-camp" />
       <input type="hidden" name="redirect" value={caleCurenta} />
+
       <div class="field">
-        <label class="label" for="motiv">Motivul respingerii</label>
-        <textarea
-          class="textarea"
-          id="motiv"
-          name="motiv"
-          required
-          minlength="10"
-          placeholder="Ex: Tema se suprapune cu o lucrare deja alocată. Te rog reformulează direcția de cercetare."
-        ></textarea>
+        <label class="label" for="motiv" id="dialog-eticheta">Mesaj pentru student</label>
+        <textarea class="textarea" id="motiv" name="motiv" rows="4"></textarea>
+        <span class="hint" id="dialog-hint" />
       </div>
+
       <div class="row" style="justify-content:flex-end;gap:var(--s-2)">
         <button class="btn btn--secondary" type="button" data-inchide>Renunță</button>
-        <button class="btn btn--primary" type="submit">Trimite respingerea</button>
+        <button class="btn btn--primary" type="submit" id="dialog-trimite">Trimite</button>
       </div>
     </form>
   </dialog>
 </ProfesorLayout>
 
 <script>
-  const dialog = document.getElementById('dialog-respinge') as HTMLDialogElement | null
+  const dialog = document.getElementById('dialog-decizie') as HTMLDialogElement | null
+  const camp = document.getElementById('dialog-cerere') as HTMLInputElement | null
+  const decizieCamp = document.getElementById('dialog-decizie-camp') as HTMLInputElement | null
+  const textarea = document.getElementById('motiv') as HTMLTextAreaElement | null
 
-  document.querySelectorAll<HTMLButtonElement>('[data-respinge]').forEach((b) => {
+  const COPY = {
+    approved: {
+      titlu: 'Acceptă coordonarea',
+      buton: 'Acceptă și trimite',
+      eticheta: 'Mesaj pentru student (opțional)',
+      hint: 'Apare în emailul de confirmare și în conversație. Un rând despre ce urmează ajută mai mult decât o notificare goală.',
+      placeholder: 'Ex: Ne vedem la prima consultație de marți ca să stabilim bibliografia.',
+      obligatoriu: false,
+    },
+    rejected: {
+      titlu: 'Respinge cererea',
+      buton: 'Trimite respingerea',
+      eticheta: 'Motivul respingerii',
+      hint: 'Minimum 10 caractere. Studentul trebuie să știe ce ar trebui schimbat.',
+      placeholder: 'Ex: Tema se suprapune cu o lucrare deja alocată. Te rog reformulează direcția de cercetare.',
+      obligatoriu: true,
+    },
+  }
+
+  document.querySelectorAll<HTMLButtonElement>('[data-decizie]').forEach((b) => {
     b.addEventListener('click', () => {
-      const camp = document.getElementById('dialog-cerere') as HTMLInputElement | null
-      const nume = document.getElementById('dialog-nume')
-      if (camp) camp.value = b.dataset.respinge ?? ''
-      if (nume) nume.textContent = b.dataset.name ?? 'student'
+      const decizie = b.dataset.decizie === 'approved' ? 'approved' : 'rejected'
+      const copy = COPY[decizie]
+
+      if (camp) camp.value = b.dataset.cerere ?? ''
+      if (decizieCamp) decizieCamp.value = decizie
+
+      const set = (id: string, text: string) => {
+        const el = document.getElementById(id)
+        if (el) el.textContent = text
+      }
+      set('dialog-titlu', copy.titlu)
+      set('dialog-trimite', copy.buton)
+      set('dialog-eticheta', copy.eticheta)
+      set('dialog-hint', copy.hint)
+      set(
+        'dialog-explicatie',
+        `Mesajul ajunge la ${b.dataset.nume ?? 'student'} prin email și rămâne în conversație.`,
+      )
+
+      if (textarea) {
+        textarea.value = ''
+        textarea.placeholder = copy.placeholder
+        textarea.required = copy.obligatoriu
+        textarea.minLength = copy.obligatoriu ? 10 : 0
+      }
+
       dialog?.showModal()
     })
   })
 
   dialog?.querySelector('[data-inchide]')?.addEventListener('click', () => dialog.close())
+
+  // Un interval online are nevoie de link, unul la facultate de adresă. Câmpul
+  // irelevant dispare în loc să rămână gol și obligatoriu.
+  document.querySelectorAll<HTMLFormElement>('form').forEach((form) => {
+    const mod = form.querySelector<HTMLSelectElement>('[data-mod]')
+    if (!mod) return
+
+    const campLocatie = form.querySelector<HTMLElement>('[data-camp-locatie]')
+    const link = form.querySelector<HTMLInputElement>('input[name="link_online"]')
+    const optional = form.querySelector<HTMLElement>('[data-link-optional]')
+
+    const sync = () => {
+      const online = mod.value === 'online'
+      if (campLocatie) campLocatie.hidden = online
+      if (link) link.required = online
+      if (optional) optional.hidden = online
+    }
+
+    mod.addEventListener('change', sync)
+    sync()
+  })
 </script>
 
 <style>
@@ -902,7 +1290,7 @@ const caleCurenta = `/profesor/studenti?sectiune=${sectiune}`
     padding: var(--s-4) var(--s-3) var(--s-5);
   }
 
-  .topic_count {
+  .teme {
     list-style: none;
     margin: 0;
     padding: var(--s-5);
@@ -941,5 +1329,68 @@ const caleCurenta = `/profesor/studenti?sectiune=${sectiune}`
     flex-direction: column;
     gap: var(--s-4);
     padding: var(--s-5);
+  }
+
+  .cerere__termen {
+    display: flex;
+    align-items: center;
+    gap: var(--s-2);
+    font-size: var(--t-xs);
+    flex: none;
+  }
+
+  /* Motivația e text scris de student despre student: stă separat de obiective,
+     care descriu lucrarea. */
+  .cerere__motivatie {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-1);
+    padding: var(--s-3) var(--s-4);
+    border-left: 2px solid var(--border-strong);
+    background: var(--surface-sunken);
+    border-radius: 0 var(--r-md) var(--r-md) 0;
+    max-width: 78ch;
+  }
+  .cerere__motivatie strong {
+    font-size: var(--t-xs);
+    color: var(--ink-muted);
+    font-weight: 600;
+  }
+  .cerere__motivatie p {
+    font-size: var(--t-sm);
+    color: var(--ink-soft);
+    text-wrap: pretty;
+  }
+
+  .invitatii {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+  .invitatii li {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-2);
+    padding: var(--s-4) var(--s-5);
+    border-bottom: 1px solid var(--border);
+  }
+  .invitatii li:last-child {
+    border-bottom: 0;
+  }
+
+  .invitatii__mesaj {
+    font-size: var(--t-sm);
+    color: var(--ink-soft);
+    white-space: pre-wrap;
+    text-wrap: pretty;
+    max-width: 78ch;
+  }
+
+  .reason {
+    padding: var(--s-3);
+    background: var(--danger-tint);
+    border-radius: var(--r-md);
+    font-size: var(--t-sm);
+    text-wrap: pretty;
   }
 </style>

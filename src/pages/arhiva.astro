@@ -1,0 +1,216 @@
+---
+import StudentLayout from '../layouts/StudentLayout.astro'
+import { archiveRows, formatDate } from '../lib/repo'
+import { LEVEL_LABELS, allYears, languageLabel, levelLabel } from '../lib/years'
+
+/**
+ * The public archive.
+ *
+ * Open to everyone signed in, students included: knowing what was written last
+ * year, and by whom, under which coordinator, is how a student picks a direction
+ * — and until now that knowledge lived in a spreadsheet three people had.
+ *
+ * Two sources read as one list. Sessions the portal ran produce their own rows;
+ * sessions before it existed are typed in by the head of department. The
+ * provenance is shown, but it does not split the table.
+ */
+
+const years = await allYears()
+const requested = Astro.url.searchParams.get('an') ?? ''
+const year =
+  years.find((y) => y.id === requested) ?? years.find((y) => !y.is_current) ?? years[0]
+
+const rows = year ? await archiveRows(year.id) : []
+const search = (Astro.url.searchParams.get('q') ?? '').trim().toLowerCase()
+
+const filtered = search
+  ? rows.filter((r) =>
+      `${r.student_name} ${r.teacher_name} ${r.title_ro} ${r.programme ?? ''}`
+        .toLowerCase()
+        .includes(search),
+    )
+  : rows
+
+const byTeacher = new Map<string, typeof filtered>()
+for (const r of filtered) {
+  const list = byTeacher.get(r.teacher_name) ?? []
+  list.push(r)
+  byTeacher.set(r.teacher_name, list)
+}
+const grouped = [...byTeacher.entries()].sort((a, b) => a[0].localeCompare(b[0], 'ro'))
+
+const levels = {
+  bachelor: filtered.filter((r) => r.level === 'bachelor').length,
+  master: filtered.filter((r) => r.level === 'master').length,
+}
+---
+
+<StudentLayout
+  title="Arhivă"
+  description="Lucrările de finalizare a studiilor din sesiunile anterioare, cu coordonatorii lor"
+  active="arhiva"
+>
+  <div class="container stack stack--loose">
+    <header class="stack stack--tight">
+      <h1 class="page-title">Arhiva sesiunilor</h1>
+      <p class="page-lede">
+        Ce s-a scris în sesiunile anterioare și sub coordonarea cui. Folosește-o ca să vezi ce
+        direcții a coordonat efectiv un cadru didactic, înainte să îi scrii.
+      </p>
+    </header>
+
+    <form method="GET" class="panel">
+      <div class="panel__body row row--wrap" style="gap:var(--s-4);align-items:flex-end">
+        <div class="field" style="min-width:200px">
+          <label class="label" for="an">An universitar</label>
+          <select class="select" id="an" name="an">
+            {
+              years.map((y) => (
+                <option value={y.id} selected={y.id === year?.id}>
+                  {y.label}
+                  {y.is_current ? ' · în curs' : ''}
+                </option>
+              ))
+            }
+          </select>
+        </div>
+        <div class="field" style="flex:2;min-width:240px">
+          <label class="label" for="q">Caută</label>
+          <input class="input" id="q" name="q" type="search" value={search}
+            placeholder="Nume, coordonator, titlu sau specializare…" />
+        </div>
+        <button class="btn btn--secondary" type="submit">Caută</button>
+      </div>
+    </form>
+
+    <div class="grid-auto">
+      <div class="metric">
+        <span class="metric__value numeric">{filtered.length}</span>
+        <span class="metric__label">lucrări în {year?.label}</span>
+      </div>
+      <div class="metric">
+        <span class="metric__value numeric">{levels.bachelor}</span>
+        <span class="metric__label">{LEVEL_LABELS.bachelor.toLowerCase()}</span>
+      </div>
+      <div class="metric">
+        <span class="metric__value numeric">{levels.master}</span>
+        <span class="metric__label">{LEVEL_LABELS.master.toLowerCase()}</span>
+      </div>
+      <div class="metric">
+        <span class="metric__value numeric">{grouped.length}</span>
+        <span class="metric__label">coordonatori</span>
+      </div>
+    </div>
+
+    {
+      filtered.length === 0 ? (
+        <section class="panel">
+          <div class="empty">
+            <p class="empty__title">
+              {search ? 'Nimic nu corespunde căutării' : `Nicio înregistrare pentru ${year?.label}`}
+            </p>
+            <p class="empty__text">
+              {search
+                ? 'Încearcă alt cuvânt-cheie sau alt an universitar.'
+                : year?.is_current
+                  ? 'Sesiunea este în curs. Coordonările confirmate apar aici pe măsură ce sunt aprobate.'
+                  : 'Pentru acest an nu au fost încă introduse date. Directorul de departament le poate importa.'}
+            </p>
+          </div>
+        </section>
+      ) : (
+        grouped.map(([teacher, list]) => (
+          <section class="panel">
+            <div class="panel__header">
+              <h2 class="section-title">{teacher}</h2>
+              <span class="muted" style="font-size:var(--t-sm)">
+                {list.length} {list.length === 1 ? 'lucrare' : 'lucrări'}
+              </span>
+            </div>
+            <ul class="lucrari">
+              {list.map((r) => (
+                <li>
+                  <div class="stack stack--tight" style="gap:2px">
+                    <strong class="lucrari__titlu">{r.title_ro}</strong>
+                    <span class="muted" style="font-size:var(--t-xs)">
+                      {r.student_name}
+                      {r.student_number ? ` · ${r.student_number}` : ''}
+                      {r.programme ? ` · ${r.programme}` : ''}
+                      {r.level ? ` · ${levelLabel(r.level).toLowerCase()}` : ''}
+                      {r.language && r.language !== 'ro'
+                        ? ` · ${languageLabel(r.language).toLowerCase()}`
+                        : ''}
+                    </span>
+                  </div>
+                  <span class="lucrari__meta">
+                    {r.defended_on && (
+                      <span class="muted" style="font-size:var(--t-xs)">
+                        {formatDate(r.defended_on)}
+                      </span>
+                    )}
+                    {r.source === 'import' && (
+                      <span class="badge badge--ciorna" title="Introdusă din evidența facultății">
+                        din evidență
+                      </span>
+                    )}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </section>
+        ))
+      )
+    }
+  </div>
+</StudentLayout>
+
+<style>
+  .metric {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-1);
+    padding: var(--s-4);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--r-lg);
+  }
+  .metric__value {
+    font-size: var(--t-2xl);
+    font-weight: 600;
+    line-height: 1.15;
+  }
+  .metric__label {
+    font-size: var(--t-sm);
+    color: var(--ink-soft);
+  }
+
+  .lucrari {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+  .lucrari li {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--s-4);
+    padding: var(--s-3) var(--s-5);
+    border-bottom: 1px solid var(--border);
+  }
+  .lucrari li:last-child {
+    border-bottom: 0;
+  }
+
+  .lucrari__titlu {
+    font-size: var(--t-sm);
+    font-weight: 500;
+    text-wrap: pretty;
+  }
+
+  .lucrari__meta {
+    display: flex;
+    align-items: center;
+    gap: var(--s-2);
+    flex: none;
+  }
+</style>

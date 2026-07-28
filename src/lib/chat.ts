@@ -16,6 +16,7 @@ export interface Conversation {
   peer_id: string
   peer_name: string
   peer_detail: string | null
+  peer_avatar: string | null
   last_message: string | null
   unread: number
 }
@@ -24,6 +25,9 @@ export interface Message {
   id: string
   sender_id: string
   body: string
+  /** `event` messages are things the portal did, not things a person typed. */
+  kind: 'text' | 'event'
+  event_type: string | null
   created_at: string
   read_at: string | null
   sender_name: string
@@ -41,6 +45,7 @@ export function myConversations(userId: string, asStudent: boolean) {
             peer.id   AS peer_id,
             peer.name AS peer_name,
             COALESCE(peer.academic_title, peer.student_number) AS peer_detail,
+            peer.avatar_path AS peer_avatar,
             (SELECT m.body FROM messages m WHERE m.conversation_id = c.id
               ORDER BY m.created_at DESC LIMIT 1) AS last_message,
             (SELECT count(*)::int FROM messages m
@@ -60,6 +65,7 @@ export function myConversation(userId: string, conversationId: string) {
             peer.id   AS peer_id,
             peer.name AS peer_name,
             COALESCE(peer.academic_title, peer.student_number) AS peer_detail,
+            peer.avatar_path AS peer_avatar,
             NULL::text AS last_message,
             0 AS unread
        FROM conversations c
@@ -72,7 +78,7 @@ export function myConversation(userId: string, conversationId: string) {
 
 export function conversationMessages(userId: string, conversationId: string) {
   return query<Message>(
-    `SELECT m.id, m.sender_id, m.body, m.created_at, m.read_at,
+    `SELECT m.id, m.sender_id, m.body, m.kind, m.event_type, m.created_at, m.read_at,
             u.name AS sender_name,
             f.id AS file_id, f.original_name AS file_name
        FROM messages m
@@ -100,6 +106,49 @@ export function markRead(userId: string, conversationId: string) {
             )`,
     [userId, conversationId],
   )
+}
+
+/**
+ * Records something the portal did in the pair's thread.
+ *
+ * A decision reaches the student twice — by email, and here — because the thread
+ * is where they will look for it a month later. It is stored as `kind = 'event'`
+ * so the chat can render it as a record rather than as the coordinator typing.
+ */
+export async function postEvent(e: {
+  studentId: string
+  teacherId: string
+  /** Whose name the event is attributed to; the actor, not the reader. */
+  senderId: string
+  eventType: string
+  body: string
+  /** Open the thread if the pair has none yet. Off for events that may precede one. */
+  createConversation?: boolean
+}): Promise<string | null> {
+  const conversation = e.createConversation
+    ? await queryOne<{ id: string }>(
+        `INSERT INTO conversations (student_id, teacher_id, last_message_at)
+         VALUES ($1, $2, now())
+         ON CONFLICT (student_id, teacher_id)
+         DO UPDATE SET last_message_at = now()
+         RETURNING id`,
+        [e.studentId, e.teacherId],
+      )
+    : await queryOne<{ id: string }>(
+        `SELECT id FROM conversations WHERE student_id = $1 AND teacher_id = $2`,
+        [e.studentId, e.teacherId],
+      )
+
+  if (!conversation) return null
+
+  await execute(
+    `INSERT INTO messages (conversation_id, sender_id, body, kind, event_type)
+     VALUES ($1, $2, $3, 'event', $4)`,
+    [conversation.id, e.senderId, e.body, e.eventType],
+  )
+  await execute(`UPDATE conversations SET last_message_at = now() WHERE id = $1`, [conversation.id])
+
+  return conversation.id
 }
 
 /** Opens (or returns) the thread with the supervisor who approved the request. */

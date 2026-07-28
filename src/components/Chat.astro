@@ -1,7 +1,32 @@
 ---
-import { initials } from '../lib/auth'
+import Avatar from './Avatar.astro'
 import type { Conversation, Message } from '../lib/chat'
 import { formatTime, shortMonth, timeAgo } from '../lib/repo'
+
+/**
+ * Events are things the portal did — a decision, an invitation, a scheduled
+ * consultation. They live in the thread because that is where someone will look
+ * for them a month later, but they must never read as the other person typing:
+ * full width, centred, marked, and never in the "mine" colour.
+ */
+const EVENT_LABELS: Record<string, string> = {
+  request_approved: 'Cerere aprobată',
+  request_rejected: 'Cerere respinsă',
+  request_expired: 'Cerere expirată',
+  invitation_sent: 'Propunere de coordonare',
+  invitation_accepted: 'Propunere acceptată',
+  invitation_declined: 'Propunere refuzată',
+  consultation_scheduled: 'Consultație programată',
+  seats_granted: 'Locuri alocate',
+}
+
+const EVENT_TONE: Record<string, string> = {
+  request_approved: 'is-bine',
+  invitation_accepted: 'is-bine',
+  request_rejected: 'is-rau',
+  request_expired: 'is-rau',
+  invitation_declined: 'is-rau',
+}
 
 interface Props {
   conversations: Conversation[]
@@ -40,7 +65,7 @@ for (const m of messages) {
           {conversations.map((c) => (
             <li>
               <a href={`${base}?conversatie=${c.id}`} class:list={['thread', { 'is-active': active?.id === c.id }]}>
-                <span class="avatar" aria-hidden="true">{initials(c.peer_name)}</span>
+                <Avatar name={c.peer_name} src={c.peer_avatar} size="md" />
                 <span class="thread__body">
                   <span class="thread__top">
                     <strong>{c.peer_name}</strong>
@@ -62,7 +87,7 @@ for (const m of messages) {
       active ? (
         <>
           <header class="chat__header">
-            <span class="avatar" aria-hidden="true">{initials(active.peer_name)}</span>
+            <Avatar name={active.peer_name} src={active.peer_avatar} href={`/profil/${active.peer_id}`} />
             <span class="chat__peer">
               <strong>{active.peer_name}</strong>
               {active.peer_detail && <small class="muted">{active.peer_detail}</small>}
@@ -83,7 +108,16 @@ for (const m of messages) {
             {days.map((day) => (
               <>
                 <p class="chat__day"><span>{day.label}</span></p>
-                {day.items.map((m) => (
+                {day.items.map((m) =>
+                  m.kind === 'event' ? (
+                    <article class:list={['eveniment', EVENT_TONE[m.event_type ?? ''] ?? '']}>
+                      <span class="eveniment__eticheta">
+                        {EVENT_LABELS[m.event_type ?? ''] ?? 'Actualizare'}
+                      </span>
+                      <p class="eveniment__corp">{m.body}</p>
+                      <span class="eveniment__ora numeric">{formatTime(m.created_at)}</span>
+                    </article>
+                  ) : (
                   <article class:list={['bubble', { 'bubble--mine': m.sender_id === userId }]}>
                     <p class="bubble__body">{m.body}</p>
                     {m.file_id && (
@@ -96,7 +130,8 @@ for (const m of messages) {
                     )}
                     <span class="bubble__time numeric">{formatTime(m.created_at)}</span>
                   </article>
-                ))}
+                  ),
+                )}
               </>
             ))}
           </div>
@@ -206,20 +241,6 @@ for (const m of messages) {
   }
   .thread.is-active {
     background: var(--red-tint);
-  }
-
-  .avatar {
-    display: grid;
-    place-items: center;
-    width: 38px;
-    height: 38px;
-    border-radius: 50%;
-    background: var(--surface-sunken);
-    border: 1px solid var(--border);
-    font-size: var(--t-xs);
-    font-weight: 600;
-    color: var(--ink-soft);
-    flex: none;
   }
 
   .thread__body {
@@ -375,6 +396,56 @@ for (const m of messages) {
   .bubble--mine .bubble__file {
     background: rgba(255, 255, 255, 0.15);
     color: #fff;
+  }
+
+  /* Un eveniment nu are „autor” în același sens: se așază pe toată lățimea,
+     centrat, cu un chenar întrerupt — nu poate fi confundat cu o replică. */
+  .eveniment {
+    align-self: center;
+    width: min(100%, 62ch);
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-1);
+    padding: var(--s-3) var(--s-4);
+    margin-block: var(--s-2);
+    background: var(--surface);
+    border: 1px dashed var(--border-strong);
+    border-radius: var(--r-md);
+    text-align: center;
+  }
+
+  .eveniment__eticheta {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--ink-muted);
+  }
+
+  .eveniment__corp {
+    font-size: var(--t-sm);
+    color: var(--ink-soft);
+    white-space: pre-wrap;
+    text-wrap: pretty;
+  }
+
+  .eveniment__ora {
+    font-size: 11px;
+    color: var(--ink-muted);
+  }
+
+  .eveniment.is-bine {
+    border-color: var(--ok);
+  }
+  .eveniment.is-bine .eveniment__eticheta {
+    color: var(--ok);
+  }
+
+  .eveniment.is-rau {
+    border-color: var(--danger);
+  }
+  .eveniment.is-rau .eveniment__eticheta {
+    color: var(--danger);
   }
 
   .chat__compose {

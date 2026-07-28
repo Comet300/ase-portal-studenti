@@ -1,43 +1,59 @@
 ---
+import Avatar from '../../components/Avatar.astro'
 import ProfesorLayout from '../../layouts/ProfesorLayout.astro'
 import { ROLE_LABELS } from '../../lib/auth'
 import { queryOne, query } from '../../lib/db'
-import { STATUS_CLASS, STATUS_LABELS, formatDate, teacherStats } from '../../lib/repo'
+import { seatRequests } from '../../lib/lifecycle'
+import { STATUS_CLASS, STATUS_LABELS, formatDate, teacherSeats, teacherStats } from '../../lib/repo'
+import { allYears, LEVEL_LABELS } from '../../lib/years'
 
 /**
- * Archive and account.
+ * Archive and profile.
  *
  * Deliberately not "average grade" and "similarity index": grading is out of the
  * portal's scope, and a similarity percentage without its sources says nothing.
  * These are the numbers a coordinator can actually act on.
+ *
+ * Seats are shown here but not edited here — they are the department's decision.
+ * What a coordinator can do from this page is ask for more, in writing.
  */
 
 const u = Astro.locals.user!
-const stats = await teacherStats(u.id)
+const years = await allYears()
+const selectedYear = Astro.url.searchParams.get('an') ?? ''
+const year = years.find((y) => y.id === selectedYear) ?? years.find((y) => y.is_current) ?? years[0]
+const isCurrent = Boolean(year?.is_current)
+
+const [stats, seats, mySeatRequests] = await Promise.all([
+  teacherStats(u.id, year?.id),
+  teacherSeats(u.id, year?.id),
+  seatRequests({ teacherId: u.id }),
+])
 
 const topics = await queryOne<{ proposed: number; taken: number }>(
   `SELECT count(*)::int AS proposed,
           count(*) FILTER (WHERE EXISTS (
             SELECT 1 FROM requests r WHERE r.topic_id = t.id AND r.status = 'approved'
           ))::int AS taken
-     FROM topics t WHERE t.teacher_id = $1`,
-  [u.id],
+     FROM topics t WHERE t.teacher_id = $1 AND t.academic_year_id = $2`,
+  [u.id, year?.id],
 )
 
 const rejected = await query<{
   number: string
   student_name: string
   title_ro: string
+  status: string
   rejection_reason: string | null
   decided_at: string | null
 }>(
-  `SELECT r.number, s.name AS student_name, r.title_ro, r.rejection_reason, r.decided_at
+  `SELECT r.number, s.name AS student_name, r.title_ro, r.status, r.rejection_reason, r.decided_at
      FROM requests r
      JOIN users s ON s.id = r.student_id
-    WHERE r.teacher_id = $1 AND r.status = 'rejected'
+    WHERE r.teacher_id = $1 AND r.status IN ('rejected', 'expired') AND r.academic_year_id = $2
     ORDER BY r.decided_at DESC NULLS LAST
     LIMIT 20`,
-  [u.id],
+  [u.id, year?.id],
 )
 
 const history = await query<{
@@ -51,21 +67,36 @@ const history = await query<{
   `SELECT r.number, s.name AS student_name, r.title_ro, r.status, r.submitted_at, r.decided_at
      FROM requests r
      JOIN users s ON s.id = r.student_id
-    WHERE r.teacher_id = $1
+    WHERE r.teacher_id = $1 AND r.academic_year_id = $2
     ORDER BY r.submitted_at DESC
-    LIMIT 50`,
-  [u.id],
+    LIMIT 100`,
+  [u.id, year?.id],
 )
 
 const saved = Astro.url.searchParams.get('salvat') === '1'
-const capacity = (u.bachelor_capacity ?? 0) + (u.master_capacity ?? 0)
+const openSeatRequest = mySeatRequests.find((r) => r.status === 'pending')
 ---
 
 <ProfesorLayout
-  title="Arhivă & Setări"
-  lede="Istoricul cererilor din sesiune și datele contului tău."
+  title="Arhivă & Profil"
+  lede="Istoricul cererilor pe ani universitari, locurile alocate și datele profilului tău."
   active="arhiva"
 >
+  <form slot="actiuni" method="GET" class="row" style="gap:var(--s-2);align-items:center">
+    <label class="visually-hidden" for="an">An universitar</label>
+    <select class="select" id="an" name="an" onchange="this.form.submit()">
+      {
+        years.map((y) => (
+          <option value={y.id} selected={y.id === year?.id}>
+            {y.label}
+            {y.is_current ? ' · în curs' : ''}
+          </option>
+        ))
+      }
+    </select>
+    <noscript><button class="btn btn--secondary btn--sm" type="submit">Afișează</button></noscript>
+  </form>
+
   <div class="stack stack--loose">
     <section class="stack">
       <h2 class="section-title">Sesiunea în cifre</h2>
@@ -88,24 +119,131 @@ const capacity = (u.bachelor_capacity ?? 0) + (u.master_capacity ?? 0)
             }
           </span>
         </div>
-        <div class="metric">
-          <span class="metric__value numeric">{stats?.approved ?? 0} / {capacity}</span>
-          <span class="metric__label">studenți coordonați</span>
-          <span class="metric__note">din capacitatea declarată</span>
+        <div class:list={['metric', { 'metric--alert': seats.free === 0 && seats.total_seats > 0 }]}>
+          <span class="metric__value numeric">{seats.total_taken} / {seats.total_seats}</span>
+          <span class="metric__label">locuri ocupate</span>
+          <span class="metric__note">
+            {
+              seats.total_seats === 0
+                ? 'Directorul nu ți-a alocat încă locuri'
+                : seats.free === 0
+                  ? 'Nu mai apari ca disponibil în catalog'
+                  : `${seats.free} ${seats.free === 1 ? 'loc liber' : 'locuri libere'}`
+            }
+          </span>
         </div>
         <div class="metric">
-          <span class="metric__value numeric">{stats?.rejected ?? 0}</span>
-          <span class="metric__label">cereri respinse</span>
-          <span class="metric__note">cu motivul comunicat studentului</span>
+          <span class="metric__value numeric">{(stats?.rejected ?? 0) + (stats?.expired ?? 0)}</span>
+          <span class="metric__label">cereri neacceptate</span>
+          <span class="metric__note">
+            {stats?.expired ? `${stats.expired} expirate fără răspuns` : 'toate cu motivul comunicat'}
+          </span>
         </div>
       </div>
+    </section>
+
+    {/* ------------------------------------------------------------- locuri */}
+    <section class="panel">
+      <div class="panel__header">
+        <h2 class="section-title">Locuri alocate</h2>
+        <span class="muted" style="font-size:var(--t-sm)">{year?.label}</span>
+      </div>
+
+      <div class="panel__body stack">
+        <dl class="seats">
+          <div>
+            <dt>Licență</dt>
+            <dd class="numeric">{seats.bachelor_taken} / {seats.bachelor_seats}</dd>
+          </div>
+          <div>
+            <dt>Master</dt>
+            <dd class="numeric">{seats.master_taken} / {seats.master_seats}</dd>
+          </div>
+          <div>
+            <dt>Libere</dt>
+            <dd class="numeric">{seats.free}</dd>
+          </div>
+        </dl>
+
+        <p class="hint">
+          Numărul de locuri este stabilit de directorul de departament. Când sunt toate ocupate,
+          apari în catalogul studenților ca <strong>fără locuri disponibile</strong>, împreună cu
+          studenții pe care îi coordonezi deja.
+        </p>
+      </div>
+
+      {
+        isCurrent && (
+          <div class="panel__footer">
+            {openSeatRequest ? (
+              <p class="alert">
+                Ai o cerere în așteptare pentru <strong>{openSeatRequest.extra_seats}</strong> locuri
+                la {LEVEL_LABELS[openSeatRequest.level].toLowerCase()}, trimisă
+                {' '}{formatDate(openSeatRequest.created_at)}. Directorul de departament decide.
+              </p>
+            ) : (
+              <form method="POST" action="/api/locuri" class="stack">
+                <input type="hidden" name="actiune" value="cere" />
+                <div class="row row--wrap" style="gap:var(--s-3);align-items:flex-end">
+                  <div class="field" style="min-width:150px">
+                    <label class="label" for="nivel">Cere locuri la</label>
+                    <select class="select" id="nivel" name="nivel">
+                      <option value="bachelor">Licență</option>
+                      <option value="master">Master</option>
+                    </select>
+                  </div>
+                  <div class="field" style="min-width:110px">
+                    <label class="label" for="locuri">Câte</label>
+                    <input class="input" id="locuri" name="locuri" type="number" min="1" max="20" value="2" />
+                  </div>
+                </div>
+                <div class="field">
+                  <label class="label" for="motiv">Motivarea cererii</label>
+                  <textarea
+                    class="textarea"
+                    id="motiv"
+                    name="motiv"
+                    rows="2"
+                    minlength="20"
+                    required
+                    placeholder="Ex: am primit trei cereri peste capacitate, toate pe teme din aria mea de cercetare."
+                  />
+                  <span class="hint">Directorul decide pe baza acestui text.</span>
+                </div>
+                <div class="row" style="justify-content:flex-end">
+                  <button class="btn btn--secondary" type="submit">Trimite cererea directorului</button>
+                </div>
+              </form>
+            )}
+
+            {mySeatRequests.filter((r) => r.status !== 'pending').length > 0 && (
+              <ul class="decizii">
+                {mySeatRequests
+                  .filter((r) => r.status !== 'pending')
+                  .map((r) => (
+                    <li>
+                      <span class:list={['badge', r.status === 'approved' ? 'badge--aprobata' : 'badge--respinsa']}>
+                        {r.status === 'approved' ? 'Aprobată' : 'Respinsă'}
+                      </span>
+                      <span>
+                        {r.extra_seats} locuri la {LEVEL_LABELS[r.level].toLowerCase()} ·{' '}
+                        {formatDate(r.decided_at)}
+                      </span>
+                      {r.decision_note && <span class="muted">„{r.decision_note}”</span>}
+                    </li>
+                  ))}
+              </ul>
+            )}
+          </div>
+        )
+      }
     </section>
 
     {
       rejected.length > 0 && (
         <section class="panel">
           <div class="panel__header">
-            <h2 class="section-title">Cereri respinse și motivele</h2>
+            <h2 class="section-title">Cereri neacceptate și motivele</h2>
           </div>
           <ul class="rejected">
             {rejected.map((r) => (
@@ -128,14 +266,18 @@ const capacity = (u.bachelor_capacity ?? 0) + (u.master_capacity ?? 0)
     <section class="panel">
       <div class="panel__header">
         <h2 class="section-title">Istoricul cererilor</h2>
-        <span class="muted" style="font-size:var(--t-sm)">{history.length} înregistrări</span>
+        <span class="muted" style="font-size:var(--t-sm)">
+          {history.length} {history.length === 1 ? 'înregistrare' : 'înregistrări'} · {year?.label}
+        </span>
       </div>
       {
         history.length === 0 ? (
           <div class="empty">
-            <p class="empty__title">Nicio cerere încă</p>
+            <p class="empty__title">Nicio cerere în {year?.label}</p>
             <p class="empty__text">
-              Istoricul se completează pe măsură ce studenții depun cereri către tine.
+              {isCurrent
+                ? 'Istoricul se completează pe măsură ce studenții depun cereri către tine.'
+                : 'În acest an universitar nu ai primit cereri prin portal.'}
             </p>
           </div>
         ) : (
@@ -171,45 +313,75 @@ const capacity = (u.bachelor_capacity ?? 0) + (u.master_capacity ?? 0)
       }
     </section>
 
+    {/* ------------------------------------------------------------- profil */}
     <section class="panel">
       <div class="panel__header">
-        <h2 class="section-title">Contul meu</h2>
+        <h2 class="section-title">Profilul meu</h2>
         {saved && <span class="badge badge--aprobata">Salvat</span>}
       </div>
-      <form method="POST" action="/api/cont" class="panel__body stack">
-        <div class="row row--wrap" style="gap:var(--s-4)">
-          <div class="field" style="flex:2;min-width:240px">
-            <label class="label" for="name">Nume afișat</label>
-            <input class="input" id="name" name="name" value={u.name} required maxlength="120" />
-          </div>
-          <div class="field" style="flex:1;min-width:180px">
-            <label class="label" for="office">Birou</label>
-            <input class="input" id="office" name="office" value={u.office ?? ''} placeholder="Corp Ion Angelescu, sala…" />
+
+      <form method="POST" action="/api/cont" enctype="multipart/form-data" class="panel__body stack">
+        <div class="row row--wrap" style="gap:var(--s-4);align-items:center">
+          <Avatar name={u.name} src={u.avatar_path} size="lg" />
+          <div class="field" style="flex:1;min-width:240px">
+            <label class="label" for="poza">Poză de profil</label>
+            <input class="input" id="poza" name="poza" type="file" accept="image/*" />
+            <span class="hint">JPG, PNG, WEBP sau GIF, maximum 2 MB. Studenții o văd în catalog.</span>
           </div>
         </div>
 
         <div class="row row--wrap" style="gap:var(--s-4)">
-          <div class="field" style="flex:1;min-width:160px">
-            <label class="label" for="bachelor_capacity">Locuri licență</label>
-            <input class="input" id="bachelor_capacity" name="bachelor_capacity" type="number" min="0" max="30" value={u.bachelor_capacity} />
+          <div class="field" style="flex:2;min-width:240px">
+            <label class="label" for="nume">Nume afișat</label>
+            <input class="input" id="nume" name="nume" value={u.name} required maxlength="120" />
           </div>
-          <div class="field" style="flex:1;min-width:160px">
-            <label class="label" for="master_capacity">Locuri master</label>
-            <input class="input" id="master_capacity" name="master_capacity" type="number" min="0" max="30" value={u.master_capacity} />
+          <div class="field" style="flex:2;min-width:220px">
+            <label class="label" for="birou">Birou</label>
+            <input class="input" id="birou" name="birou" value={u.office ?? ''} placeholder="Corp Ion Angelescu, etaj 3, sala 2314" />
           </div>
+        </div>
+
+        <div class="field">
+          <label class="label" for="descriere">Descriere</label>
+          <textarea
+            class="textarea"
+            id="descriere"
+            name="descriere"
+            rows="3"
+            maxlength="1200"
+            placeholder="Ce fel de lucrări coordonezi și ce aștepți de la un student. Studenții citesc asta înainte să îți scrie."
+            set:text={u.bio ?? ''}
+          />
+        </div>
+
+        <div class="row row--wrap" style="gap:var(--s-4)">
+          <div class="field" style="flex:2;min-width:240px">
+            <label class="label" for="interese">Direcții de cercetare</label>
+            <input class="input" id="interese" name="interese" value={u.interests ?? ''}
+              placeholder="Comportamentul consumatorului · modelare structurală" />
+            <span class="hint">Separate prin „·”, apar sub numele tău în catalog.</span>
+          </div>
+          <div class="field" style="flex:2;min-width:220px">
+            <label class="label" for="pagina_web">Pagină web</label>
+            <input class="input" id="pagina_web" name="pagina_web" type="url" value={u.website ?? ''}
+              placeholder="https://" />
+          </div>
+        </div>
+
+        <div class="row row--wrap" style="gap:var(--s-4)">
           <div class="field" style="flex:2;min-width:220px">
             <label class="label" for="email">Email instituțional</label>
             <input class="input" id="email" value={u.email} disabled />
-            <span class="hint">Adresa este cea cu care te autentifici și nu se poate schimba din portal.</span>
+            <span class="hint">Adresa cu care te autentifici; nu se poate schimba din portal.</span>
+          </div>
+          <div class="field" style="flex:1;min-width:200px">
+            <label class="label" for="rol">Rol</label>
+            <input class="input" id="rol" value={`${ROLE_LABELS[u.role]}${u.department ? ` · ${u.department}` : ''}`} disabled />
           </div>
         </div>
 
-        <p class="muted" style="font-size:var(--t-sm)">
-          Rol: <strong>{ROLE_LABELS[u.role]}</strong>
-          {u.department ? ` · ${u.department}` : ''}
-        </p>
-
-        <div class="row" style="justify-content:flex-end">
+        <div class="row row--between row--wrap" style="gap:var(--s-3)">
+          <a class="btn btn--ghost btn--sm" href={`/profil/${u.id}`}>Vezi profilul public</a>
           <button class="btn btn--primary" type="submit">Salvează modificările</button>
         </div>
       </form>
@@ -227,6 +399,9 @@ const capacity = (u.bachelor_capacity ?? 0) + (u.master_capacity ?? 0)
     border: 1px solid var(--border);
     border-radius: var(--r-lg);
   }
+  .metric--alert {
+    border-color: var(--warn);
+  }
   .metric__value {
     font-size: var(--t-2xl);
     font-weight: 600;
@@ -239,6 +414,46 @@ const capacity = (u.bachelor_capacity ?? 0) + (u.master_capacity ?? 0)
   .metric__note {
     font-size: var(--t-xs);
     color: var(--ink-muted);
+  }
+
+  .seats {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--s-6);
+    margin: 0;
+  }
+  .seats dt {
+    font-size: var(--t-xs);
+    color: var(--ink-muted);
+  }
+  .seats dd {
+    margin: 0;
+    font-size: var(--t-xl);
+    font-weight: 600;
+  }
+
+  .alert {
+    padding: var(--s-3) var(--s-4);
+    background: var(--warn-tint);
+    color: var(--warn);
+    border-radius: var(--r-md);
+    font-size: var(--t-sm);
+  }
+
+  .decizii {
+    list-style: none;
+    margin: var(--s-4) 0 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-2);
+    font-size: var(--t-sm);
+  }
+  .decizii li {
+    display: flex;
+    align-items: center;
+    gap: var(--s-3);
+    flex-wrap: wrap;
   }
 
   .rejected {

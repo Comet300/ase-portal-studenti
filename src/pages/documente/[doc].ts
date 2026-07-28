@@ -1,44 +1,19 @@
 import type { APIRoute } from 'astro'
 import { query } from '../../lib/db'
+import { renderDoc } from '../../lib/doc'
 import { stagesIcs } from '../../lib/ics'
 import { escapeHtml } from '../../lib/mail'
 
 /**
  * Downloadable documents are generated here rather than served as static files.
  *
- * Templates are filled with the signed-in user's data, and the calendar is built
- * from the stages in the database — change a date in the portal and tomorrow's
- * download already carries it.
+ * These are the blank models — the ones a student prints before there is
+ * anything to fill them with. The completed coordination request lives at
+ * `/documente/cerere/[id]`, because it can only exist once a decision has.
+ *
+ * The calendar is built from the stages in the database: change a date in the
+ * portal and tomorrow's download already carries it.
  */
-
-function renderDoc(title: string, body: string): string {
-  return `<!doctype html>
-<html lang="ro"><head><meta charset="utf-8"><title>${escapeHtml(title)}</title>
-<style>
-  @page { size: A4; margin: 25mm 20mm; }
-  body { font: 12pt/1.6 Georgia, 'Times New Roman', serif; color: #1a1e23; max-width: 17cm; margin: 2rem auto; padding: 0 1rem; }
-  h1 { font-size: 15pt; text-align: center; margin-bottom: 4pt; }
-  h2 { font-size: 12pt; margin-top: 20pt; }
-  .head { text-align: center; border-bottom: 2px solid #990000; padding-bottom: 10pt; margin-bottom: 20pt; }
-  .head strong { display: block; font-size: 11pt; }
-  .head span { font-size: 10pt; color: #40464e; }
-  .blank { border-bottom: 1px dotted #5b6169; display: inline-block; min-width: 6cm; }
-  .signatures { display: flex; justify-content: space-between; margin-top: 40pt; font-size: 11pt; }
-  .note { font-size: 9pt; color: #5b6169; margin-top: 24pt; border-top: 1px solid #e9ecef; padding-top: 8pt; }
-  ol, ul { padding-left: 18pt; }
-  .print { position: fixed; top: 12px; right: 12px; font: 600 13px/1 -apple-system, sans-serif;
-           background: #990000; color: #fff; border: 0; padding: 10px 16px; border-radius: 4px; cursor: pointer; }
-  @media print { .print { display: none; } body { margin: 0; } }
-</style></head>
-<body>
-<button class="print" onclick="window.print()">Tipărește / Salvează PDF</button>
-<div class="head">
-  <strong>ACADEMIA DE STUDII ECONOMICE DIN BUCUREȘTI</strong>
-  <span>Facultatea de Marketing · Sesiunea de Finalizare a Studiilor 2026</span>
-</div>
-${body}
-</body></html>`
-}
 
 export const GET: APIRoute = async ({ params, locals }) => {
   const u = locals.user
@@ -50,12 +25,17 @@ export const GET: APIRoute = async ({ params, locals }) => {
       description: string | null
       starts_on: string | null
       ends_on: string | null
-    }>(`SELECT title, description, starts_on, ends_on FROM session_stages ORDER BY position`)
+    }>(
+      `SELECT title, description, starts_on, ends_on
+         FROM session_stages
+        WHERE academic_year_id = (SELECT id FROM academic_years WHERE is_current)
+        ORDER BY position`,
+    )
 
     return new Response(stagesIcs(stages), {
       headers: {
         'content-type': 'text/calendar; charset=utf-8',
-        'content-disposition': 'attachment; filename="sesiune-2026.ics"',
+        'content-disposition': 'attachment; filename="calendar-sesiune.ics"',
       },
     })
   }

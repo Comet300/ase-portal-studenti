@@ -1,7 +1,9 @@
 ---
+import Avatar from '../components/Avatar.astro'
 import StudentLayout from '../layouts/StudentLayout.astro'
-import { ROLE_LABELS, initials } from '../lib/auth'
-import { formatDate, programLabel, studentRequests } from '../lib/repo'
+import { ROLE_LABELS } from '../lib/auth'
+import { formatDate, studentRequests } from '../lib/repo'
+import { languageLabel, levelLabel } from '../lib/years'
 
 const u = Astro.locals.user!
 
@@ -10,22 +12,26 @@ if (u.role !== 'student') return Astro.redirect('/profesor/arhiva', 302)
 
 const requests = await studentRequests(u.id)
 const active = requests.find((r) => r.status === 'approved' || r.status === 'pending')
+const saved = Astro.url.searchParams.get('salvat') === '1'
 ---
 
 <StudentLayout title="Contul meu" active="cont">
   <div class="container stack stack--loose">
     <header class="stack stack--tight">
       <h1 class="page-title">Contul meu</h1>
-      <p class="page-lede">Datele contului instituțional și sesiunea curentă.</p>
+      <p class="page-lede">
+        Datele din evidența facultății, profilul pe care îl văd coordonatorii și sesiunea curentă.
+      </p>
     </header>
 
     <section class="panel">
       <div class="panel__body identity">
-        <span class="identity__avatar" aria-hidden="true">{initials(u.name)}</span>
-        <div class="stack stack--tight" style="gap:2px">
+        <Avatar name={u.name} src={u.avatar_path} size="lg" />
+        <div class="stack stack--tight" style="gap:2px;flex:1;min-width:0">
           <strong class="identity__name">{u.name}</strong>
           <span class="muted">{ROLE_LABELS[u.role]}</span>
         </div>
+        <a class="btn btn--ghost btn--sm" href={`/profil/${u.id}`}>Vezi profilul public</a>
       </div>
 
       <dl class="details">
@@ -39,19 +45,37 @@ const active = requests.find((r) => r.status === 'approved' || r.status === 'pen
         </div>
         <div>
           <dt>Program</dt>
-          <dd>{programLabel(u.program)}</dd>
+          <dd>{levelLabel(u.program)}</dd>
         </div>
         <div>
           <dt>Specializare</dt>
           <dd>{u.specialization ?? '—'}</dd>
         </div>
         <div>
+          <dt>Limba de studiu</dt>
+          <dd>{languageLabel(u.study_language)}</dd>
+        </div>
+        <div>
           <dt>An de studiu</dt>
           <dd>{u.study_year ?? '—'}</dd>
         </div>
         <div>
+          <dt>Grupa</dt>
+          <dd>{u.study_group ?? '—'}</dd>
+        </div>
+        <div>
           <dt>Coordonator</dt>
-          <dd>{active ? active.teacher_name : 'Nealocat'}</dd>
+          <dd>
+            {
+              active?.status === 'approved' ? (
+                <a href={`/profil/${active.teacher_id}`}>{active.teacher_name}</a>
+              ) : active?.status === 'pending' ? (
+                <span class="muted">cerere depusă la {active.teacher_name}</span>
+              ) : (
+                'Nealocat'
+              )
+            }
+          </dd>
         </div>
       </dl>
 
@@ -59,6 +83,59 @@ const active = requests.find((r) => r.status === 'approved' || r.status === 'pen
         Datele de identificare vin din evidența facultății și nu pot fi modificate din portal.
         Pentru corecturi, contactează secretariatul.
       </p>
+    </section>
+
+    {/* -------------------------------------------------------- profilul */}
+    <section class="panel">
+      <div class="panel__header">
+        <h2 class="section-title">Profilul public</h2>
+        {saved && <span class="badge badge--aprobata">Salvat</span>}
+      </div>
+
+      <form method="POST" action="/api/cont" enctype="multipart/form-data" class="panel__body stack">
+        <p class="hint">
+          Coordonatorii îți văd profilul când primesc cererea. Un rând despre ce te interesează
+          spune mai mult decât numărul matricol.
+        </p>
+
+        <div class="row row--wrap" style="gap:var(--s-4);align-items:center">
+          <Avatar name={u.name} src={u.avatar_path} size="md" />
+          <div class="field" style="flex:1;min-width:240px">
+            <label class="label" for="poza">Poză de profil</label>
+            <input class="input" id="poza" name="poza" type="file" accept="image/*" />
+            <span class="hint">JPG, PNG, WEBP sau GIF, maximum 2 MB.</span>
+          </div>
+        </div>
+
+        <div class="field">
+          <label class="label" for="nume">Nume afișat</label>
+          <input class="input" id="nume" name="nume" value={u.name} required maxlength="120" />
+        </div>
+
+        <div class="field">
+          <label class="label" for="descriere">Despre mine</label>
+          <textarea
+            class="textarea"
+            id="descriere"
+            name="descriere"
+            rows="3"
+            maxlength="1200"
+            placeholder="Unde lucrezi sau ai făcut practică, ce cursuri ți-au plăcut, ce vrei să faci după absolvire."
+            set:text={u.bio ?? ''}
+          />
+        </div>
+
+        <div class="field">
+          <label class="label" for="interese">Domenii de interes</label>
+          <input class="input" id="interese" name="interese" value={u.interests ?? ''}
+            placeholder="Marketing digital · analiza datelor · comportamentul consumatorului" />
+          <span class="hint">Separate prin „·”.</span>
+        </div>
+
+        <div class="row" style="justify-content:flex-end">
+          <button class="btn btn--primary" type="submit">Salvează profilul</button>
+        </div>
+      </form>
     </section>
 
     <section class="panel">
@@ -109,20 +186,7 @@ const active = requests.find((r) => r.status === 'approved' || r.status === 'pen
     display: flex;
     align-items: center;
     gap: var(--s-4);
-  }
-
-  .identity__avatar {
-    display: grid;
-    place-items: center;
-    width: 52px;
-    height: 52px;
-    border-radius: 50%;
-    background: var(--surface-sunken);
-    border: 1px solid var(--border-strong);
-    font-size: var(--t-md);
-    font-weight: 600;
-    color: var(--ink-soft);
-    flex: none;
+    flex-wrap: wrap;
   }
 
   .identity__name {
@@ -132,7 +196,7 @@ const active = requests.find((r) => r.status === 'approved' || r.status === 'pen
 
   .details {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
     gap: var(--s-4);
     margin: 0;
     padding: 0 var(--s-5) var(--s-5);
