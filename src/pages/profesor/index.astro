@@ -1,4 +1,5 @@
 ---
+import Avatar from '../../components/Avatar.astro'
 import ProfesorLayout from '../../layouts/ProfesorLayout.astro'
 import {
   timeAgo,
@@ -7,29 +8,33 @@ import {
   currentStage,
   stages,
   formatTime,
+  teacherSeats,
   teacherSlots,
   teacherStats,
   supervisedStudents,
 } from '../../lib/repo'
-import { initials } from '../../lib/auth'
+import { teacherInvitations } from '../../lib/lifecycle'
 
 const u = Astro.locals.user!
-const [stat, cereri, studenti, sloturi, stageList, etapa] = await Promise.all([
+const [stat, cereri, studenti, sloturi, stageList, etapa, locuri, invitatii] = await Promise.all([
   teacherStats(u.id),
   teacherRequests(u.id, 'pending'),
   supervisedStudents(u.id),
   teacherSlots(u.id),
   stages(),
   currentStage(),
+  teacherSeats(u.id),
+  teacherInvitations(u.id),
 ])
 
 const azi = new Date().toDateString()
 const sloturiAzi = sloturi.filter((s) => new Date(s.starts_at).toDateString() === azi && !s.is_cancelled)
 const urmatoareleSloturi = sloturi.filter((s) => new Date(s.starts_at) > new Date() && !s.is_cancelled).slice(0, 4)
 
-const capacitate = (u.bachelor_capacity ?? 0) + (u.master_capacity ?? 0)
-const ocupate = studenti.length
+const capacitate = locuri.total_seats
+const ocupate = locuri.total_taken
 const procent = capacitate > 0 ? Math.min(100, Math.round((ocupate / capacitate) * 100)) : 0
+const invitatiiDeschise = invitatii.filter((i) => i.status === 'pending').length
 
 const prenume = u.name.replace(/^(Prof\.|Conf\.|Lect\.|Asist\.)\s*univ\.\s*dr\.\s*/i, '').split(' ')[0]
 const necitite = studenti.reduce((s, x) => s + x.unread, 0)
@@ -75,13 +80,17 @@ const necitite = studenti.reduce((s, x) => s + x.unread, 0)
           </span>
         </div>
 
-        <div class="metric">
-          <span class="metric__valoare numeric">
-            {stat?.avg_response_hours != null ? `${stat.avg_response_hours}h` : '—'}
+        <a href="/profesor/studenti?sectiune=invitatii" class="metric metric--link">
+          <span class="metric__valoare numeric">{invitatiiDeschise}</span>
+          <span class="metric__eticheta">propuneri trimise</span>
+          <span class="metric__nota">
+            {
+              invitatiiDeschise > 0
+                ? 'în așteptarea răspunsului studentului'
+                : 'Poți invita tu un student la coordonare'
+            }
           </span>
-          <span class="metric__eticheta">timp mediu de răspuns</span>
-          <span class="metric__nota">la cererile decise</span>
-        </div>
+        </a>
       </div>
     </section>
 
@@ -106,7 +115,7 @@ const necitite = studenti.reduce((s, x) => s + x.unread, 0)
             <ul class="lista">
               {cereri.slice(0, 5).map((c) => (
                 <li class="lista__item">
-                  <span class="avatar" aria-hidden="true">{initials(c.student_name)}</span>
+                  <Avatar name={c.student_name} />
                   <span class="lista__corp">
                     <a href={`/profesor/studenti?cerere=${c.id}`} class="lista__titlu">{c.title_ro}</a>
                     <span class="lista__meta">
@@ -172,11 +181,14 @@ const necitite = studenti.reduce((s, x) => s + x.unread, 0)
     <div class="coloane">
       <section class="panel">
         <div class="panel__header">
-          <h2 class="section-title">Capacitate de coordonare</h2>
+          <h2 class="section-title">Locuri de coordonare</h2>
+          <a href="/profesor/arhiva" class="btn btn--ghost btn--sm">Cere locuri</a>
         </div>
         <div class="panel__body stack">
           <div class="row row--between">
-            <span class="muted" style="font-size:var(--t-sm)">Studenți coordonați</span>
+            <span class="muted" style="font-size:var(--t-sm)">
+              Licență {locuri.bachelor_taken}/{locuri.bachelor_seats} · Master {locuri.master_taken}/{locuri.master_seats}
+            </span>
             <span class="numeric" style="font-weight:600">{ocupate} / {capacitate}</span>
           </div>
           <div
@@ -191,9 +203,11 @@ const necitite = studenti.reduce((s, x) => s + x.unread, 0)
           </div>
           <p class="muted" style="font-size:var(--t-sm)">
             {
-              capacitate - ocupate > 0
-                ? `Mai poți prelua ${capacitate - ocupate} ${capacitate - ocupate === 1 ? 'student' : 'studenți'} în această sesiune.`
-                : 'Ai atins numărul maxim de studenți pentru această sesiune.'
+              capacitate === 0
+                ? 'Directorul de departament nu ți-a alocat încă locuri pentru această sesiune.'
+                : locuri.free > 0
+                  ? `Mai poți prelua ${locuri.free} ${locuri.free === 1 ? 'student' : 'studenți'} în această sesiune. Locurile sunt alocate de directorul de departament.`
+                  : 'Toate locurile sunt ocupate. În catalogul studenților apari ca fără locuri disponibile; poți cere locuri suplimentare directorului.'
             }
           </p>
         </div>

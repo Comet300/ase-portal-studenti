@@ -18,6 +18,8 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
   if (action === 'adauga') {
     const title = String(form.get('titlu') ?? '').trim()
     const level = String(form.get('nivel') ?? '')
+    const language = String(form.get('limba') ?? 'ro')
+    const description = String(form.get('descriere') ?? '').trim()
     const methods = String(form.get('metode') ?? '').trim()
     const prerequisites = String(form.get('prerechizite') ?? '').trim()
     const seats = Number(form.get('locuri') ?? 1)
@@ -25,11 +27,19 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
     if (!title || !['bachelor', 'master'].includes(level)) {
       return back('Completează titlul și nivelul temei.', true)
     }
+    if (!['ro', 'en', 'fr', 'de'].includes(language)) return back('Limbă invalidă.', true)
 
+    // Temele aparțin anului curent: un an nou pornește cu un catalog gol, dacă
+    // directorul nu alege explicit să îl preia.
     await execute(
-      `INSERT INTO topics (teacher_id, title, level, methods, prerequisites, seats)
-       VALUES ($1, $2, $3, NULLIF($4, ''), NULLIF($5, ''), $6)`,
-      [u!.id, title, level, methods, prerequisites, Number.isFinite(seats) ? Math.max(1, seats) : 1],
+      `INSERT INTO topics (academic_year_id, teacher_id, title, description, level, language,
+                           methods, prerequisites, seats)
+       VALUES ((SELECT id FROM academic_years WHERE is_current),
+               $1, $2, NULLIF($3, ''), $4, $5, NULLIF($6, ''), NULLIF($7, ''), $8)`,
+      [
+        u!.id, title, description, level, language, methods, prerequisites,
+        Number.isFinite(seats) ? Math.max(1, seats) : 1,
+      ],
     )
     return back('Tema a fost publicată în catalog.')
   }

@@ -3,6 +3,8 @@ import { execute, query, queryOne } from './db'
 
 export type Role = 'student' | 'teacher' | 'head'
 
+export type StudyLanguage = 'ro' | 'en' | 'fr' | 'de'
+
 export interface User {
   id: string
   email: string
@@ -12,11 +14,16 @@ export interface User {
   program: 'bachelor' | 'master' | null
   specialization: string | null
   study_year: number | null
+  programme_id: string | null
+  study_language: StudyLanguage
+  study_group: string | null
   academic_title: string | null
   department: string | null
   office: string | null
-  bachelor_capacity: number
-  master_capacity: number
+  bio: string | null
+  avatar_path: string | null
+  interests: string | null
+  website: string | null
   is_demo: boolean
 }
 
@@ -28,7 +35,8 @@ const LINK_TTL_MS = 20 * 60 * 1000
 export const DEMO_MODE = process.env.DEMO_MODE === 'true'
 
 const USER_FIELDS = `id, email, name, role, student_number, program, specialization, study_year,
-                     academic_title, department, office, bachelor_capacity, master_capacity, is_demo`
+                     programme_id, study_language, study_group,
+                     academic_title, department, office, bio, avatar_path, interests, website, is_demo`
 
 function digest(token: string): string {
   return createHash('sha256').update(token).digest('hex')

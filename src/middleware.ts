@@ -1,5 +1,6 @@
 import { defineMiddleware } from 'astro:middleware'
 import { SESSION_COOKIE, getUserFromSession } from './lib/auth'
+import { sweepDeadlines } from './lib/lifecycle'
 
 /**
  * Student routes are open to every role; the teacher area requires `teacher` or
@@ -7,9 +8,17 @@ import { SESSION_COOKIE, getUserFromSession } from './lib/auth'
  * right role gets 404 rather than 403: we do not confirm an area they cannot use.
  */
 
-const REQUIRES_SESSION = ['/cererile-mele', '/mesaje', '/consultatii', '/contul-meu']
+const REQUIRES_SESSION = [
+  '/cererile-mele',
+  '/mesaje',
+  '/consultatii',
+  '/contul-meu',
+  '/arhiva',
+  '/coordonari',
+  '/profil',
+]
 const TEACHER_AREA = '/profesor'
-const HEAD_ONLY = ['/profesor/departament', '/profesor/calendar']
+const HEAD_ONLY = ['/profesor/departament', '/profesor/calendar', '/profesor/an-universitar']
 
 const UNSAFE = new Set(['POST', 'PUT', 'PATCH', 'DELETE'])
 
@@ -39,6 +48,10 @@ export const onRequest = defineMiddleware(async (context, next) => {
   const sessionId = context.cookies.get(SESSION_COOKIE)?.value
   const user = await getUserFromSession(sessionId)
   context.locals.user = user
+
+  // Deadlines are enforced here rather than by a scheduler: one container, no
+  // cron, and the sweep throttles itself. It never blocks the response.
+  void sweepDeadlines(process.env.APP_BASE_URL ?? context.url.origin)
 
   const path = context.url.pathname
 

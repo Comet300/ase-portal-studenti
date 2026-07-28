@@ -1,0 +1,87 @@
+---
+import { initials } from '../lib/auth'
+
+interface Props {
+  name: string
+  src?: string | null
+  /** 28 · 34 · 44 · 72 px — the four sizes the portal actually uses. */
+  size?: 'xs' | 'sm' | 'md' | 'lg'
+  href?: string
+  class?: string
+}
+
+const { name, src, size = 'sm', href, class: extra } = Astro.props
+
+/**
+ * A picture when there is one, initials when there is not.
+ *
+ * Most people will never upload a photo, so the fallback is the normal case and
+ * has to look deliberate rather than broken: the same circle, the same border,
+ * the initials set in the interface face.
+ */
+const Tag = href ? 'a' : 'span'
+---
+
+<Tag
+  class:list={['avatar', `avatar--${size}`, extra]}
+  href={href}
+  title={href ? name : undefined}
+  data-photo={src ? '' : undefined}
+>
+  {
+    src ? (
+      <img src={`/avatare/${src}`} alt="" loading="lazy" decoding="async" />
+    ) : (
+      <span aria-hidden="true">{initials(name)}</span>
+    )
+  }
+</Tag>
+
+<style>
+  .avatar {
+    display: grid;
+    place-items: center;
+    border-radius: 50%;
+    background: var(--surface-sunken);
+    border: 1px solid var(--border);
+    color: var(--ink-soft);
+    font-weight: 600;
+    text-decoration: none;
+    flex: none;
+    overflow: hidden;
+  }
+
+  a.avatar:hover {
+    border-color: var(--ink-muted);
+    color: var(--ink);
+  }
+
+  .avatar img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+
+  .avatar--xs {
+    width: 28px;
+    height: 28px;
+    font-size: 10px;
+  }
+  .avatar--sm {
+    width: 34px;
+    height: 34px;
+    font-size: var(--t-xs);
+  }
+  .avatar--md {
+    width: 44px;
+    height: 44px;
+    font-size: var(--t-sm);
+  }
+  .avatar--lg {
+    width: 72px;
+    height: 72px;
+    font-size: var(--t-lg);
+    border-color: var(--border-strong);
+  }
+</style>
