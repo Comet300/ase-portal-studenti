@@ -6,6 +6,7 @@ import { redirect, redirectWithNotice } from '../../lib/http'
 import { INVITATION_WINDOW_DAYS, openInvitationFor } from '../../lib/lifecycle'
 import { sendEmail, template } from '../../lib/mail'
 import { teacherSeats } from '../../lib/repo'
+import { id as formId } from '../../lib/ids'
 
 /**
  * Invitations — the coordinator asking the student.
@@ -35,8 +36,8 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
   if (action === 'trimite') {
     if (!isTeacher(u)) return new Response('Neautorizat', { status: 403 })
 
-    const studentId = String(form.get('student_id') ?? '')
-    const topicId = String(form.get('tema_id') ?? '')
+    const studentId = formId(form.get('student_id'))
+    const topicId = formId(form.get('tema_id'))
     const message = String(form.get('mesaj') ?? '').trim()
 
     if (message.length < 30) {
@@ -118,7 +119,7 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
   if (action === 'raspunde') {
     if (u.role !== 'student') return new Response('Neautorizat', { status: 403 })
 
-    const invitationId = String(form.get('invitatie_id') ?? '')
+    const invitationId = formId(form.get('invitatie_id'))
     const answer = String(form.get('raspuns') ?? '')
     const reason = String(form.get('motiv') ?? '').trim()
 

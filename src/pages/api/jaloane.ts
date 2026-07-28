@@ -2,6 +2,7 @@ import type { APIRoute } from 'astro'
 import { isTeacher } from '../../lib/auth'
 import { execute } from '../../lib/db'
 import { redirectWithNotice } from '../../lib/http'
+import { id as formId } from '../../lib/ids'
 
 /**
  * The editable milestone timeline.
@@ -22,7 +23,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
     redirectWithNotice(redirectTo, message, isError)
 
   if (action === 'adauga') {
-    const requestId = String(form.get('cerere_id') ?? '')
+    const requestId = formId(form.get('cerere_id'))
     const title = String(form.get('title') ?? '').trim()
     const dueOn = String(form.get('termen') ?? '').trim()
     const description = String(form.get('descriere') ?? '').trim()
@@ -40,7 +41,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
   }
 
   if (action === 'actualizeaza') {
-    const milestoneId = String(form.get('jalon_id') ?? '')
+    const milestoneId = formId(form.get('jalon_id'))
     const title = String(form.get('title') ?? '').trim()
     const dueOn = String(form.get('termen') ?? '').trim()
     const description = String(form.get('descriere') ?? '').trim()
@@ -64,7 +65,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
   }
 
   if (action === 'sterge') {
-    const milestoneId = String(form.get('jalon_id') ?? '')
+    const milestoneId = formId(form.get('jalon_id'))
     const n = await execute(
       `DELETE FROM milestones m
         WHERE m.id = $2

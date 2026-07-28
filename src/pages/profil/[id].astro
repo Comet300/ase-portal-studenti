@@ -3,6 +3,7 @@ import Avatar from '../../components/Avatar.astro'
 import StudentLayout from '../../layouts/StudentLayout.astro'
 import { ROLE_LABELS } from '../../lib/auth'
 import { queryOne, query } from '../../lib/db'
+import { id as routeId } from '../../lib/ids'
 import { formatDate, teacherSeats } from '../../lib/repo'
 import { groupLabel, languageLabel, levelLabel } from '../../lib/years'
 
@@ -19,7 +20,10 @@ import { groupLabel, languageLabel, levelLabel } from '../../lib/years'
  */
 
 const me = Astro.locals.user!
-const id = Astro.params.id!
+
+// A hand-edited URL must read as "no such person", not as a database error.
+const id = routeId(Astro.params.id ?? null)
+if (!id) return new Response('Pagina nu a fost găsită', { status: 404 })
 
 const person = await queryOne<{
   id: string

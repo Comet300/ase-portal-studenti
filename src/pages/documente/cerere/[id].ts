@@ -1,6 +1,7 @@
 import type { APIRoute } from 'astro'
 import { queryOne } from '../../../lib/db'
 import { renderDoc } from '../../../lib/doc'
+import { id as routeId } from '../../../lib/ids'
 import { escapeHtml } from '../../../lib/mail'
 import { formatDate } from '../../../lib/repo'
 import { languageLabel, levelLabel } from '../../../lib/years'
@@ -17,6 +18,9 @@ import { languageLabel, levelLabel } from '../../../lib/years'
 export const GET: APIRoute = async ({ params, locals }) => {
   const u = locals.user
   if (!u) return new Response('Neautentificat', { status: 401 })
+
+  const requestId = routeId(params.id ?? null)
+  if (!requestId) return new Response('Documentul nu a fost găsit', { status: 404 })
 
   const r = await queryOne<{
     number: string
@@ -50,7 +54,7 @@ export const GET: APIRoute = async ({ params, locals }) => {
       WHERE r.id = $1
         AND r.status = 'approved'
         AND ($2 IN (r.student_id, r.teacher_id) OR $3 = 'head')`,
-    [params.id, u.id, u.role],
+    [requestId, u.id, u.role],
   )
 
   if (!r) return new Response('Documentul nu a fost găsit', { status: 404 })
