@@ -32,11 +32,11 @@ export interface RequestRow {
   title_ro: string
   title_en: string | null
   objectives: string
-  motivation?: string | null
+  motivation: string | null
   status: 'draft' | 'pending' | 'approved' | 'rejected' | 'expired'
   rejection_reason: string | null
-  decision_note?: string | null
-  expires_at?: string | null
+  decision_note: string | null
+  expires_at: string | null
   submitted_at: string
   decided_at: string | null
   student_id: string
@@ -45,16 +45,30 @@ export interface RequestRow {
   student_number: string | null
   program: 'bachelor' | 'master' | null
   specialization: string | null
+  study_language: string
+  study_group: string | null
+  study_year: number | null
+  student_avatar: string | null
   teacher_id: string
   teacher_name: string
   academic_title: string | null
 }
 
+/**
+ * Every field a request carries wherever it is shown.
+ *
+ * Kept as one list on purpose: the queue, the student's own view and the
+ * archive render the same record, and a field selected in only one of them is
+ * a field that silently disappears in the others — which is exactly how the
+ * response deadline and the motivation went missing from the triage screen.
+ */
 const REQUEST_FIELDS = `
-  r.id, r.number, r.title_ro, r.title_en, r.objectives, r.status, r.rejection_reason,
+  r.id, r.number, r.title_ro, r.title_en, r.objectives, r.motivation,
+  r.status, r.rejection_reason, r.decision_note, r.expires_at,
   r.submitted_at, r.decided_at,
   s.id AS student_id, s.name AS student_name, s.email AS student_email,
   s.student_number, s.program, s.specialization,
+  s.study_language, s.study_group, s.study_year, s.avatar_path AS student_avatar,
   t.id AS teacher_id, t.name AS teacher_name, t.academic_title`
 
 /* --- user-facing Romanian labels ------------------------------------------- */
@@ -194,9 +208,6 @@ export async function teacherSeats(teacherId: string, yearId?: string): Promise<
 }
 
 export interface SupervisedStudent extends RequestRow {
-  study_language: string
-  study_group: string | null
-  study_year: number | null
   milestones_total: number
   milestones_done: number
   conversation_id: string | null
@@ -206,7 +217,6 @@ export interface SupervisedStudent extends RequestRow {
 export function supervisedStudents(teacherId: string, yearId?: string) {
   return query<SupervisedStudent>(
     `SELECT ${REQUEST_FIELDS},
-            s.study_language, s.study_group, s.study_year,
             (SELECT count(*)::int FROM milestones m WHERE m.request_id = r.id) AS milestones_total,
             (SELECT count(*)::int FROM milestones m WHERE m.request_id = r.id AND m.status = 'done') AS milestones_done,
             c.id AS conversation_id,
@@ -337,7 +347,7 @@ export function teacherSlots(teacherId: string) {
 
 export function studentRequests(studentId: string) {
   return query<RequestRow>(
-    `SELECT ${REQUEST_FIELDS}, r.motivation, r.decision_note, r.expires_at
+    `SELECT ${REQUEST_FIELDS}
        FROM requests r
        JOIN users s ON s.id = r.student_id
        JOIN users t ON t.id = r.teacher_id

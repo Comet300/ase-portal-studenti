@@ -250,9 +250,15 @@ async function upsertUser(campuri) {
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
      ON CONFLICT (email) DO UPDATE SET
        name = EXCLUDED.name,
+       student_number = EXCLUDED.student_number,
+       program = EXCLUDED.program,
+       specialization = EXCLUDED.specialization,
+       study_year = EXCLUDED.study_year,
        programme_id = EXCLUDED.programme_id,
        study_language = EXCLUDED.study_language,
        study_group = EXCLUDED.study_group,
+       -- Textul scris de om nu se suprascrie: dacă cineva și-a editat profilul
+       -- în portal, o repornire nu are de ce să îi șteargă descrierea.
        bio = COALESCE(users.bio, EXCLUDED.bio),
        interests = COALESCE(users.interests, EXCLUDED.interests)
      RETURNING id`,
