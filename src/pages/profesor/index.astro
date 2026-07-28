@@ -1,0 +1,440 @@
+---
+import ProfesorLayout from '../../layouts/ProfesorLayout.astro'
+import {
+  acumRelativ,
+  cereriProfesor,
+  dataRo,
+  etapaCurenta,
+  etape,
+  oraRo,
+  sloturiProfesor,
+  statisticiProfesor,
+  studentiCoordonati,
+} from '../../lib/repo'
+import { initiale } from '../../lib/auth'
+
+const u = Astro.locals.utilizator!
+const [stat, cereri, studenti, sloturi, listaEtape, etapa] = await Promise.all([
+  statisticiProfesor(u.id),
+  cereriProfesor(u.id, 'in_asteptare'),
+  studentiCoordonati(u.id),
+  sloturiProfesor(u.id),
+  etape(),
+  etapaCurenta(),
+])
+
+const azi = new Date().toDateString()
+const sloturiAzi = sloturi.filter((s) => new Date(s.start_la).toDateString() === azi && !s.anulat)
+const urmatoareleSloturi = sloturi.filter((s) => new Date(s.start_la) > new Date() && !s.anulat).slice(0, 4)
+
+const capacitate = (u.capacitate_licenta ?? 0) + (u.capacitate_master ?? 0)
+const ocupate = studenti.length
+const procent = capacitate > 0 ? Math.min(100, Math.round((ocupate / capacitate) * 100)) : 0
+
+const prenume = u.nume.replace(/^(Prof\.|Conf\.|Lect\.|Asist\.)\s*univ\.\s*dr\.\s*/i, '').split(' ')[0]
+const necitite = studenti.reduce((s, x) => s + x.mesaje_necitite, 0)
+---
+
+<ProfesorLayout
+  titlu={`Bine ai revenit, ${prenume}`}
+  lede={etapa
+    ? `Etapa curentă: ${etapa.titlu} · ${etapa.interval_text}`
+    : 'Sesiunea de Finalizare a Studiilor 2026'}
+  activ="dashboard"
+>
+  <div slot="actiuni" class="row">
+    <a href="/profesor/studenti" class="btn btn--primary btn--sm">Deschide cererile</a>
+  </div>
+
+  <div class="stack stack--loose">
+    <!-- Ce cere acțiune acum -->
+    <section class="stack">
+      <h2 class="section-title">Ce cere atenția ta</h2>
+      <div class="grid-auto">
+        <a href="/profesor/studenti?status=in_asteptare" class="metric metric--link">
+          <span class="metric__valoare numeric">{stat?.in_asteptare ?? 0}</span>
+          <span class="metric__eticheta">cereri în așteptare</span>
+          {
+            (stat?.in_asteptare ?? 0) > 0 && (
+              <span class="metric__nota">Cea mai veche: {acumRelativ(cereri.at(-1)?.depusa_la ?? null)}</span>
+            )
+          }
+        </a>
+
+        <a href="/profesor/mesaje" class="metric metric--link">
+          <span class="metric__valoare numeric">{necitite}</span>
+          <span class="metric__eticheta">mesaje necitite</span>
+          <span class="metric__nota">de la {studenti.filter((s) => s.mesaje_necitite > 0).length} studenți</span>
+        </a>
+
+        <div class="metric">
+          <span class="metric__valoare numeric">{sloturiAzi.length}</span>
+          <span class="metric__eticheta">consultații astăzi</span>
+          <span class="metric__nota">
+            {sloturiAzi.length > 0 ? `Prima la ${oraRo(sloturiAzi[0].start_la)}` : 'Nicio programare'}
+          </span>
+        </div>
+
+        <div class="metric">
+          <span class="metric__valoare numeric">
+            {stat?.ore_raspuns_mediu != null ? `${stat.ore_raspuns_mediu}h` : '—'}
+          </span>
+          <span class="metric__eticheta">timp mediu de răspuns</span>
+          <span class="metric__nota">la cererile decise</span>
+        </div>
+      </div>
+    </section>
+
+    <div class="coloane">
+      <!-- Coada de cereri -->
+      <section class="panel">
+        <div class="panel__header">
+          <h2 class="section-title">Cereri în așteptare</h2>
+          <a href="/profesor/studenti?status=in_asteptare" class="btn btn--ghost btn--sm">Vezi toate</a>
+        </div>
+
+        {
+          cereri.length === 0 ? (
+            <div class="empty">
+              <p class="empty__title">Nicio cerere în așteptare</p>
+              <p class="empty__text">
+                Când un student îți trimite o cerere de coordonare, apare aici cu titlul propus și
+                obiectivele lucrării, ca să o poți accepta sau respinge.
+              </p>
+            </div>
+          ) : (
+            <ul class="lista">
+              {cereri.slice(0, 5).map((c) => (
+                <li class="lista__item">
+                  <span class="avatar" aria-hidden="true">{initiale(c.student_nume)}</span>
+                  <span class="lista__corp">
+                    <a href={`/profesor/studenti?cerere=${c.id}`} class="lista__titlu">{c.titlu_ro}</a>
+                    <span class="lista__meta">
+                      {c.student_nume} · {c.numar_matricol} ·{' '}
+                      {c.program === 'master' ? 'Master' : 'Licență'} · depusă {acumRelativ(c.depusa_la)}
+                    </span>
+                  </span>
+                  <form method="POST" action="/api/cereri/decizie" class="row">
+                    <input type="hidden" name="cerere_id" value={c.id} />
+                    <input type="hidden" name="decizie" value="aprobata" />
+                    <input type="hidden" name="redirect" value="/profesor" />
+                    <button class="btn btn--primary btn--sm" type="submit">Acceptă</button>
+                  </form>
+                </li>
+              ))}
+            </ul>
+          )
+        }
+      </section>
+
+      <!-- Următoarele consultații -->
+      <section class="panel">
+        <div class="panel__header">
+          <h2 class="section-title">Consultații</h2>
+          <a href="/profesor/studenti#consultatii" class="btn btn--ghost btn--sm">Program</a>
+        </div>
+
+        {
+          urmatoareleSloturi.length === 0 ? (
+            <div class="empty">
+              <p class="empty__title">Niciun interval publicat</p>
+              <p class="empty__text">
+                Publică intervale de consultație din pagina Studenți & Cereri, iar studenții își pot
+                rezerva singuri un loc.
+              </p>
+            </div>
+          ) : (
+            <ul class="lista">
+              {urmatoareleSloturi.map((s) => (
+                <li class="lista__item lista__item--compact">
+                  <span class="data-chip">
+                    <strong>{new Date(s.start_la).getDate()}</strong>
+                    <small>{dataRo(s.start_la).split(' ')[1]?.slice(0, 3)}</small>
+                  </span>
+                  <span class="lista__corp">
+                    <span class="lista__titlu lista__titlu--static">
+                      {oraRo(s.start_la)}–{oraRo(s.sfarsit_la)}
+                    </span>
+                    <span class="lista__meta">
+                      {s.student_nume ?? 'Liber'} · {s.mod === 'online' ? 'Online' : (s.locatie ?? 'Cabinet')}
+                    </span>
+                  </span>
+                  {s.rezervari > 0 && <span class="badge badge--aprobata">Rezervat</span>}
+                </li>
+              ))}
+            </ul>
+          )
+        }
+      </section>
+    </div>
+
+    <!-- Capacitate + calendarul sesiunii -->
+    <div class="coloane">
+      <section class="panel">
+        <div class="panel__header">
+          <h2 class="section-title">Capacitate de coordonare</h2>
+        </div>
+        <div class="panel__body stack">
+          <div class="row row--between">
+            <span class="muted" style="font-size:var(--t-sm)">Studenți coordonați</span>
+            <span class="numeric" style="font-weight:600">{ocupate} / {capacitate}</span>
+          </div>
+          <div
+            class="bara"
+            role="progressbar"
+            aria-valuenow={ocupate}
+            aria-valuemin="0"
+            aria-valuemax={capacitate}
+            aria-label="Capacitate de coordonare"
+          >
+            <span class="bara__fill" style={`--procent:${procent / 100}`}></span>
+          </div>
+          <p class="muted" style="font-size:var(--t-sm)">
+            {
+              capacitate - ocupate > 0
+                ? `Mai poți prelua ${capacitate - ocupate} ${capacitate - ocupate === 1 ? 'student' : 'studenți'} în această sesiune.`
+                : 'Ai atins numărul maxim de studenți pentru această sesiune.'
+            }
+          </p>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel__header">
+          <h2 class="section-title">Calendarul sesiunii</h2>
+        </div>
+        <ol class="etape">
+          {
+            listaEtape.map((e) => {
+              const activa = etapa?.id === e.id
+              const trecuta = e.data_sfarsit ? new Date(e.data_sfarsit) < new Date() : false
+              return (
+                <li class:list={['etapa', { 'is-activa': activa, 'is-trecuta': trecuta }]}>
+                  <span class="etapa__punct" aria-hidden="true" />
+                  <span class="etapa__corp">
+                    <strong>{e.titlu}</strong>
+                    <small>{e.interval_text}</small>
+                  </span>
+                  {activa && <span class="badge badge--asteptare">În curs</span>}
+                </li>
+              )
+            })
+          }
+        </ol>
+      </section>
+    </div>
+  </div>
+</ProfesorLayout>
+
+<style>
+  .coloane {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+    gap: var(--s-4);
+    align-items: start;
+  }
+
+  /* Metricile sunt cifre pe care se poate acționa, nu decor: fiecare duce undeva
+     sau explică ce urmează. */
+  .metric {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-1);
+    padding: var(--s-4);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--r-lg);
+    text-decoration: none;
+    color: inherit;
+  }
+
+  .metric--link {
+    transition: border-color var(--fast) var(--ease);
+  }
+  .metric--link:hover {
+    border-color: var(--border-strong);
+    color: inherit;
+  }
+
+  .metric__valoare {
+    font-size: var(--t-3xl);
+    font-weight: 600;
+    line-height: 1.1;
+  }
+
+  .metric__eticheta {
+    font-size: var(--t-sm);
+    color: var(--ink-soft);
+  }
+
+  .metric__nota {
+    font-size: var(--t-xs);
+    color: var(--ink-muted);
+  }
+
+  .lista {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+  }
+
+  .lista__item {
+    display: flex;
+    align-items: center;
+    gap: var(--s-3);
+    padding: var(--s-4) var(--s-5);
+    border-bottom: 1px solid var(--border);
+  }
+  .lista__item--compact {
+    padding-block: var(--s-3);
+  }
+  .lista__item:last-child {
+    border-bottom: 0;
+  }
+
+  .lista__corp {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+    flex: 1;
+  }
+
+  .lista__titlu {
+    font-size: var(--t-sm);
+    font-weight: 600;
+    color: var(--ink);
+    text-decoration: none;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  a.lista__titlu:hover {
+    color: var(--red);
+  }
+  .lista__titlu--static {
+    font-variant-numeric: tabular-nums;
+  }
+
+  .lista__meta {
+    font-size: var(--t-xs);
+    color: var(--ink-muted);
+  }
+
+  .avatar {
+    display: grid;
+    place-items: center;
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    background: var(--surface-sunken);
+    border: 1px solid var(--border);
+    font-size: var(--t-xs);
+    font-weight: 600;
+    color: var(--ink-soft);
+    flex: none;
+  }
+
+  .data-chip {
+    display: grid;
+    place-items: center;
+    width: 38px;
+    height: 38px;
+    border-radius: var(--r-md);
+    background: var(--surface-sunken);
+    border: 1px solid var(--border);
+    line-height: 1;
+    flex: none;
+  }
+  .data-chip strong {
+    font-size: var(--t-sm);
+    font-variant-numeric: tabular-nums;
+  }
+  .data-chip small {
+    font-size: 10px;
+    color: var(--ink-muted);
+    text-transform: lowercase;
+  }
+
+  .bara {
+    height: 6px;
+    background: var(--surface-sunken);
+    border-radius: 999px;
+    overflow: hidden;
+  }
+  /* Umplerea se face prin scaleX, nu prin lățime: transformarea nu declanșează layout. */
+  .bara__fill {
+    display: block;
+    width: 100%;
+    height: 100%;
+    background: var(--red);
+    border-radius: 999px;
+    transform-origin: left center;
+    transform: scaleX(var(--procent, 0));
+    transition: transform var(--base) var(--ease);
+  }
+
+  .etape {
+    list-style: none;
+    margin: 0;
+    padding: var(--s-4) var(--s-5);
+    display: flex;
+    flex-direction: column;
+  }
+
+  .etapa {
+    display: flex;
+    align-items: center;
+    gap: var(--s-3);
+    padding-block: var(--s-3);
+    position: relative;
+  }
+
+  .etapa:not(:last-child)::before {
+    content: '';
+    position: absolute;
+    left: 5px;
+    top: 28px;
+    bottom: -4px;
+    width: 1px;
+    background: var(--border-strong);
+  }
+
+  .etapa__punct {
+    width: 11px;
+    height: 11px;
+    border-radius: 50%;
+    border: 2px solid var(--border-strong);
+    background: var(--surface);
+    flex: none;
+    z-index: 1;
+  }
+
+  .etapa.is-trecuta .etapa__punct {
+    background: var(--ok);
+    border-color: var(--ok);
+  }
+  .etapa.is-activa .etapa__punct {
+    background: var(--red);
+    border-color: var(--red);
+  }
+
+  .etapa__corp {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-width: 0;
+  }
+  .etapa__corp strong {
+    font-size: var(--t-sm);
+    font-weight: 600;
+  }
+  .etapa__corp small {
+    font-size: var(--t-xs);
+    color: var(--ink-muted);
+  }
+  .etapa.is-trecuta .etapa__corp strong {
+    color: var(--ink-muted);
+    font-weight: 500;
+  }
+</style>

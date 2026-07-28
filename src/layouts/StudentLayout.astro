@@ -1,0 +1,271 @@
+---
+import BaseLayout from './BaseLayout.astro'
+import { initiale } from '../lib/auth'
+
+interface Props {
+  titlu: string
+  descriere?: string
+  activ?: string
+}
+
+const { titlu, descriere, activ } = Astro.props
+const u = Astro.locals.utilizator
+
+const linkuri = [
+  { href: '/', text: 'Acasă', cheie: 'acasa' },
+  { href: '/coordonatori', text: 'Coordonatori', cheie: 'coordonatori' },
+  { href: '/cererile-mele', text: 'Cererile Mele', cheie: 'cereri' },
+  { href: '/mesaje', text: 'Mesaje', cheie: 'mesaje' },
+  { href: '/consultatii', text: 'Consultații', cheie: 'consultatii' },
+  { href: '/ghid', text: 'Ghid', cheie: 'ghid' },
+]
+---
+
+<BaseLayout titlu={titlu} descriere={descriere}>
+  <header class="topbar">
+    <div class="topbar__inner container">
+      <a href="/" class="brand">
+        <span class="brand__mark" aria-hidden="true">A</span>
+        <span class="brand__text">
+          <strong>Portal Studenți</strong>
+          <small>Facultatea de Marketing · ASE</small>
+        </span>
+      </a>
+
+      <nav class="nav" aria-label="Navigație principală">
+        {
+          linkuri.map((l) => (
+            <a href={l.href} class:list={['nav__link', { 'is-active': activ === l.cheie }]}>
+              {l.text}
+            </a>
+          ))
+        }
+      </nav>
+
+      <div class="topbar__end">
+        {
+          u ? (
+            <>
+              {(u.rol === 'profesor' || u.rol === 'director') && (
+                <a href="/profesor" class="btn btn--secondary btn--sm">
+                  Zona cadrelor didactice
+                </a>
+              )}
+              <a href="/contul-meu" class="avatar" title={u.nume}>
+                {initiale(u.nume)}
+              </a>
+            </>
+          ) : (
+            <a href="/autentificare" class="btn btn--primary btn--sm">
+              Autentificare
+            </a>
+          )
+        }
+        <button class="hamburger" aria-label="Deschide meniul" aria-expanded="false" aria-controls="meniu-mobil">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+            ><path d="M3 6h18M3 12h18M3 18h18"></path></svg
+          >
+        </button>
+      </div>
+    </div>
+
+    <nav class="meniu-mobil" id="meniu-mobil" aria-label="Navigație mobilă" hidden>
+      {
+        linkuri.map((l) => (
+          <a href={l.href} class:list={['meniu-mobil__link', { 'is-active': activ === l.cheie }]}>
+            {l.text}
+          </a>
+        ))
+      }
+    </nav>
+  </header>
+
+  <main id="continut">
+    <slot />
+  </main>
+
+  <footer class="footer">
+    <div class="container row row--between row--wrap" style="gap:var(--s-4)">
+      <p class="muted" style="font-size:var(--t-sm)">
+        Academia de Studii Economice din București · Facultatea de Marketing
+      </p>
+      <p class="muted" style="font-size:var(--t-sm)">Sesiunea de Finalizare a Studiilor 2026</p>
+    </div>
+  </footer>
+</BaseLayout>
+
+<script>
+  const buton = document.querySelector<HTMLButtonElement>('.hamburger')
+  const meniu = document.getElementById('meniu-mobil')
+  buton?.addEventListener('click', () => {
+    const deschis = buton.getAttribute('aria-expanded') === 'true'
+    buton.setAttribute('aria-expanded', String(!deschis))
+    if (meniu) meniu.hidden = deschis
+  })
+</script>
+
+<style>
+  .topbar {
+    position: sticky;
+    top: 0;
+    z-index: var(--z-sticky);
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .topbar__inner {
+    display: flex;
+    align-items: center;
+    gap: var(--s-5);
+    height: var(--topbar-h);
+  }
+
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: var(--s-3);
+    text-decoration: none;
+    color: var(--ink);
+    flex: none;
+  }
+
+  .brand__mark {
+    display: grid;
+    place-items: center;
+    width: 32px;
+    height: 32px;
+    background: var(--red);
+    color: #fff;
+    border-radius: var(--r-md);
+    font-family: var(--serif);
+    font-weight: 700;
+  }
+
+  .brand__text {
+    display: flex;
+    flex-direction: column;
+    line-height: 1.25;
+  }
+  .brand__text strong {
+    font-family: var(--serif);
+    font-size: var(--t-md);
+  }
+  .brand__text small {
+    font-size: var(--t-xs);
+    color: var(--ink-muted);
+  }
+
+  .nav {
+    display: flex;
+    gap: var(--s-1);
+    margin-left: auto;
+  }
+
+  .nav__link {
+    padding: var(--s-2) var(--s-3);
+    border-radius: var(--r-md);
+    font-size: var(--t-sm);
+    font-weight: 500;
+    color: var(--ink-soft);
+    text-decoration: none;
+    white-space: nowrap;
+    transition: background var(--fast) var(--ease), color var(--fast) var(--ease);
+  }
+
+  .nav__link:hover {
+    background: var(--surface-sunken);
+    color: var(--ink);
+  }
+
+  /* Starea curentă este marcată cu roșu — sigiliul, nu decor. */
+  .nav__link.is-active {
+    color: var(--red);
+    font-weight: 600;
+  }
+
+  .topbar__end {
+    display: flex;
+    align-items: center;
+    gap: var(--s-3);
+    flex: none;
+  }
+
+  .avatar {
+    display: grid;
+    place-items: center;
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    background: var(--surface-sunken);
+    border: 1px solid var(--border-strong);
+    color: var(--ink-soft);
+    font-size: var(--t-xs);
+    font-weight: 600;
+    text-decoration: none;
+  }
+  .avatar:hover {
+    border-color: var(--ink-muted);
+    color: var(--ink);
+  }
+
+  .hamburger {
+    display: none;
+    align-items: center;
+    justify-content: center;
+    width: 38px;
+    height: 38px;
+    border: 1px solid var(--border-strong);
+    border-radius: var(--r-md);
+    background: var(--surface);
+    cursor: pointer;
+  }
+  .hamburger svg {
+    width: 18px;
+    height: 18px;
+  }
+
+  .meniu-mobil {
+    display: none;
+    flex-direction: column;
+    padding: var(--s-2) var(--s-5) var(--s-4);
+    border-top: 1px solid var(--border);
+  }
+
+  .meniu-mobil__link {
+    padding: var(--s-3) var(--s-2);
+    color: var(--ink-soft);
+    text-decoration: none;
+    font-weight: 500;
+    border-bottom: 1px solid var(--border);
+  }
+  .meniu-mobil__link.is-active {
+    color: var(--red);
+    font-weight: 600;
+  }
+
+  main {
+    min-height: calc(100vh - var(--topbar-h) - 72px);
+    padding-block: var(--s-6) var(--s-7);
+  }
+
+  .footer {
+    border-top: 1px solid var(--border);
+    background: var(--surface);
+    padding-block: var(--s-5);
+  }
+
+  @media (max-width: 900px) {
+    .nav {
+      display: none;
+    }
+    .hamburger {
+      display: inline-flex;
+    }
+    .meniu-mobil:not([hidden]) {
+      display: flex;
+    }
+    .brand__text small {
+      display: none;
+    }
+  }
+</style>

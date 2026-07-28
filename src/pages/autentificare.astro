@@ -1,0 +1,251 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro'
+import { conturiDemo, DEMO_MODE, initiale } from '../lib/auth'
+
+const redirect = Astro.url.searchParams.get('redirect') ?? ''
+const trimis = Astro.url.searchParams.get('trimis') === '1'
+const eroare = Astro.url.searchParams.get('eroare')
+const conturi = await conturiDemo()
+
+if (Astro.locals.utilizator && !trimis) {
+  const u = Astro.locals.utilizator
+  return Astro.redirect(u.rol === 'student' ? '/cererile-mele' : '/profesor', 302)
+}
+
+const eticheteRol: Record<string, string> = {
+  student: 'Student',
+  profesor: 'Cadru didactic',
+  director: 'Director de departament',
+}
+---
+
+<BaseLayout titlu="Autentificare" descriere="Acces cu contul instituțional ASE">
+  <div class="ecran">
+    <main class="card" id="continut">
+      <a href="/" class="brand">
+        <span class="brand__mark" aria-hidden="true">A</span>
+        <span class="brand__text">
+          <strong>Portal Studenți</strong>
+          <small>Facultatea de Marketing · ASE București</small>
+        </span>
+      </a>
+
+      {
+        trimis ? (
+          <div class="stack">
+            <h1 class="titlu">Verifică-ți emailul</h1>
+            <p class="muted">
+              Ți-am trimis un link de autentificare. Este valabil 20 de minute și poate fi folosit o
+              singură dată.
+            </p>
+            <a href="/autentificare" class="btn btn--secondary">Trimite din nou</a>
+          </div>
+        ) : (
+          <div class="stack">
+            <div class="stack stack--tight">
+              <h1 class="titlu">Autentificare</h1>
+              <p class="muted">
+                Introdu adresa instituțională. Primești un link de acces prin email — fără parolă.
+              </p>
+            </div>
+
+            {eroare && <p class="error-text" role="alert">{eroare}</p>}
+
+            <form method="POST" action="/api/autentificare" class="stack">
+              <input type="hidden" name="redirect" value={redirect} />
+              <div class="field">
+                <label class="label" for="email">Adresă de email</label>
+                <input
+                  class="input"
+                  id="email"
+                  name="email"
+                  type="email"
+                  required
+                  autocomplete="email"
+                  placeholder="prenume.nume@stud.ase.ro"
+                />
+                <span class="hint">Conturi @stud.ase.ro pentru studenți, @ase.ro pentru cadre didactice.</span>
+              </div>
+              <button class="btn btn--primary" type="submit">Trimite linkul de acces</button>
+            </form>
+          </div>
+        )
+      }
+
+      {
+        DEMO_MODE && conturi.length > 0 && (
+          <section class="demo">
+            <h2 class="demo__titlu">Conturi demonstrative</h2>
+            <p class="demo__text">
+              Modul demonstrativ este activ: poți intra direct, fără email. Datele sunt fictive.
+            </p>
+            <ul class="demo__lista">
+              {conturi.map((c) => (
+                <li>
+                  <form method="POST" action="/api/demo-login">
+                    <input type="hidden" name="utilizator_id" value={c.id} />
+                    <input type="hidden" name="redirect" value={redirect} />
+                    <button class="demo__cont" type="submit">
+                      <span class="demo__avatar">{initiale(c.nume)}</span>
+                      <span class="demo__meta">
+                        <strong>{c.nume}</strong>
+                        <small>{eticheteRol[c.rol]}</small>
+                      </span>
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                        <path d="M5 12h14M13 6l6 6-6 6" />
+                      </svg>
+                    </button>
+                  </form>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )
+      }
+    </main>
+  </div>
+</BaseLayout>
+
+<style>
+  .ecran {
+    min-height: 100vh;
+    display: grid;
+    place-items: center;
+    padding: var(--s-5);
+    background: var(--bg);
+  }
+
+  .card {
+    width: 100%;
+    max-width: 440px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--r-lg);
+    box-shadow: var(--shadow-card);
+    padding: var(--s-6);
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-6);
+  }
+
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: var(--s-3);
+    text-decoration: none;
+    color: var(--ink);
+  }
+
+  .brand__mark {
+    display: grid;
+    place-items: center;
+    width: 36px;
+    height: 36px;
+    background: var(--red);
+    color: #fff;
+    border-radius: var(--r-md);
+    font-family: var(--serif);
+    font-weight: 700;
+  }
+
+  .brand__text {
+    display: flex;
+    flex-direction: column;
+    line-height: 1.25;
+  }
+  .brand__text strong {
+    font-family: var(--serif);
+    font-size: var(--t-md);
+  }
+  .brand__text small {
+    font-size: var(--t-xs);
+    color: var(--ink-muted);
+  }
+
+  .titlu {
+    font-family: var(--serif);
+    font-size: var(--t-2xl);
+  }
+
+  .demo {
+    border-top: 1px solid var(--border);
+    padding-top: var(--s-5);
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-3);
+  }
+
+  .demo__titlu {
+    font-size: var(--t-sm);
+    font-weight: 600;
+    color: var(--ink-soft);
+  }
+
+  .demo__text {
+    font-size: var(--t-xs);
+    color: var(--ink-muted);
+  }
+
+  .demo__lista {
+    list-style: none;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-2);
+  }
+
+  .demo__cont {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: var(--s-3);
+    padding: var(--s-3);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--r-md);
+    cursor: pointer;
+    text-align: left;
+    transition: border-color var(--fast) var(--ease), background var(--fast) var(--ease);
+  }
+
+  .demo__cont:hover {
+    border-color: var(--border-strong);
+    background: var(--surface-sunken);
+  }
+
+  .demo__cont svg {
+    width: 16px;
+    height: 16px;
+    margin-left: auto;
+    color: var(--ink-muted);
+    flex: none;
+  }
+
+  .demo__avatar {
+    display: grid;
+    place-items: center;
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    background: var(--surface-sunken);
+    border: 1px solid var(--border-strong);
+    font-size: var(--t-xs);
+    font-weight: 600;
+    color: var(--ink-soft);
+    flex: none;
+  }
+
+  .demo__meta {
+    display: flex;
+    flex-direction: column;
+    line-height: 1.3;
+    min-width: 0;
+  }
+  .demo__meta strong {
+    font-size: var(--t-sm);
+  }
+  .demo__meta small {
+    font-size: var(--t-xs);
+    color: var(--ink-muted);
+  }
+</style>

@@ -1,0 +1,865 @@
+---
+import ProfesorLayout from '../../layouts/ProfesorLayout.astro'
+import { initiale } from '../../lib/auth'
+import {
+  CLASA_STATUS,
+  ETICHETE_STATUS,
+  acumRelativ,
+  cereriProfesor,
+  dataRo,
+  jaloaneCerere,
+  oraRo,
+  sloturiProfesor,
+  studentiCoordonati,
+  temeProfesor,
+} from '../../lib/repo'
+
+const u = Astro.locals.utilizator!
+const sectiune = Astro.url.searchParams.get('sectiune') ?? 'cereri'
+const studentDeschis = Astro.url.searchParams.get('student')
+
+const [toateCererile, studenti, teme, sloturi] = await Promise.all([
+  cereriProfesor(u.id),
+  studentiCoordonati(u.id),
+  temeProfesor(u.id),
+  sloturiProfesor(u.id),
+])
+
+const inAsteptare = toateCererile.filter((c) => c.status === 'in_asteptare')
+const decise = toateCererile.filter((c) => c.status !== 'in_asteptare')
+
+// Cronologia se încarcă pentru studentul deschis; implicit, primul coordonat.
+const cerereTimeline = studentDeschis
+  ? studenti.find((s) => s.id === studentDeschis)
+  : studenti[0]
+const jaloane = cerereTimeline ? await jaloaneCerere(u.id, cerereTimeline.id) : []
+
+const sectiuni = [
+  { cheie: 'cereri', text: 'Cereri', contor: inAsteptare.length },
+  { cheie: 'studenti', text: 'Studenți coordonați', contor: studenti.length },
+  { cheie: 'cronologie', text: 'Cronologie', contor: null },
+  { cheie: 'teme', text: 'Teme propuse', contor: teme.filter((t) => t.activa).length },
+  { cheie: 'consultatii', text: 'Consultații', contor: sloturi.filter((s) => !s.anulat).length },
+]
+
+const caleCurenta = `/profesor/studenti?sectiune=${sectiune}`
+const STARI_JALON: Record<string, string> = {
+  planificat: 'Planificat',
+  in_lucru: 'În lucru',
+  finalizat: 'Finalizat',
+}
+---
+
+<ProfesorLayout
+  titlu="Studenți & Cereri"
+  lede="Triaj cereri, studenți coordonați, cronologia lucrărilor, teme și program de consultații."
+  activ="studenti"
+>
+  <nav class="taburi" aria-label="Secțiuni">
+    {
+      sectiuni.map((s) => (
+        <a
+          href={`/profesor/studenti?sectiune=${s.cheie}`}
+          class:list={['tab', { 'is-activ': sectiune === s.cheie }]}
+          aria-current={sectiune === s.cheie ? 'page' : undefined}
+        >
+          {s.text}
+          {s.contor !== null && s.contor > 0 && <span class="tab__contor numeric">{s.contor}</span>}
+        </a>
+      ))
+    }
+  </nav>
+
+  {/* ---------------------------------------------------------------- cereri */}
+  {
+    sectiune === 'cereri' && (
+      <div class="stack">
+        <section class="panel">
+          <div class="panel__header">
+            <h2 class="section-title">În așteptare</h2>
+            <span class="muted" style="font-size:var(--t-sm)">
+              {inAsteptare.length} {inAsteptare.length === 1 ? 'cerere' : 'cereri'}
+            </span>
+          </div>
+
+          {inAsteptare.length === 0 ? (
+            <div class="empty">
+              <p class="empty__title">Nicio cerere în așteptare</p>
+              <p class="empty__text">
+                Cererile noi apar aici imediat ce un student le depune. Vei primi și un email.
+              </p>
+            </div>
+          ) : (
+            <ul class="cereri">
+              {inAsteptare.map((c) => (
+                <li class="cerere">
+                  <div class="cerere__cap">
+                    <span class="avatar" aria-hidden="true">{initiale(c.student_nume)}</span>
+                    <div class="cerere__ident">
+                      <strong>{c.student_nume}</strong>
+                      <span class="muted">
+                        {c.numar_matricol} · {c.program === 'master' ? 'Master' : 'Licență'} ·{' '}
+                        {c.specializare}
+                      </span>
+                    </div>
+                    <span class="muted" style="font-size:var(--t-xs)">
+                      depusă {acumRelativ(c.depusa_la)}
+                    </span>
+                  </div>
+
+                  <h3 class="cerere__titlu">{c.titlu_ro}</h3>
+                  {c.titlu_en && <p class="cerere__titlu-en">{c.titlu_en}</p>}
+                  <p class="cerere__scop">{c.scop_obiective}</p>
+
+                  <div class="cerere__actiuni">
+                    <form method="POST" action="/api/cereri/decizie">
+                      <input type="hidden" name="cerere_id" value={c.id} />
+                      <input type="hidden" name="decizie" value="aprobata" />
+                      <input type="hidden" name="redirect" value={caleCurenta} />
+                      <button class="btn btn--primary btn--sm" type="submit">
+                        Acceptă coordonarea
+                      </button>
+                    </form>
+                    <button
+                      class="btn btn--danger btn--sm"
+                      type="button"
+                      data-respinge={c.id}
+                      data-nume={c.student_nume}
+                    >
+                      Respinge
+                    </button>
+                    <a class="btn btn--ghost btn--sm" href={`mailto:${c.student_email}`}>
+                      Scrie pe email
+                    </a>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+
+        {decise.length > 0 && (
+          <section class="panel">
+            <div class="panel__header">
+              <h2 class="section-title">Cereri decise</h2>
+            </div>
+            <div class="table-wrap">
+              <table class="table">
+                <thead>
+                  <tr>
+                    <th>Cerere</th>
+                    <th>Student</th>
+                    <th>Titlul lucrării</th>
+                    <th>Stare</th>
+                    <th>Decisă</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {decise.map((c) => (
+                    <tr>
+                      <td class="numeric muted">{c.numar}</td>
+                      <td>{c.student_nume}</td>
+                      <td class="celula-titlu">{c.titlu_ro}</td>
+                      <td>
+                        <span class:list={['badge', CLASA_STATUS[c.status]]}>
+                          {ETICHETE_STATUS[c.status]}
+                        </span>
+                      </td>
+                      <td class="muted">{dataRo(c.decisa_la)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        )}
+      </div>
+    )
+  }
+
+  {/* -------------------------------------------------------------- studenți */}
+  {
+    sectiune === 'studenti' && (
+      <section class="panel">
+        <div class="panel__header">
+          <h2 class="section-title">Studenți coordonați</h2>
+          <span class="muted" style="font-size:var(--t-sm)">
+            {studenti.length} din {(u.capacitate_licenta ?? 0) + (u.capacitate_master ?? 0)} locuri
+          </span>
+        </div>
+
+        {studenti.length === 0 ? (
+          <div class="empty">
+            <p class="empty__title">Niciun student coordonat încă</p>
+            <p class="empty__text">
+              După ce accepți o cerere, studentul apare aici împreună cu cronologia lucrării și firul
+              de discuție.
+            </p>
+          </div>
+        ) : (
+          <div class="table-wrap">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>Student</th>
+                  <th>Titlul lucrării</th>
+                  <th>Progres</th>
+                  <th>Mesaje</th>
+                  <th><span class="visually-hidden">Acțiuni</span></th>
+                </tr>
+              </thead>
+              <tbody>
+                {studenti.map((s) => {
+                  const procent = s.jaloane_total
+                    ? Math.round((s.jaloane_finalizate / s.jaloane_total) * 100)
+                    : 0
+                  return (
+                    <tr>
+                      <td>
+                        <div class="row" style="gap:var(--s-3)">
+                          <span class="avatar" aria-hidden="true">{initiale(s.student_nume)}</span>
+                          <div class="stack stack--tight" style="gap:0">
+                            <strong>{s.student_nume}</strong>
+                            <span class="muted" style="font-size:var(--t-xs)">
+                              {s.numar_matricol} · {s.program === 'master' ? 'Master' : 'Licență'}
+                            </span>
+                          </div>
+                        </div>
+                      </td>
+                      <td class="celula-titlu">{s.titlu_ro}</td>
+                      <td>
+                        <div class="progres">
+                          <div class="bara" role="img" aria-label={`Progres ${procent}%`}>
+                            <span class="bara__fill" style={`--procent:${procent / 100}`} />
+                          </div>
+                          <span class="muted numeric" style="font-size:var(--t-xs)">
+                            {s.jaloane_finalizate}/{s.jaloane_total}
+                          </span>
+                        </div>
+                      </td>
+                      <td>
+                        {s.mesaje_necitite > 0 ? (
+                          <span class="badge badge--asteptare">{s.mesaje_necitite} necitite</span>
+                        ) : (
+                          <span class="muted">—</span>
+                        )}
+                      </td>
+                      <td>
+                        <div class="row" style="gap:var(--s-2);justify-content:flex-end">
+                          <a
+                            class="btn btn--secondary btn--sm"
+                            href={`/profesor/studenti?sectiune=cronologie&student=${s.id}`}
+                          >
+                            Cronologie
+                          </a>
+                          <a class="btn btn--ghost btn--sm" href={`/profesor/mesaje?student=${s.student_id}`}>
+                            Mesaje
+                          </a>
+                        </div>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+    )
+  }
+
+  {/* ------------------------------------------------------------ cronologie */}
+  {
+    sectiune === 'cronologie' && (
+      <div class="stack">
+        {studenti.length === 0 ? (
+          <section class="panel">
+            <div class="empty">
+              <p class="empty__title">Nicio lucrare de urmărit</p>
+              <p class="empty__text">
+                Cronologia devine disponibilă după ce accepți prima cerere de coordonare.
+              </p>
+            </div>
+          </section>
+        ) : (
+          <>
+            <section class="panel">
+              <div class="panel__header">
+                <h2 class="section-title">Lucrarea urmărită</h2>
+              </div>
+              <div class="panel__body">
+                <form method="GET" class="row row--wrap" style="gap:var(--s-3)">
+                  <input type="hidden" name="sectiune" value="cronologie" />
+                  <div class="field" style="flex:1;min-width:280px">
+                    <label class="label" for="student">Student</label>
+                    <select class="select" id="student" name="student" onchange="this.form.submit()">
+                      {studenti.map((s) => (
+                        <option value={s.id} selected={cerereTimeline?.id === s.id}>
+                          {s.student_nume} — {s.titlu_ro}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <noscript>
+                    <button class="btn btn--secondary" type="submit" style="margin-top:26px">
+                      Afișează
+                    </button>
+                  </noscript>
+                </form>
+              </div>
+            </section>
+
+            {/* Aceeași cronologie pe care o vede studentul, dar editabilă. */}
+            <section class="panel">
+              <div class="panel__header">
+                <h2 class="section-title">Cronologia lucrării</h2>
+                <span class="muted" style="font-size:var(--t-sm)">
+                  {jaloane.filter((j) => j.status === 'finalizat').length} din {jaloane.length} finalizate
+                </span>
+              </div>
+
+              <ol class="cronologie">
+                {jaloane.map((j) => (
+                  <li class:list={['jalon', `jalon--${j.status}`]}>
+                    <span class="jalon__punct" aria-hidden="true" />
+                    <details class="jalon__corp">
+                      <summary>
+                        <span class="jalon__titlu">{j.titlu}</span>
+                        <span class="jalon__meta">
+                          <span class="muted">{j.termen ? dataRo(j.termen) : 'fără termen'}</span>
+                          <span
+                            class:list={[
+                              'badge',
+                              j.status === 'finalizat'
+                                ? 'badge--aprobata'
+                                : j.status === 'in_lucru'
+                                  ? 'badge--asteptare'
+                                  : 'badge--ciorna',
+                            ]}
+                          >
+                            {STARI_JALON[j.status]}
+                          </span>
+                        </span>
+                      </summary>
+
+                      <form method="POST" action="/api/jaloane" class="jalon__editor">
+                        <input type="hidden" name="actiune" value="actualizeaza" />
+                        <input type="hidden" name="jalon_id" value={j.id} />
+                        <input
+                          type="hidden"
+                          name="redirect"
+                          value={`/profesor/studenti?sectiune=cronologie&student=${cerereTimeline?.id}`}
+                        />
+
+                        <div class="field">
+                          <label class="label" for={`titlu-${j.id}`}>Titlu</label>
+                          <input class="input" id={`titlu-${j.id}`} name="titlu" value={j.titlu} required />
+                        </div>
+
+                        <div class="row row--wrap" style="gap:var(--s-3);align-items:flex-end">
+                          <div class="field" style="flex:1;min-width:160px">
+                            <label class="label" for={`termen-${j.id}`}>Termen</label>
+                            <input
+                              class="input"
+                              id={`termen-${j.id}`}
+                              name="termen"
+                              type="date"
+                              value={j.termen ? j.termen.slice(0, 10) : ''}
+                            />
+                          </div>
+                          <div class="field" style="flex:1;min-width:160px">
+                            <label class="label" for={`status-${j.id}`}>Stare</label>
+                            <select class="select" id={`status-${j.id}`} name="status">
+                              {Object.entries(STARI_JALON).map(([v, t]) => (
+                                <option value={v} selected={j.status === v}>{t}</option>
+                              ))}
+                            </select>
+                          </div>
+                        </div>
+
+                        <div class="field">
+                          <label class="label" for={`desc-${j.id}`}>Descriere</label>
+                          <textarea
+                            class="textarea"
+                            id={`desc-${j.id}`}
+                            name="descriere"
+                            rows="2"
+                            style="min-height:64px"
+                          >{j.descriere ?? ''}</textarea>
+                        </div>
+
+                        <div class="row" style="gap:var(--s-2)">
+                          <button class="btn btn--primary btn--sm" type="submit">Salvează</button>
+                          <button
+                            class="btn btn--danger btn--sm"
+                            type="submit"
+                            formaction="/api/jaloane"
+                            name="actiune"
+                            value="sterge"
+                          >
+                            Șterge jalonul
+                          </button>
+                        </div>
+                      </form>
+                    </details>
+                  </li>
+                ))}
+              </ol>
+
+              <div class="panel__footer">
+                <form method="POST" action="/api/jaloane" class="row row--wrap" style="gap:var(--s-3);align-items:flex-end">
+                  <input type="hidden" name="actiune" value="adauga" />
+                  <input type="hidden" name="cerere_id" value={cerereTimeline?.id} />
+                  <input
+                    type="hidden"
+                    name="redirect"
+                    value={`/profesor/studenti?sectiune=cronologie&student=${cerereTimeline?.id}`}
+                  />
+                  <div class="field" style="flex:2;min-width:220px">
+                    <label class="label" for="jalon-nou">Jalon nou</label>
+                    <input
+                      class="input"
+                      id="jalon-nou"
+                      name="titlu"
+                      placeholder="Ex: Predarea capitolului empiric"
+                      required
+                    />
+                  </div>
+                  <div class="field" style="flex:1;min-width:160px">
+                    <label class="label" for="jalon-termen">Termen</label>
+                    <input class="input" id="jalon-termen" name="termen" type="date" />
+                  </div>
+                  <button class="btn btn--secondary" type="submit">Adaugă</button>
+                </form>
+              </div>
+            </section>
+          </>
+        )}
+      </div>
+    )
+  }
+
+  {/* -------------------------------------------------------------- teme */}
+  {
+    sectiune === 'teme' && (
+      <section class="panel">
+        <div class="panel__header">
+          <h2 class="section-title">Teme propuse</h2>
+        </div>
+
+        {teme.length === 0 ? (
+          <div class="empty">
+            <p class="empty__title">Nicio temă propusă</p>
+            <p class="empty__text">
+              Temele propuse apar în catalogul public de coordonatori, iar studenții pot depune cereri
+              direct pe ele.
+            </p>
+          </div>
+        ) : (
+          <ul class="teme">
+            {teme.map((t) => (
+              <li class:list={['tema', { 'is-inactiva': !t.activa }]}>
+                <div class="tema__cap">
+                  <span class="badge badge--info">{t.nivel === 'master' ? 'Master' : 'Licență'}</span>
+                  <span class="muted numeric" style="font-size:var(--t-xs)">
+                    {t.ocupate}/{t.locuri} locuri
+                  </span>
+                </div>
+                <h3 class="tema__titlu">{t.titlu}</h3>
+                {t.metode && <p class="muted" style="font-size:var(--t-sm)">Metode: {t.metode}</p>}
+                {t.prerechizite && t.prerechizite !== '—' && (
+                  <p class="muted" style="font-size:var(--t-xs)">Prerechizite: {t.prerechizite}</p>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+    )
+  }
+
+  {/* -------------------------------------------------------- consultații */}
+  {
+    sectiune === 'consultatii' && (
+      <section class="panel" id="consultatii">
+        <div class="panel__header">
+          <h2 class="section-title">Program de consultații</h2>
+        </div>
+
+        {sloturi.length === 0 ? (
+          <div class="empty">
+            <p class="empty__title">Niciun interval publicat</p>
+            <p class="empty__text">
+              Publică intervale, iar studenții coordonați își pot rezerva singuri un loc. Primesc
+              automat invitație în calendar.
+            </p>
+          </div>
+        ) : (
+          <div class="table-wrap">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>Data</th>
+                  <th>Interval</th>
+                  <th>Mod</th>
+                  <th>Rezervare</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sloturi.map((s) => (
+                  <tr>
+                    <td>{dataRo(s.start_la)}</td>
+                    <td class="numeric">
+                      {oraRo(s.start_la)}–{oraRo(s.sfarsit_la)}
+                    </td>
+                    <td>{s.mod === 'online' ? 'Online' : (s.locatie ?? 'Cabinet')}</td>
+                    <td>
+                      {s.anulat ? (
+                        <span class="badge badge--respinsa">Anulat</span>
+                      ) : s.rezervari > 0 ? (
+                        <span class="badge badge--aprobata">{s.student_nume}</span>
+                      ) : (
+                        <span class="muted">Liber</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+    )
+  }
+
+  {/* Respingerea cere un motiv — studentul trebuie să știe ce să corecteze. */}
+  <dialog id="dialog-respinge">
+    <form method="POST" action="/api/cereri/decizie" class="dialog">
+      <h2 class="section-title">Respinge cererea</h2>
+      <p class="muted" style="font-size:var(--t-sm)">
+        Motivul ajunge la <strong id="dialog-nume">student</strong> prin email și rămâne vizibil în
+        portal. Scrie ce ar trebui schimbat.
+      </p>
+      <input type="hidden" name="cerere_id" id="dialog-cerere" />
+      <input type="hidden" name="decizie" value="respinsa" />
+      <input type="hidden" name="redirect" value={caleCurenta} />
+      <div class="field">
+        <label class="label" for="motiv">Motivul respingerii</label>
+        <textarea
+          class="textarea"
+          id="motiv"
+          name="motiv"
+          required
+          minlength="10"
+          placeholder="Ex: Tema se suprapune cu o lucrare deja alocată. Te rog reformulează direcția de cercetare."
+        ></textarea>
+      </div>
+      <div class="row" style="justify-content:flex-end;gap:var(--s-2)">
+        <button class="btn btn--secondary" type="button" data-inchide>Renunță</button>
+        <button class="btn btn--primary" type="submit">Trimite respingerea</button>
+      </div>
+    </form>
+  </dialog>
+</ProfesorLayout>
+
+<script>
+  const dialog = document.getElementById('dialog-respinge') as HTMLDialogElement | null
+
+  document.querySelectorAll<HTMLButtonElement>('[data-respinge]').forEach((b) => {
+    b.addEventListener('click', () => {
+      const camp = document.getElementById('dialog-cerere') as HTMLInputElement | null
+      const nume = document.getElementById('dialog-nume')
+      if (camp) camp.value = b.dataset.respinge ?? ''
+      if (nume) nume.textContent = b.dataset.nume ?? 'student'
+      dialog?.showModal()
+    })
+  })
+
+  dialog?.querySelector('[data-inchide]')?.addEventListener('click', () => dialog.close())
+</script>
+
+<style>
+  .taburi {
+    display: flex;
+    gap: var(--s-1);
+    flex-wrap: wrap;
+    margin-bottom: var(--s-5);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .tab {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--s-2);
+    padding: var(--s-3) var(--s-3);
+    font-size: var(--t-sm);
+    font-weight: 500;
+    color: var(--ink-muted);
+    text-decoration: none;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+    transition: color var(--fast) var(--ease), border-color var(--fast) var(--ease);
+  }
+
+  .tab:hover {
+    color: var(--ink);
+  }
+
+  .tab.is-activ {
+    color: var(--red);
+    font-weight: 600;
+    border-bottom-color: var(--red);
+  }
+
+  .tab__contor {
+    padding: 1px 6px;
+    border-radius: 999px;
+    background: var(--surface-sunken);
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--ink-soft);
+  }
+  .tab.is-activ .tab__contor {
+    background: var(--red-tint);
+    color: var(--red);
+  }
+
+  .cereri {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  .cerere {
+    padding: var(--s-5);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-3);
+  }
+  .cerere:last-child {
+    border-bottom: 0;
+  }
+
+  .cerere__cap {
+    display: flex;
+    align-items: center;
+    gap: var(--s-3);
+  }
+
+  .cerere__ident {
+    display: flex;
+    flex-direction: column;
+    line-height: 1.35;
+    flex: 1;
+    min-width: 0;
+  }
+  .cerere__ident strong {
+    font-size: var(--t-sm);
+  }
+  .cerere__ident .muted {
+    font-size: var(--t-xs);
+  }
+
+  .cerere__titlu {
+    font-family: var(--serif);
+    font-size: var(--t-lg);
+    font-weight: 600;
+  }
+
+  .cerere__titlu-en {
+    font-size: var(--t-sm);
+    color: var(--ink-muted);
+    font-style: italic;
+    margin-top: -6px;
+  }
+
+  .cerere__scop {
+    font-size: var(--t-sm);
+    color: var(--ink-soft);
+    max-width: 78ch;
+    text-wrap: pretty;
+  }
+
+  .cerere__actiuni {
+    display: flex;
+    gap: var(--s-2);
+    flex-wrap: wrap;
+  }
+
+  .avatar {
+    display: grid;
+    place-items: center;
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    background: var(--surface-sunken);
+    border: 1px solid var(--border);
+    font-size: var(--t-xs);
+    font-weight: 600;
+    color: var(--ink-soft);
+    flex: none;
+  }
+
+  .celula-titlu {
+    max-width: 34ch;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .progres {
+    display: flex;
+    align-items: center;
+    gap: var(--s-2);
+    min-width: 120px;
+  }
+
+  .bara {
+    flex: 1;
+    height: 6px;
+    background: var(--surface-sunken);
+    border-radius: 999px;
+    overflow: hidden;
+  }
+  .bara__fill {
+    display: block;
+    width: 100%;
+    height: 100%;
+    background: var(--ok);
+    border-radius: 999px;
+    transform-origin: left center;
+    transform: scaleX(var(--procent, 0));
+  }
+
+  /* Cronologia repetă forma din portalul studentului, ca profesorul să vadă
+     exact ce vede studentul — doar că fiecare jalon se deschide pentru editare. */
+  .cronologie {
+    list-style: none;
+    margin: 0;
+    padding: var(--s-4) var(--s-5);
+  }
+
+  .jalon {
+    display: flex;
+    gap: var(--s-4);
+    padding-block: var(--s-2);
+    position: relative;
+  }
+
+  .jalon:not(:last-child)::before {
+    content: '';
+    position: absolute;
+    left: 5px;
+    top: 30px;
+    bottom: -8px;
+    width: 1px;
+    background: var(--border-strong);
+  }
+
+  .jalon__punct {
+    width: 11px;
+    height: 11px;
+    margin-top: 9px;
+    border-radius: 50%;
+    border: 2px solid var(--border-strong);
+    background: var(--surface);
+    flex: none;
+    z-index: 1;
+  }
+
+  .jalon--finalizat .jalon__punct {
+    background: var(--ok);
+    border-color: var(--ok);
+  }
+  .jalon--in_lucru .jalon__punct {
+    background: var(--red);
+    border-color: var(--red);
+  }
+
+  .jalon__corp {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .jalon__corp summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--s-3);
+    padding: var(--s-2) var(--s-3);
+    border-radius: var(--r-md);
+    cursor: pointer;
+    list-style: none;
+    flex-wrap: wrap;
+  }
+  .jalon__corp summary::-webkit-details-marker {
+    display: none;
+  }
+  .jalon__corp summary:hover {
+    background: var(--surface-sunken);
+  }
+
+  .jalon__titlu {
+    font-size: var(--t-sm);
+    font-weight: 600;
+  }
+  .jalon--finalizat .jalon__titlu {
+    color: var(--ink-muted);
+  }
+
+  .jalon__meta {
+    display: flex;
+    align-items: center;
+    gap: var(--s-3);
+    font-size: var(--t-xs);
+  }
+
+  .jalon__editor {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-3);
+    padding: var(--s-4) var(--s-3) var(--s-5);
+  }
+
+  .teme {
+    list-style: none;
+    margin: 0;
+    padding: var(--s-5);
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: var(--s-4);
+  }
+
+  .tema {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-2);
+    padding: var(--s-4);
+    border: 1px solid var(--border);
+    border-radius: var(--r-md);
+  }
+  .tema.is-inactiva {
+    opacity: 0.55;
+  }
+
+  .tema__cap {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--s-2);
+  }
+
+  .tema__titlu {
+    font-size: var(--t-sm);
+    font-weight: 600;
+    text-wrap: pretty;
+  }
+
+  .dialog {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-4);
+    padding: var(--s-5);
+  }
+</style>
