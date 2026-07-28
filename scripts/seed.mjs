@@ -657,6 +657,36 @@ for (const [an, offset] of [[lastYear, 1], [olderYear, 2]]) {
   }
 }
 
+/* Numerele cererilor urmează anul universitar, inclusiv cele vechi.
+ *
+ * Rândurile create înainte ca anul să fie un obiect poartă anul calendaristic
+ * („CRR-2026-…” într-o sesiune 2025–2026), lângă numere matricole MK-2025-…, iar
+ * cererile noi le contrazic. Renumerotarea se face în două treceri, pentru că
+ * `number` este UNIQUE și nu e amânat: o singură instrucțiune s-ar ciocni de un
+ * număr încă ocupat de alt rând.
+ */
+const anCurentPrefix = `CRR-${startYear}-`
+const { rows: [{ gresite }] } = await q(
+  `SELECT count(*)::int AS gresite FROM requests
+    WHERE academic_year_id = $1 AND number NOT LIKE $2`,
+  [currentYear.id, `${anCurentPrefix}%`],
+)
+
+if (gresite > 0) {
+  await q(`UPDATE requests SET number = 'TMP-' || id::text WHERE academic_year_id = $1`, [currentYear.id])
+  await q(
+    `UPDATE requests r
+        SET number = $2 || lpad(o.n::text, 4, '0')
+       FROM (
+         SELECT id, row_number() OVER (ORDER BY submitted_at, id) AS n
+           FROM requests WHERE academic_year_id = $1
+       ) o
+      WHERE r.id = o.id`,
+    [currentYear.id, anCurentPrefix],
+  )
+  console.log(`[seed] ${gresite} cereri renumerotate pe anul ${startYear}`)
+}
+
 /* Numerotarea cererilor continuă de unde s-a oprit seed-ul.
  * Contorul stă pe anul universitar, iar rândurile inserate aici nu au trecut
  * prin el — fără această aliniere, prima cerere depusă din portal ar primi un
