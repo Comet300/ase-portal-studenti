@@ -1,0 +1,275 @@
+---
+import ProfesorLayout from '../../layouts/ProfesorLayout.astro'
+import { ROLE_LABELS } from '../../lib/auth'
+import { queryOne, query } from '../../lib/db'
+import { STATUS_CLASS, STATUS_LABELS, formatDate, teacherStats } from '../../lib/repo'
+
+/**
+ * Archive and account.
+ *
+ * Deliberately not "average grade" and "similarity index": grading is out of the
+ * portal's scope, and a similarity percentage without its sources says nothing.
+ * These are the numbers a coordinator can actually act on.
+ */
+
+const u = Astro.locals.user!
+const stats = await teacherStats(u.id)
+
+const topics = await queryOne<{ proposed: number; taken: number }>(
+  `SELECT count(*)::int AS proposed,
+          count(*) FILTER (WHERE EXISTS (
+            SELECT 1 FROM requests r WHERE r.topic_id = t.id AND r.status = 'approved'
+          ))::int AS taken
+     FROM topics t WHERE t.teacher_id = $1`,
+  [u.id],
+)
+
+const rejected = await query<{
+  number: string
+  student_name: string
+  title_ro: string
+  rejection_reason: string | null
+  decided_at: string | null
+}>(
+  `SELECT r.number, s.name AS student_name, r.title_ro, r.rejection_reason, r.decided_at
+     FROM requests r
+     JOIN users s ON s.id = r.student_id
+    WHERE r.teacher_id = $1 AND r.status = 'rejected'
+    ORDER BY r.decided_at DESC NULLS LAST
+    LIMIT 20`,
+  [u.id],
+)
+
+const history = await query<{
+  number: string
+  student_name: string
+  title_ro: string
+  status: string
+  submitted_at: string
+  decided_at: string | null
+}>(
+  `SELECT r.number, s.name AS student_name, r.title_ro, r.status, r.submitted_at, r.decided_at
+     FROM requests r
+     JOIN users s ON s.id = r.student_id
+    WHERE r.teacher_id = $1
+    ORDER BY r.submitted_at DESC
+    LIMIT 50`,
+  [u.id],
+)
+
+const saved = Astro.url.searchParams.get('salvat') === '1'
+const capacity = (u.bachelor_capacity ?? 0) + (u.master_capacity ?? 0)
+---
+
+<ProfesorLayout
+  title="Arhivă & Setări"
+  lede="Istoricul cererilor din sesiune și datele contului tău."
+  active="arhiva"
+>
+  <div class="stack stack--loose">
+    <section class="stack">
+      <h2 class="section-title">Sesiunea în cifre</h2>
+      <div class="grid-auto">
+        <div class="metric">
+          <span class="metric__value numeric">
+            {stats?.avg_response_hours != null ? `${stats.avg_response_hours}h` : '—'}
+          </span>
+          <span class="metric__label">timp mediu de răspuns</span>
+          <span class="metric__note">de la depunere până la decizie</span>
+        </div>
+        <div class="metric">
+          <span class="metric__value numeric">{topics?.taken ?? 0} / {topics?.proposed ?? 0}</span>
+          <span class="metric__label">teme preluate</span>
+          <span class="metric__note">
+            {
+              (topics?.proposed ?? 0) - (topics?.taken ?? 0) > 0
+                ? `${(topics?.proposed ?? 0) - (topics?.taken ?? 0)} încă disponibile`
+                : 'Toate temele au fost alese'
+            }
+          </span>
+        </div>
+        <div class="metric">
+          <span class="metric__value numeric">{stats?.approved ?? 0} / {capacity}</span>
+          <span class="metric__label">studenți coordonați</span>
+          <span class="metric__note">din capacitatea declarată</span>
+        </div>
+        <div class="metric">
+          <span class="metric__value numeric">{stats?.rejected ?? 0}</span>
+          <span class="metric__label">cereri respinse</span>
+          <span class="metric__note">cu motivul comunicat studentului</span>
+        </div>
+      </div>
+    </section>
+
+    {
+      rejected.length > 0 && (
+        <section class="panel">
+          <div class="panel__header">
+            <h2 class="section-title">Cereri respinse și motivele</h2>
+          </div>
+          <ul class="rejected">
+            {rejected.map((r) => (
+              <li>
+                <div class="row row--between row--wrap" style="gap:var(--s-2)">
+                  <strong>{r.student_name}</strong>
+                  <span class="muted numeric" style="font-size:var(--t-xs)">
+                    {r.number} · {formatDate(r.decided_at)}
+                  </span>
+                </div>
+                <p class="muted" style="font-size:var(--t-sm)">{r.title_ro}</p>
+                {r.rejection_reason && <p class="reason">{r.rejection_reason}</p>}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )
+    }
+
+    <section class="panel">
+      <div class="panel__header">
+        <h2 class="section-title">Istoricul cererilor</h2>
+        <span class="muted" style="font-size:var(--t-sm)">{history.length} înregistrări</span>
+      </div>
+      {
+        history.length === 0 ? (
+          <div class="empty">
+            <p class="empty__title">Nicio cerere încă</p>
+            <p class="empty__text">
+              Istoricul se completează pe măsură ce studenții depun cereri către tine.
+            </p>
+          </div>
+        ) : (
+          <div class="table-wrap">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>Cerere</th>
+                  <th>Student</th>
+                  <th>Titlul lucrării</th>
+                  <th>Stare</th>
+                  <th>Depusă</th>
+                  <th>Decisă</th>
+                </tr>
+              </thead>
+              <tbody>
+                {history.map((r) => (
+                  <tr>
+                    <td class="numeric muted">{r.number}</td>
+                    <td>{r.student_name}</td>
+                    <td class="cell-title">{r.title_ro}</td>
+                    <td>
+                      <span class:list={['badge', STATUS_CLASS[r.status]]}>{STATUS_LABELS[r.status]}</span>
+                    </td>
+                    <td class="muted">{formatDate(r.submitted_at)}</td>
+                    <td class="muted">{formatDate(r.decided_at)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )
+      }
+    </section>
+
+    <section class="panel">
+      <div class="panel__header">
+        <h2 class="section-title">Contul meu</h2>
+        {saved && <span class="badge badge--aprobata">Salvat</span>}
+      </div>
+      <form method="POST" action="/api/cont" class="panel__body stack">
+        <div class="row row--wrap" style="gap:var(--s-4)">
+          <div class="field" style="flex:2;min-width:240px">
+            <label class="label" for="name">Nume afișat</label>
+            <input class="input" id="name" name="name" value={u.name} required maxlength="120" />
+          </div>
+          <div class="field" style="flex:1;min-width:180px">
+            <label class="label" for="office">Birou</label>
+            <input class="input" id="office" name="office" value={u.office ?? ''} placeholder="Corp Ion Angelescu, sala…" />
+          </div>
+        </div>
+
+        <div class="row row--wrap" style="gap:var(--s-4)">
+          <div class="field" style="flex:1;min-width:160px">
+            <label class="label" for="bachelor_capacity">Locuri licență</label>
+            <input class="input" id="bachelor_capacity" name="bachelor_capacity" type="number" min="0" max="30" value={u.bachelor_capacity} />
+          </div>
+          <div class="field" style="flex:1;min-width:160px">
+            <label class="label" for="master_capacity">Locuri master</label>
+            <input class="input" id="master_capacity" name="master_capacity" type="number" min="0" max="30" value={u.master_capacity} />
+          </div>
+          <div class="field" style="flex:2;min-width:220px">
+            <label class="label" for="email">Email instituțional</label>
+            <input class="input" id="email" value={u.email} disabled />
+            <span class="hint">Adresa este cea cu care te autentifici și nu se poate schimba din portal.</span>
+          </div>
+        </div>
+
+        <p class="muted" style="font-size:var(--t-sm)">
+          Rol: <strong>{ROLE_LABELS[u.role]}</strong>
+          {u.department ? ` · ${u.department}` : ''}
+        </p>
+
+        <div class="row" style="justify-content:flex-end">
+          <button class="btn btn--primary" type="submit">Salvează modificările</button>
+        </div>
+      </form>
+    </section>
+  </div>
+</ProfesorLayout>
+
+<style>
+  .metric {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-1);
+    padding: var(--s-4);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--r-lg);
+  }
+  .metric__value {
+    font-size: var(--t-2xl);
+    font-weight: 600;
+    line-height: 1.15;
+  }
+  .metric__label {
+    font-size: var(--t-sm);
+    color: var(--ink-soft);
+  }
+  .metric__note {
+    font-size: var(--t-xs);
+    color: var(--ink-muted);
+  }
+
+  .rejected {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+  .rejected li {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-1);
+    padding: var(--s-4) var(--s-5);
+    border-bottom: 1px solid var(--border);
+  }
+  .rejected li:last-child {
+    border-bottom: 0;
+  }
+
+  .reason {
+    padding: var(--s-3);
+    background: var(--danger-tint);
+    border-radius: var(--r-md);
+    font-size: var(--t-sm);
+    color: var(--ink);
+    text-wrap: pretty;
+  }
+
+  .cell-title {
+    max-width: 34ch;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+</style>
