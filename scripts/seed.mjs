@@ -20,15 +20,52 @@ await client.connect()
 
 const q = (sql, params = []) => client.query(sql, params)
 
-/* --- etapele sesiunii ------------------------------------------------------ */
+/* --- etapele sesiunii ------------------------------------------------------
+ * Anchored to the current date rather than to fixed 2026 dates: a demo opened
+ * after a hard-coded session had ended showed every stage as încheiată and no
+ * stage in curs, which is exactly the state the portal is meant to make legible.
+ * Offsets are in months, relative to today; labels are derived from the dates so
+ * the two can never disagree.
+ */
 
-const STAGES = [
-  ['Alegere coordonator', 'Depunerea cererilor către cadrele didactice și confirmarea temei.', 'Octombrie 2025 – Ianuarie 2026', '2025-10-01', '2026-01-31'],
-  ['Elaborare și consultații', 'Redactarea lucrării, consultații periodice cu coordonatorul.', 'Februarie – Mai 2026', '2026-02-01', '2026-05-15'],
-  ['Înscriere examen', 'Depunerea dosarului de înscriere la secretariat.', 'Mai 2026', '2026-05-04', '2026-05-29'],
-  ['Încărcare antiplagiat', 'Verificarea lucrării în platforma antiplagiat.', 'Iunie 2026', '2026-06-01', '2026-06-19'],
-  ['Susținere publică', 'Prezentarea lucrării în fața comisiei.', 'Iulie 2026', '2026-07-01', '2026-07-10'],
+const MONTH_NAMES = [
+  'ianuarie', 'februarie', 'martie', 'aprilie', 'mai', 'iunie',
+  'iulie', 'august', 'septembrie', 'octombrie', 'noiembrie', 'decembrie',
 ]
+
+const monthsFromNow = (n, day) => {
+  const d = new Date()
+  d.setUTCDate(1)
+  d.setUTCMonth(d.getUTCMonth() + n)
+  const last = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 0)).getUTCDate()
+  d.setUTCDate(Math.min(day, last))
+  return d.toISOString().slice(0, 10)
+}
+
+const label = (from, to) => {
+  const [fy, fm] = from.split('-').map(Number)
+  const [ty, tm] = to.split('-').map(Number)
+  const cap = (w) => w[0].toUpperCase() + w.slice(1)
+  if (fy === ty && fm === tm) return `${cap(MONTH_NAMES[fm - 1])} ${fy}`
+  if (fy === ty) return `${cap(MONTH_NAMES[fm - 1])} – ${MONTH_NAMES[tm - 1]} ${fy}`
+  return `${cap(MONTH_NAMES[fm - 1])} ${fy} – ${MONTH_NAMES[tm - 1]} ${ty}`
+}
+
+// The session runs from nine months ago to three months out, which puts today
+// inside "Elaborare și consultații".
+const STAGE_SPANS = [
+  ['Alegere coordonator', 'Depunerea cererilor către cadrele didactice și confirmarea temei.', -9, 1, -4, 28],
+  ['Elaborare și consultații', 'Redactarea lucrării, consultații periodice cu coordonatorul.', -3, 1, 1, 15],
+  ['Înscriere examen', 'Depunerea dosarului de înscriere la secretariat.', 1, 4, 1, 29],
+  ['Încărcare antiplagiat', 'Verificarea lucrării în platforma antiplagiat.', 2, 1, 2, 19],
+  ['Susținere publică', 'Prezentarea lucrării în fața comisiei.', 3, 1, 3, 10],
+]
+
+const STAGES = STAGE_SPANS.map(([title, description, fromM, fromD, toM, toD]) => {
+  const from = monthsFromNow(fromM, fromD)
+  const to = monthsFromNow(toM, toD)
+  return [title, description, label(from, to), from, to]
+})
 
 /* --- cadre didactice ------------------------------------------------------- */
 

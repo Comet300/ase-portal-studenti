@@ -1,0 +1,250 @@
+---
+import ProfesorLayout from '../../layouts/ProfesorLayout.astro'
+import { currentStage, formatDate, stages } from '../../lib/repo'
+
+/**
+ * Editing the session calendar.
+ *
+ * These stages are the spine every other screen navigates by, and the .ics that
+ * students download is generated from them — so a date changed here is a date
+ * changed everywhere, including in calendars people have already subscribed to.
+ */
+
+const [list, current] = await Promise.all([stages(), currentStage()])
+const today = new Date().toISOString().slice(0, 10)
+---
+
+<ProfesorLayout
+  title="Calendarul sesiunii"
+  lede="Etapele după care se orientează studenții și cadrele didactice. Sunt folosite și în fișierul de calendar descărcabil."
+  active="calendar"
+>
+  <div class="stack stack--loose">
+    {
+      list.length > 0 && !current && (
+        <p class="alert">
+          Nicio etapă nu este în curs la data de astăzi ({formatDate(today)}). Studenții văd tot
+          calendarul ca încheiat.
+        </p>
+      )
+    }
+
+    <section class="panel">
+      <div class="panel__header">
+        <h2 class="section-title">Etape</h2>
+        <span class="muted" style="font-size:var(--t-sm)">{list.length} etape</span>
+      </div>
+
+      {
+        list.length === 0 ? (
+          <div class="empty">
+            <p class="empty__title">Calendarul este gol</p>
+            <p class="empty__text">
+              Adaugă prima etapă mai jos. Fără etape, pagina de start a studenților rămâne fără
+              reperele sesiunii.
+            </p>
+          </div>
+        ) : (
+          <ol class="stages">
+            {list.map((s, i) => (
+              <li class:list={['stage', { 'is-current': current?.id === s.id }]}>
+                <div class="stage__order">
+                  <span class="numeric">{String(i + 1).padStart(2, '0')}</span>
+                  <div class="stage__move">
+                    <form method="POST" action="/api/etape">
+                      <input type="hidden" name="actiune" value="muta" />
+                      <input type="hidden" name="etapa_id" value={s.id} />
+                      <input type="hidden" name="directie" value="sus" />
+                      <button class="btn btn--ghost btn--sm" type="submit" aria-label="Mută mai sus" disabled={i === 0}>↑</button>
+                    </form>
+                    <form method="POST" action="/api/etape">
+                      <input type="hidden" name="actiune" value="muta" />
+                      <input type="hidden" name="etapa_id" value={s.id} />
+                      <input type="hidden" name="directie" value="jos" />
+                      <button class="btn btn--ghost btn--sm" type="submit" aria-label="Mută mai jos" disabled={i === list.length - 1}>↓</button>
+                    </form>
+                  </div>
+                </div>
+
+                <details class="stage__body">
+                  <summary>
+                    <span class="stage__title">{s.title}</span>
+                    <span class="stage__meta">
+                      <span class="muted numeric">{s.interval_label}</span>
+                      {current?.id === s.id && <span class="badge badge--asteptare">În curs</span>}
+                    </span>
+                  </summary>
+
+                  <form method="POST" action="/api/etape" class="stage__form">
+                    <input type="hidden" name="actiune" value="actualizeaza" />
+                    <input type="hidden" name="etapa_id" value={s.id} />
+
+                    <div class="row row--wrap" style="gap:var(--s-3)">
+                      <div class="field" style="flex:2;min-width:240px">
+                        <label class="label" for={`titlu-${s.id}`}>Titlu</label>
+                        <input class="input" id={`titlu-${s.id}`} name="titlu" value={s.title} required />
+                      </div>
+                      <div class="field" style="flex:2;min-width:220px">
+                        <label class="label" for={`interval-${s.id}`}>Interval afișat</label>
+                        <input class="input" id={`interval-${s.id}`} name="interval" value={s.interval_label} required />
+                        <span class="hint">Textul citit de studenți, ex. „Mai 2026”.</span>
+                      </div>
+                    </div>
+
+                    <div class="row row--wrap" style="gap:var(--s-3)">
+                      <div class="field" style="flex:1;min-width:170px">
+                        <label class="label" for={`inceput-${s.id}`}>Începe</label>
+                        <input class="input" id={`inceput-${s.id}`} name="inceput" type="date" value={s.starts_on?.slice(0, 10) ?? ''} />
+                      </div>
+                      <div class="field" style="flex:1;min-width:170px">
+                        <label class="label" for={`sfarsit-${s.id}`}>Se încheie</label>
+                        <input class="input" id={`sfarsit-${s.id}`} name="sfarsit" type="date" value={s.ends_on?.slice(0, 10) ?? ''} />
+                      </div>
+                    </div>
+
+                    <div class="field">
+                      <label class="label" for={`descriere-${s.id}`}>Descriere</label>
+                      <textarea class="textarea" id={`descriere-${s.id}`} name="descriere" rows="2" style="min-height:64px">{s.description ?? ''}</textarea>
+                    </div>
+
+                    <div class="row" style="gap:var(--s-2)">
+                      <button class="btn btn--primary btn--sm" type="submit">Salvează</button>
+                      <button class="btn btn--danger btn--sm" type="submit" name="actiune" value="sterge">
+                        Șterge etapa
+                      </button>
+                    </div>
+                  </form>
+                </details>
+              </li>
+            ))}
+          </ol>
+        )
+      }
+
+      <div class="panel__footer">
+        <form method="POST" action="/api/etape" class="row row--wrap" style="gap:var(--s-3);align-items:flex-end">
+          <input type="hidden" name="actiune" value="adauga" />
+          <div class="field" style="flex:2;min-width:220px">
+            <label class="label" for="etapa-titlu">Etapă nouă</label>
+            <input class="input" id="etapa-titlu" name="titlu" required placeholder="Ex: Depunere dosar" />
+          </div>
+          <div class="field" style="flex:2;min-width:200px">
+            <label class="label" for="etapa-interval">Interval afișat</label>
+            <input class="input" id="etapa-interval" name="interval" required placeholder="Ex: Mai 2026" />
+          </div>
+          <div class="field" style="flex:1;min-width:160px">
+            <label class="label" for="etapa-inceput">Începe</label>
+            <input class="input" id="etapa-inceput" name="inceput" type="date" />
+          </div>
+          <div class="field" style="flex:1;min-width:160px">
+            <label class="label" for="etapa-sfarsit">Se încheie</label>
+            <input class="input" id="etapa-sfarsit" name="sfarsit" type="date" />
+          </div>
+          <button class="btn btn--primary" type="submit">Adaugă etapa</button>
+        </form>
+        <p class="hint" style="margin-top:var(--s-2)">
+          Modificările apar imediat pe pagina de start a studenților și în fișierul
+          <a href="/documente/calendar-sesiune.ics">calendar-sesiune.ics</a>.
+        </p>
+      </div>
+    </section>
+  </div>
+</ProfesorLayout>
+
+<style>
+  .alert {
+    padding: var(--s-3) var(--s-4);
+    background: var(--warn-tint);
+    color: var(--warn);
+    border-radius: var(--r-md);
+    font-size: var(--t-sm);
+  }
+
+  .stages {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  .stage {
+    display: flex;
+    gap: var(--s-4);
+    padding: var(--s-3) var(--s-5);
+    border-bottom: 1px solid var(--border);
+  }
+  .stage:last-child {
+    border-bottom: 0;
+  }
+  .stage.is-current {
+    background: var(--red-tint);
+  }
+
+  .stage__order {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--s-1);
+    flex: none;
+    padding-top: var(--s-2);
+  }
+  .stage__order .numeric {
+    font-family: var(--serif);
+    font-size: var(--t-lg);
+    color: var(--border-strong);
+  }
+  .stage.is-current .stage__order .numeric {
+    color: var(--red);
+  }
+
+  .stage__move {
+    display: flex;
+    flex-direction: column;
+  }
+  .stage__move .btn {
+    min-height: 22px;
+    padding: 0 var(--s-2);
+    line-height: 1;
+  }
+
+  .stage__body {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .stage__body summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--s-3);
+    flex-wrap: wrap;
+    padding: var(--s-2) var(--s-3);
+    border-radius: var(--r-md);
+    cursor: pointer;
+    list-style: none;
+  }
+  .stage__body summary::-webkit-details-marker {
+    display: none;
+  }
+  .stage__body summary:hover {
+    background: var(--surface-sunken);
+  }
+
+  .stage__title {
+    font-size: var(--t-sm);
+    font-weight: 600;
+  }
+
+  .stage__meta {
+    display: flex;
+    align-items: center;
+    gap: var(--s-3);
+    font-size: var(--t-xs);
+  }
+
+  .stage__form {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-3);
+    padding: var(--s-4) var(--s-3) var(--s-5);
+  }
+</style>
