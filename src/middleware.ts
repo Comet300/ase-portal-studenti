@@ -11,7 +11,31 @@ const REQUIRES_SESSION = ['/cererile-mele', '/mesaje', '/consultatii', '/contul-
 const TEACHER_AREA = '/profesor'
 const HEAD_AREA = '/profesor/departament'
 
+const UNSAFE = new Set(['POST', 'PUT', 'PATCH', 'DELETE'])
+
+/**
+ * Cross-site request forgery guard.
+ *
+ * Replaces Astro's built-in check, which cannot see past the reverse proxy. A
+ * state-changing request must carry an Origin matching the configured public
+ * origin; browsers always send it on cross-origin form posts, so a forged POST
+ * from another site is rejected before it reaches a handler.
+ */
+function originAllowed(request: Request, url: URL): boolean {
+  const origin = request.headers.get('origin')
+  if (!origin) return true // same-origin navigations and non-browser clients
+
+  const expected = process.env.APP_BASE_URL?.replace(/\/$/, '')
+  if (expected) return origin === expected
+
+  return origin === url.origin
+}
+
 export const onRequest = defineMiddleware(async (context, next) => {
+  if (UNSAFE.has(context.request.method) && !originAllowed(context.request, context.url)) {
+    return new Response('Cerere respinsă: origine neconformă.', { status: 403 })
+  }
+
   const sessionId = context.cookies.get(SESSION_COOKIE)?.value
   const user = await getUserFromSession(sessionId)
   context.locals.user = user
