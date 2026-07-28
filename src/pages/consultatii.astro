@@ -45,8 +45,8 @@ const slots = await query<Slot>(
   [u.id],
 )
 
-const aleMele = sloturi.filter((s) => s.booked_by_me)
-const libere = sloturi.filter((s) => !s.booked_by_me && s.taken < s.capacity)
+const mine = slots.filter((s) => s.booked_by_me)
+const free = slots.filter((s) => !s.booked_by_me && s.taken < s.capacity)
 
 // Grupare pe day, ca lista să fie citibilă când sunt multe intervale.
 const byDay = new Map<string, Slot[]>()
@@ -66,13 +66,13 @@ for (const s of free) {
     </header>
 
     {
-      aleMele.length > 0 && (
+      mine.length > 0 && (
         <section class="panel">
           <div class="panel__header">
             <h2 class="section-title">Rezervările mele</h2>
           </div>
           <ul class="sloturi">
-            {aleMele.map((s) => (
+            {mine.map((s) => (
               <li class="slot slot--rezervat">
                 <span class="data-chip">
                   <strong class="numeric">{new Date(s.starts_at).getDate()}</strong>

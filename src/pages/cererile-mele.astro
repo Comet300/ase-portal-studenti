@@ -12,20 +12,20 @@ import {
 
 const u = Astro.locals.user!
 
-// Un cadru didactic care ajunge aici își vede propriile cereri (nu are), deci
+// Un cadru didactic care ajunge aici își vede propriile requests (nu are), deci
 // îl trimitem în zona lui în loc să-i arătăm un ecran gol fără sens.
 if (u.role !== 'student') return Astro.redirect('/profesor', 302)
 
-const [cereri, jaloane, profesori, teme] = await Promise.all([
+const [requests, milestones, teachers, topics] = await Promise.all([
   studentRequests(u.id),
   studentMilestones(u.id),
   supervisors(),
   publicTopics(),
 ])
 
-const coordonatorPreselectat = Astro.url.searchParams.get('coordonator') ?? ''
-const areCerereActiva = cereri.some((c) => c.status === 'pending' || c.status === 'approved')
-const cerereAprobata = cereri.find((c) => c.status === 'approved')
+const preselectedTeacher = Astro.url.searchParams.get('coordonator') ?? ''
+const hasActiveRequest = requests.some((c) => c.status === 'pending' || c.status === 'approved')
+const approvedRequest = requests.find((c) => c.status === 'approved')
 
 const MILESTONE_STATES: Record<string, string> = {
   planificat: 'Planificat',
@@ -46,7 +46,7 @@ const MILESTONE_STATES: Record<string, string> = {
       {
         !hasActiveRequest && (
           <button class="btn btn--primary" type="button" id="deschide-cerere">
-            Depune request nouă
+            Depune cerere nouă
           </button>
         )
       }
@@ -64,7 +64,7 @@ const MILESTONE_STATES: Record<string, string> = {
             <div class="row" style="gap:var(--s-2)">
               <a href="/supervisors" class="btn btn--secondary btn--sm">Vezi coordonatorii</a>
               <button class="btn btn--primary btn--sm" type="button" id="deschide-cerere-gol">
-                Depune request
+                Depune cerere
               </button>
             </div>
           </div>
@@ -75,7 +75,7 @@ const MILESTONE_STATES: Record<string, string> = {
             <h2 class="section-title">Cereri depuse</h2>
           </div>
           <ul class="cereri">
-            {cereri.map((c) => (
+            {requests.map((c) => (
               <li class="cerere">
                 <div class="row row--between row--wrap" style="gap:var(--s-3)">
                   <span class="numeric muted" style="font-size:var(--t-xs)">
@@ -115,16 +115,16 @@ const MILESTONE_STATES: Record<string, string> = {
     }
 
     {
-      cerereAprobata && jaloane.length > 0 && (
+      approvedRequest && milestones.length > 0 && (
         <section class="panel">
           <div class="panel__header">
             <h2 class="section-title">Termenele lucrării</h2>
             <span class="muted" style="font-size:var(--t-sm)">
-              {jaloane.filter((j) => j.status === 'done').length} din {milestones.length} finalizate
+              {milestones.filter((j) => j.status === 'done').length} din {milestones.length} finalizate
             </span>
           </div>
           <ol class="cronologie">
-            {jaloane.map((j) => (
+            {milestones.map((j) => (
               <li class:list={['jalon', `jalon--${j.status}`]}>
                 <span class="jalon__punct" aria-hidden="true" />
                 <div class="jalon__corp">
@@ -157,7 +157,7 @@ const MILESTONE_STATES: Record<string, string> = {
   </div>
 
   <dialog id="dialog-cerere">
-    <form method="POST" action="/api/cereri/depune" class="formular" id="formular-cerere">
+    <form method="POST" action="/api/requests/depune" class="formular" id="formular-cerere">
       <div class="formular__cap">
         <h2 class="section-title">Cerere de coordonare</h2>
         <button class="btn btn--ghost btn--sm" type="button" data-inchide aria-label="Închide">✕</button>
@@ -169,8 +169,8 @@ const MILESTONE_STATES: Record<string, string> = {
           <select class="select" id="profesor_id" name="profesor_id" required>
             <option value="">Alege un cadru didactic…</option>
             {
-              profesori.map((p) => (
-                <option value={p.id} selected={p.id === coordonatorPreselectat}>
+              teachers.map((p) => (
+                <option value={p.id} selected={p.id === preselectedTeacher}>
                   {p.name}
                 </option>
               ))
@@ -183,7 +183,7 @@ const MILESTONE_STATES: Record<string, string> = {
           <select class="select" id="tema_id" name="tema_id">
             <option value="">Propun o temă proprie</option>
             {
-              teme.map((t) => (
+              topics.map((t) => (
                 <option value={t.id} data-profesor={t.teacher_id} data-title={t.title}>
                   {t.title}
                 </option>
@@ -322,7 +322,7 @@ const MILESTONE_STATES: Record<string, string> = {
 </script>
 
 <style>
-  .requests {
+  .cereri {
     list-style: none;
     margin: 0;
     padding: 0;
