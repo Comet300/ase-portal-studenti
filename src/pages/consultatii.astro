@@ -1,10 +1,10 @@
 ---
 import StudentLayout from '../layouts/StudentLayout.astro'
-import { query } from '../lib/db'
+import { query, queryOne } from '../lib/db'
 import { formatDate, formatTime } from '../lib/repo'
 
 const u = Astro.locals.user!
-if (u.role !== 'student') return Astro.redirect('/teacherSelect/students?section=consultatii', 302)
+if (u.role !== 'student') return Astro.redirect('/profesor/studenti?sectiune=consultatii', 302)
 
 interface Slot {
   id: string
@@ -22,7 +22,7 @@ interface Slot {
 }
 
 // Doar intervalele coordonatorului care i-a aprobat cererea: consultațiile sunt
-// între student și coordonatorul lui, nu un catalog open.
+// între student și coordonatorul lui, nu un catalog deschis.
 const slots = await query<Slot>(
   `SELECT s.id, s.starts_at, s.ends_at, s.mode, s.location, s.meeting_url, s.capacity,
           (SELECT count(*)::int FROM bookings r WHERE r.slot_id = s.id AND r.status = 'booked') AS taken,
@@ -42,6 +42,15 @@ const slots = await query<Slot>(
          WHERE c.student_id = $1 AND c.teacher_id = s.teacher_id AND c.status = 'approved'
       )
     ORDER BY s.starts_at`,
+  [u.id],
+)
+
+const supervisor = await queryOne<{ name: string }>(
+  `SELECT t.name
+     FROM requests r
+     JOIN users t ON t.id = r.teacher_id
+    WHERE r.student_id = $1 AND r.status = 'approved'
+    LIMIT 1`,
   [u.id],
 )
 
@@ -108,12 +117,23 @@ for (const s of free) {
       {
         free.length === 0 ? (
           <div class="empty">
-            <p class="empty__title">Niciun interval disponibil</p>
-            <p class="empty__text">
-              Coordonatorul tău nu are momentan intervale free publicate. Îi poți scrie direct din
-              secțiunea Mesaje ca să stabiliți o întâlnire.
+            <p class="empty__title">
+              {supervisor ? 'Niciun interval disponibil' : 'Nu ai încă un coordonator'}
             </p>
-            <a href="/mesaje" class="btn btn--secondary btn--sm">Deschide mesajele</a>
+            <p class="empty__text">
+              {
+                supervisor
+                  ? `${supervisor.name} nu are momentan intervale libere publicate. Îi poți scrie direct din secțiunea Mesaje ca să stabiliți o întâlnire.`
+                  : 'Consultațiile se programează cu coordonatorul lucrării. Alege un cadru didactic din catalog și depune cererea de coordonare — intervalele lui apar aici imediat ce cererea este aprobată.'
+              }
+            </p>
+            {
+              supervisor ? (
+                <a href="/mesaje" class="btn btn--secondary btn--sm">Deschide mesajele</a>
+              ) : (
+                <a href="/coordonatori" class="btn btn--primary btn--sm">Vezi coordonatorii</a>
+              )
+            }
           </div>
         ) : (
           <div class="zile">
