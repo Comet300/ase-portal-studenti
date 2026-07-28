@@ -61,18 +61,18 @@ const SPECIALIZARI_MASTER = ['Marketing strategic', 'Cercetări de marketing', '
 /* --- teme ------------------------------------------------------------------ */
 
 const TEME = [
-  ['Comportamentul consumatorului în comerțul electronic românesc', 'licenta', 'Cantitativă, SPSS, modelare structurală', 'Marketing cantitativ, nota minimă 8', 3],
+  ['Comportamentul consumatorului în comerțul electronic românesc', 'bachelor', 'Cantitativă, SPSS, modelare structurală', 'Marketing cantitativ, nota minimă 8', 3],
   ['Transformarea digitală a strategiilor B2B', 'master', 'Studii de caz multiple, interviuri semi-structurate', 'Management strategic', 2],
-  ['Credibilitatea influencerilor și decizia de cumpărare la generația Z', 'licenta', 'Chestionar online, analiză factorială', 'Statistică descriptivă', 4],
-  ['Marketingul sustenabil în industria FMCG', 'licenta', 'Analiză de conținut, interviuri', '—', 3],
+  ['Credibilitatea influencerilor și decizia de cumpărare la generația Z', 'bachelor', 'Chestionar online, analiză factorială', 'Statistică descriptivă', 4],
+  ['Marketingul sustenabil în industria FMCG', 'bachelor', 'Analiză de conținut, interviuri', '—', 3],
   ['Personalizarea prin inteligență artificială în retail', 'master', 'Experiment, A/B testing', 'Marketing digital', 2],
-  ['Loialitatea față de brand în serviciile bancare', 'licenta', 'Sondaj, regresie logistică', 'Statistică aplicată', 3],
+  ['Loialitatea față de brand în serviciile bancare', 'bachelor', 'Sondaj, regresie logistică', 'Statistică aplicată', 3],
   ['Comunicarea de criză pe rețelele sociale', 'master', 'Netnografie, analiză tematică', 'Comunicare de marketing', 2],
-  ['Prețul de referință intern și percepția valorii', 'licenta', 'Experiment de laborator', 'Comportamentul consumatorului', 2],
+  ['Prețul de referință intern și percepția valorii', 'bachelor', 'Experiment de laborator', 'Comportamentul consumatorului', 2],
   ['Marketingul experiențial în turismul cultural', 'master', 'Observație participativă, interviuri', '—', 2],
-  ['Adopția plăților contactless în mediul rural', 'licenta', 'Sondaj față în față, analiză descriptivă', '—', 3],
+  ['Adopția plăților contactless în mediul rural', 'bachelor', 'Sondaj față în față, analiză descriptivă', '—', 3],
   ['Strategii de internaționalizare pentru IMM-uri românești', 'master', 'Studii de caz comparative', 'Marketing internațional', 2],
-  ['Impactul recenziilor online asupra vânzărilor', 'licenta', 'Analiză de date secundare, regresie', 'Econometrie', 3],
+  ['Impactul recenziilor online asupra vânzărilor', 'bachelor', 'Analiză de date secundare, regresie', 'Econometrie', 3],
 ]
 
 const TITLURI_CERERI = [
