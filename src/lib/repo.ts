@@ -33,7 +33,7 @@ export interface RequestRow {
   title_en: string | null
   objectives: string
   motivation: string | null
-  status: 'draft' | 'pending' | 'approved' | 'rejected' | 'expired'
+  status: 'draft' | 'pending' | 'approved' | 'rejected' | 'expired' | 'withdrawn'
   rejection_reason: string | null
   decision_note: string | null
   expires_at: string | null
@@ -79,6 +79,7 @@ export const STATUS_LABELS: Record<string, string> = {
   approved: 'Aprobată',
   rejected: 'Respinsă',
   expired: 'Expirată',
+  withdrawn: 'Retrasă',
 }
 
 export const STATUS_CLASS: Record<string, string> = {
@@ -87,6 +88,7 @@ export const STATUS_CLASS: Record<string, string> = {
   approved: 'badge--aprobata',
   rejected: 'badge--respinsa',
   expired: 'badge--respinsa',
+  withdrawn: 'badge--ciorna',
 }
 
 export const INVITATION_LABELS: Record<string, string> = {

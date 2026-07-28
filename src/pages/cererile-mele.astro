@@ -172,11 +172,26 @@ const shouldOpenForm = Boolean(openWith.teacher) && !hasActiveRequest
                   Coordonator: <a href={`/profil/${c.teacher_id}`}>{c.teacher_name}</a>
                 </p>
 
-                {c.status === 'pending' && c.expires_at && (
-                  <p class="hint">
-                    Coordonatorul are timp să răspundă până la {formatDate(c.expires_at)}. Dacă nu
-                    răspunde, cererea se respinge automat și poți depune alta.
-                  </p>
+                {c.status === 'pending' && (
+                  <>
+                    {c.expires_at && (
+                      <p class="hint">
+                        Coordonatorul are timp să răspundă până la {formatDate(c.expires_at)}. Dacă
+                        nu răspunde, cererea se respinge automat și poți depune alta.
+                      </p>
+                    )}
+                    <form method="POST" action="/api/cereri/retrage" class="row row--wrap" style="gap:var(--s-2);align-items:flex-end">
+                      <input type="hidden" name="cerere_id" value={c.id} />
+                      <div class="field" style="flex:1;min-width:240px">
+                        <label class="label" for={`motiv-${c.id}`}>
+                          Retrage cererea <span class="muted">(motivul e opțional)</span>
+                        </label>
+                        <input class="input" id={`motiv-${c.id}`} name="motiv"
+                          placeholder="Ex: am găsit o temă mai potrivită la alt coordonator." />
+                      </div>
+                      <button class="btn btn--danger btn--sm" type="submit">Retrage</button>
+                    </form>
+                  </>
                 )}
 
                 {c.status === 'approved' && c.decision_note && (
