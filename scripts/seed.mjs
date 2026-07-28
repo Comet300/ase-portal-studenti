@@ -102,9 +102,9 @@ const JALOANE = [
 
 const MESAJE_DEMO = [
   ['student', 'Bună ziua, doamna profesoară! Am actualizat capitolul de analiză cantitativă conform discuției de săptămâna trecută. Aș dori să vă întreb dacă metodologia corespunde cerințelor pentru sesiunea 2026.'],
-  ['profesor', 'Bună ziua! Am primit notificarea, voi parcurge materialul până joi. Vă rog să încărcați și fișierul cu rezultatele SPSS pentru verificare.'],
+  ['teacher', 'Bună ziua! Am primit notificarea, voi parcurge materialul până joi. Vă rog să încărcați și fișierul cu rezultatele SPSS pentru verificare.'],
   ['student', 'Am încărcat fișierul. Am folosit un eșantion de 214 respondenți, iar alfa Cronbach este 0,87 pentru scala principală.'],
-  ['profesor', 'Foarte bine. Alfa este în limite acceptabile. Ne vedem la consultația de marți ca să discutăm interpretarea rezultatelor.'],
+  ['teacher', 'Foarte bine. Alfa este în limite acceptabile. Ne vedem la consultația de marți ca să discutăm interpretarea rezultatelor.'],
 ]
 
 /* --- inserare -------------------------------------------------------------- */
@@ -114,19 +114,19 @@ console.log('[seed] pornit')
 // Etape
 for (const [i, [titlu, descriere, interval, di, ds]] of ETAPE.entries()) {
   await q(
-    `INSERT INTO etape_sesiune (ordine, titlu, descriere, interval_text, data_inceput, data_sfarsit)
+    `INSERT INTO session_stages (position, title, description, interval_label, starts_on, ends_on)
      SELECT $1, $2, $3, $4, $5::date, $6::date
-      WHERE NOT EXISTS (SELECT 1 FROM etape_sesiune WHERE ordine = $1)`,
+      WHERE NOT EXISTS (SELECT 1 FROM session_stages WHERE position = $1)`,
     [i + 1, titlu, descriere, interval, di, ds],
   )
 }
 
-async function upsertUtilizator(campuri) {
+async function upsertUser(campuri) {
   const { rows } = await q(
-    `INSERT INTO utilizatori (email, nume, rol, numar_matricol, program, specializare, an_studiu,
-                              titlu_academic, departament, birou, capacitate_licenta, capacitate_master, cont_demo)
+    `INSERT INTO users (email, name, role, student_number, program, specialization, study_year,
+                              academic_title, department, office, bachelor_capacity, master_capacity, is_demo)
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
-     ON CONFLICT (email) DO UPDATE SET nume = EXCLUDED.nume
+     ON CONFLICT (email) DO UPDATE SET name = EXCLUDED.nume
      RETURNING id`,
     campuri,
   )
@@ -134,27 +134,27 @@ async function upsertUtilizator(campuri) {
 }
 
 // Cadre didactice
-const idProfesori = []
+const teacherIds = []
 for (const [nume, email, dep, titlu, birou, capL, capM, demo] of PROFESORI) {
-  idProfesori.push(
-    await upsertUtilizator([email, nume, 'profesor', null, null, null, null, titlu, dep, birou, capL, capM, demo]),
+  teacherIds.push(
+    await upsertUser([email, nume, 'teacher', null, null, null, null, titlu, dep, birou, capL, capM, demo]),
   )
 }
 
 const [numeD, emailD, depD, titluD, birouD, capLD, capMD] = DIRECTOR
-const idDirector = await upsertUtilizator([emailD, numeD, 'director', null, null, null, null, titluD, depD, birouD, capLD, capMD, true])
+const headId = await upsertUser([emailD, numeD, 'head', null, null, null, null, titluD, depD, birouD, capLD, capMD, true])
 
 // Studenți
-const idStudenti = []
+const studentIds = []
 for (const [i, nume] of NUME_STUDENTI.entries()) {
   const eMaster = i % 3 === 2
-  const program = eMaster ? 'master' : 'licenta'
+  const program = eMaster ? 'master' : 'bachelor'
   const specializare = eMaster
     ? SPECIALIZARI_MASTER[i % SPECIALIZARI_MASTER.length]
     : SPECIALIZARI_LICENTA[i % SPECIALIZARI_LICENTA.length]
   const email = `${nume.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, '.')}@stud.ase.ro`
-  idStudenti.push(
-    await upsertUtilizator([
+  studentIds.push(
+    await upsertUser([
       email, nume, 'student',
       `MK-2026-${String(i + 1).padStart(4, '0')}`,
       program, specializare, eMaster ? 2 : 3,
@@ -166,34 +166,34 @@ for (const [i, nume] of NUME_STUDENTI.entries()) {
 
 // Teme
 for (const [i, [titlu, nivel, metode, prereq, locuri]] of TEME.entries()) {
-  const profesorId = idProfesori[i % idProfesori.length]
+  const profesorId = teacherIds[i % teacherIds.length]
   await q(
-    `INSERT INTO teme (profesor_id, titlu, descriere, nivel, metode, prerechizite, locuri)
+    `INSERT INTO topics (teacher_id, title, description, level, methods, prerequisites, seats)
      SELECT $1,$2,$3,$4,$5,$6,$7
-      WHERE NOT EXISTS (SELECT 1 FROM teme WHERE profesor_id = $1 AND titlu = $2)`,
+      WHERE NOT EXISTS (SELECT 1 FROM topics WHERE teacher_id = $1 AND title = $2)`,
     [profesorId, titlu, `Direcție de cercetare propusă pentru sesiunea 2026. ${metode}.`, nivel, metode, prereq, locuri],
   )
 }
 
 // Cereri — distribuite pe stări, majoritatea către primul profesor (contul demo)
-const STARI = ['in_asteptare', 'aprobata', 'aprobata', 'respinsa', 'in_asteptare', 'aprobata']
-for (const [i, studentId] of idStudenti.entries()) {
+const STATES = ['pending', 'approved', 'approved', 'rejected', 'pending', 'approved']
+for (const [i, studentId] of studentIds.entries()) {
   const [titluRo, titluEn] = TITLURI_CERERI[i % TITLURI_CERERI.length]
-  const status = STARI[i % STARI.length]
+  const status = STATES[i % STARI.length]
   // Primii 10 studenți merg la profesorul demo, ca dashboardul lui să aibă conținut.
-  const profesorId = i < 10 ? idProfesori[0] : idProfesori[i % idProfesori.length]
+  const profesorId = i < 10 ? teacherIds[0] : teacherIds[i % teacherIds.length]
   const numar = `CRR-2026-${String(i + 1).padStart(4, '0')}`
 
   const { rows } = await q(
-    `INSERT INTO cereri (numar, student_id, profesor_id, titlu_ro, titlu_en, scop_obiective, status,
-                         motiv_respingere, depusa_la, decisa_la)
+    `INSERT INTO requests (number, student_id, teacher_id, title_ro, title_en, objectives, status,
+                         rejection_reason, submitted_at, decided_at)
      SELECT $1,$2,$3,$4,$5,$6,$7,$8, now() - ($9 || ' days')::interval,
-            CASE WHEN $7 = 'in_asteptare' THEN NULL ELSE now() - ($10 || ' days')::interval END
-      WHERE NOT EXISTS (SELECT 1 FROM cereri WHERE numar = $1)
+            CASE WHEN $7 = 'pending' THEN NULL ELSE now() - ($10 || ' days')::interval END
+      WHERE NOT EXISTS (SELECT 1 FROM requests WHERE number = $1)
      RETURNING id`,
     [
       numar, studentId, profesorId, titluRo, titluEn, SCOP, status,
-      status === 'respinsa'
+      status === 'rejected'
         ? 'Tema propusă se suprapune cu o lucrare deja alocată. Vă rog să reformulați direcția de cercetare sau să alegeți una dintre temele propuse.'
         : null,
       String(30 - i), String(Math.max(1, 25 - i)),
@@ -201,12 +201,12 @@ for (const [i, studentId] of idStudenti.entries()) {
   )
 
   // Jaloane pentru cererile aprobate
-  if (rows[0] && status === 'aprobata') {
+  if (rows[0] && status === 'approved') {
     const cerereId = rows[0].id
     for (const [j, [titlu, descriere, ordine]] of JALOANE.entries()) {
-      const stare = j === 0 ? 'finalizat' : j === 1 ? (i % 2 === 0 ? 'finalizat' : 'in_lucru') : j === 2 ? 'in_lucru' : 'planificat'
+      const stare = j === 0 ? 'done' : j === 1 ? (i % 2 === 0 ? 'done' : 'in_progress') : j === 2 ? 'in_progress' : 'planned'
       await q(
-        `INSERT INTO jaloane (cerere_id, titlu, descriere, termen, status, ordine)
+        `INSERT INTO milestones (request_id, title, description, due_on, status, position)
          VALUES ($1,$2,$3, (date '2026-01-15' + ($4 || ' days')::interval)::date, $5, $6)`,
         [cerereId, titlu, descriere, String(j * 45), stare, ordine],
       )
@@ -215,19 +215,19 @@ for (const [i, studentId] of idStudenti.entries()) {
 }
 
 // Sloturi de consultații pentru profesorul demo și încă doi
-for (const profesorId of [idProfesori[0], idProfesori[1], idDirector]) {
+for (const profesorId of [teacherIds[0], teacherIds[1], headId]) {
   for (let zi = 1; zi <= 14; zi += 2) {
     for (const ora of [14, 15]) {
       await q(
-        `INSERT INTO sloturi_consultatii (profesor_id, start_la, sfarsit_la, mod, locatie, capacitate)
+        `INSERT INTO consultation_slots (teacher_id, starts_at, ends_at, mode, location, capacity)
          SELECT $1,
                 date_trunc('day', now() + ($2 || ' days')::interval) + ($3 || ' hours')::interval,
                 date_trunc('day', now() + ($2 || ' days')::interval) + (($3::int + 1) || ' hours')::interval,
-                'fizic', $4, 1
+                'in_person', $4, 1
           WHERE NOT EXISTS (
-            SELECT 1 FROM sloturi_consultatii
-             WHERE profesor_id = $1
-               AND start_la = date_trunc('day', now() + ($2 || ' days')::interval) + ($3 || ' hours')::interval
+            SELECT 1 FROM consultation_slots
+             WHERE teacher_id = $1
+               AND starts_at = date_trunc('day', now() + ($2 || ' days')::interval) + ($3 || ' hours')::interval
           )`,
         [profesorId, String(zi), String(ora), 'Corp Ion Angelescu, sala 2314'],
       )
@@ -236,40 +236,40 @@ for (const profesorId of [idProfesori[0], idProfesori[1], idDirector]) {
 }
 
 // Conversații + mesaje pentru studenții aprobați ai profesorului demo
-const { rows: aprobate } = await q(
-  `SELECT student_id, profesor_id FROM cereri WHERE status = 'aprobata' AND profesor_id = $1 LIMIT 6`,
-  [idProfesori[0]],
+const { rows: approved } = await q(
+  `SELECT student_id, teacher_id FROM requests WHERE status = 'approved' AND teacher_id = $1 LIMIT 6`,
+  [teacherIds[0]],
 )
 
-for (const { student_id, profesor_id } of aprobate) {
+for (const { student_id, teacher_id } of approved) {
   const { rows } = await q(
-    `INSERT INTO conversatii (student_id, profesor_id, ultim_mesaj_la)
+    `INSERT INTO conversations (student_id, teacher_id, last_message_at)
      VALUES ($1, $2, now())
-     ON CONFLICT (student_id, profesor_id) DO NOTHING
+     ON CONFLICT (student_id, teacher_id) DO NOTHING
      RETURNING id`,
-    [student_id, profesor_id],
+    [student_id, teacher_id],
   )
   if (!rows[0]) continue
   const conversatieId = rows[0].id
 
   for (const [i, [rol, corp]] of MESAJE_DEMO.entries()) {
     await q(
-      `INSERT INTO mesaje (conversatie_id, expeditor_id, corp, citit_la, creat_la)
+      `INSERT INTO messages (conversation_id, sender_id, body, read_at, created_at)
        VALUES ($1, $2, $3, $4, now() - ($5 || ' hours')::interval)`,
       [
         conversatieId,
-        rol === 'student' ? student_id : profesor_id,
+        role === 'student' ? student_id : teacher_id,
         corp,
         i < MESAJE_DEMO.length - 1 ? new Date().toISOString() : null,
         String((MESAJE_DEMO.length - i) * 6),
       ],
     )
   }
-  await q(`UPDATE conversatii SET ultim_mesaj_la = (SELECT max(creat_la) FROM mesaje WHERE conversatie_id = $1) WHERE id = $1`, [conversatieId])
+  await q(`UPDATE conversations SET last_message_at = (SELECT max(created_at) FROM messages WHERE conversation_id = $1) WHERE id = $1`, [conversatieId])
 }
 
-const { rows: [{ count: nrUtilizatori }] } = await q('SELECT count(*)::int AS count FROM utilizatori')
+const { rows: [{ count: userCount }] } = await q('SELECT count(*)::int AS count FROM users')
 const { rows: [{ count: nrCereri }] } = await q('SELECT count(*)::int AS count FROM cereri')
-console.log(`[seed] gata — ${nrUtilizatori} utilizatori, ${nrCereri} cereri`)
+console.log(`[seed] done — ${userCount} users, ${requestCount} requests`)
 
 await client.end()

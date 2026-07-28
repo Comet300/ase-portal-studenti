@@ -2,6 +2,6 @@
 
 declare namespace App {
   interface Locals {
-    utilizator: import('./lib/auth').Utilizator | null
+    user: import('./lib/auth').User | null
   }
 }

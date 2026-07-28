@@ -1,11 +1,11 @@
 import pg from 'pg'
 
 /**
- * Un singur pool pentru tot procesul.
+ * One pool for the whole process.
  *
- * Timestamp-urile sunt convertite la ISO, nu la `Date`: altfel aceeași coloană
- * ajunge obiect la nivel de rând și șir în interiorul unui `json_agg`, adică
- * două forme pentru același lucru.
+ * Timestamps are parsed to ISO strings rather than `Date`: left at the driver
+ * default the same column arrives as an object at row level but as a string
+ * inside `json_agg`, i.e. two shapes for one thing.
  */
 
 const { Pool, types } = pg
@@ -17,7 +17,7 @@ for (const oid of [1184, 1114, 1082]) {
 const connectionString = process.env.DATABASE_URL
 
 if (!connectionString) {
-  throw new Error('DATABASE_URL nu este setat')
+  throw new Error('DATABASE_URL is not set')
 }
 
 export const pool = new Pool({
@@ -27,9 +27,9 @@ export const pool = new Pool({
   connectionTimeoutMillis: 10_000,
 })
 
-pool.on('error', (err) => console.error('[db] eroare client inactiv', err))
+pool.on('error', (err) => console.error('[db] idle client error', err))
 
-/** Valorile trec doar ca parametri `$n`; nu există variantă cu interpolare. */
+/** Values travel only as `$n` parameters; there is no interpolating variant. */
 export async function query<T>(sql: string, params: unknown[] = []): Promise<T[]> {
   const res = await pool.query(sql, params)
   return res.rows as T[]

@@ -1,7 +1,7 @@
 import type { APIRoute } from 'astro'
-import { esteProfesor } from '../../../lib/auth'
+import { isTeacher } from '../../../lib/auth'
 import { queryOne, transaction } from '../../../lib/db'
-import { sablon, trimiteEmail } from '../../../lib/mail'
+import { template, sendEmail } from '../../../lib/mail'
 
 /** Jaloanele implicite, create odată cu acceptarea, ca studentul să nu pornească din gol. */
 const JALOANE_IMPLICITE = [
@@ -13,8 +13,8 @@ const JALOANE_IMPLICITE = [
 ] as const
 
 export const POST: APIRoute = async ({ request, locals, url }) => {
-  const u = locals.utilizator
-  if (!esteProfesor(u)) return new Response('Neautorizat', { status: 401 })
+  const u = locals.user
+  if (!isTeacher(u)) return new Response('Neautorizat', { status: 401 })
 
   const date = await request.formData()
   const cerereId = String(date.get('cerere_id') ?? '')
@@ -22,11 +22,11 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
   const motiv = String(date.get('motiv') ?? '').trim()
   const redirect = String(date.get('redirect') ?? '/profesor/studenti')
 
-  if (decizie !== 'aprobata' && decizie !== 'respinsa') {
+  if (decizie !== 'approved' && decizie !== 'rejected') {
     return new Response('Decizie invalidă', { status: 400 })
   }
 
-  if (decizie === 'respinsa' && motiv.length < 10) {
+  if (decizie === 'rejected' && motiv.length < 10) {
     return Response.redirect(
       new URL(
         `${redirect}?notificare=${encodeURIComponent('Motivul respingerii este obligatoriu (minimum 10 caractere).')}&tip=error`,
@@ -40,31 +40,31 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
   // altui coordonator nu se potrivește, deci nu se modifică nimic.
   const cerere = await transaction(async (client) => {
     const { rows } = await client.query(
-      `UPDATE cereri
+      `UPDATE requests
           SET status = $3,
-              motiv_respingere = $4,
-              decisa_la = now(),
-              actualizat_la = now()
-        WHERE id = $2 AND profesor_id = $1 AND status = 'in_asteptare'
-        RETURNING id, student_id, titlu_ro, numar`,
-      [u!.id, cerereId, decizie, decizie === 'respinsa' ? motiv : null],
+              rejection_reason = $4,
+              decided_at = now(),
+              updated_at = now()
+        WHERE id = $2 AND teacher_id = $1 AND status = 'pending'
+        RETURNING id, student_id, title_ro, number`,
+      [u!.id, cerereId, decizie, decizie === 'rejected' ? motiv : null],
     )
 
     const c = rows[0]
     if (!c) return null
 
-    if (decizie === 'aprobata') {
-      for (const [titlu, descriere, zile] of JALOANE_IMPLICITE) {
+    if (decizie === 'approved') {
+      for (const [titlu, description, zile] of JALOANE_IMPLICITE) {
         await client.query(
-          `INSERT INTO jaloane (cerere_id, titlu, descriere, termen, ordine)
+          `INSERT INTO milestones (request_id, title, description, due_on, position)
            VALUES ($1, $2, $3, (current_date + ($4 || ' days')::interval)::date, $5)`,
-          [c.id, titlu, descriere, String(zile), JALOANE_IMPLICITE.findIndex((j) => j[0] === titlu)],
+          [c.id, title, description, String(zile), JALOANE_IMPLICITE.findIndex((j) => j[0] === titlu)],
         )
       }
       // Firul de discuție se deschide odată cu acceptarea.
       await client.query(
-        `INSERT INTO conversatii (student_id, profesor_id) VALUES ($1, $2)
-         ON CONFLICT (student_id, profesor_id) DO NOTHING`,
+        `INSERT INTO conversations (student_id, teacher_id) VALUES ($1, $2)
+         ON CONFLICT (student_id, teacher_id) DO NOTHING`,
         [c.student_id, u!.id],
       )
     }
@@ -79,27 +79,27 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
     )
   }
 
-  const student = await queryOne<{ email: string; nume: string }>(
-    'SELECT email, nume FROM utilizatori WHERE id = $1',
+  const student = await queryOne<{ email: string; name: string }>(
+    'SELECT email, name FROM users WHERE id = $1',
     [cerere.student_id],
   )
 
   if (student) {
     const baza = process.env.APP_BASE_URL ?? url.origin
-    const aprobata = decizie === 'aprobata'
-    await trimiteEmail({
+    const aprobata = decizie === 'approved'
+    await sendEmail({
       to: student.email,
       subject: aprobata
-        ? `Cererea ${cerere.numar} a fost aprobată`
-        : `Cererea ${cerere.numar} a fost respinsă`,
-      html: sablon(
+        ? `Cererea ${cerere.number} a fost aprobată`
+        : `Cererea ${cerere.number} a fost respinsă`,
+      html: template(
         aprobata ? 'Cererea ta a fost aprobată' : 'Cererea ta a fost respinsă',
         aprobata
-          ? `<p>Bună, ${student.nume.split(' ')[0]}! Cererea <strong>${cerere.numar}</strong> pentru lucrarea
-             „${cerere.titlu_ro}” a fost aprobată de ${u!.nume}.</p>
+          ? `<p>Bună, ${student.name.split(' ')[0]}! Cererea <strong>${cerere.number}</strong> pentru lucrarea
+             „${cerere.title_ro}” a fost aprobată de ${u!.name}.</p>
              <p>În portal găsești acum jaloanele lucrării și poți programa consultații.</p>`
-          : `<p>Bună, ${student.nume.split(' ')[0]}. Cererea <strong>${cerere.numar}</strong> pentru lucrarea
-             „${cerere.titlu_ro}” a fost respinsă de ${u!.nume}.</p>
+          : `<p>Bună, ${student.name.split(' ')[0]}. Cererea <strong>${cerere.number}</strong> pentru lucrarea
+             „${cerere.title_ro}” a fost respinsă de ${u!.name}.</p>
              <p><strong>Motiv:</strong> ${motiv}</p>
              <p>Poți depune o cerere nouă, către același coordonator sau către altul.</p>`,
         { text: 'Deschide portalul', url: `${baza}/cererile-mele` },
@@ -110,7 +110,7 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
   return Response.redirect(
     new URL(
       `${redirect}?notificare=${encodeURIComponent(
-        decizie === 'aprobata' ? 'Cerere aprobată. Studentul a fost notificat.' : 'Cerere respinsă. Studentul a fost notificat.',
+        decizie === 'approved' ? 'Cerere aprobată. Studentul a fost notificat.' : 'Cerere respinsă. Studentul a fost notificat.',
       )}`,
       url,
     ),

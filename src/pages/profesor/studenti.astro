@@ -1,45 +1,45 @@
 ---
 import ProfesorLayout from '../../layouts/ProfesorLayout.astro'
-import { initiale } from '../../lib/auth'
+import { initials } from '../../lib/auth'
 import {
-  CLASA_STATUS,
-  ETICHETE_STATUS,
-  acumRelativ,
-  cereriProfesor,
-  dataRo,
-  jaloaneCerere,
-  oraRo,
-  sloturiProfesor,
-  studentiCoordonati,
-  temeProfesor,
+  STATUS_CLASS,
+  STATUS_LABELS,
+  timeAgo,
+  teacherRequests,
+  formatDate,
+  requestMilestones,
+  formatTime,
+  teacherSlots,
+  supervisedStudents,
+  teacherTopics,
 } from '../../lib/repo'
 
-const u = Astro.locals.utilizator!
+const u = Astro.locals.user!
 const sectiune = Astro.url.searchParams.get('sectiune') ?? 'cereri'
 const studentDeschis = Astro.url.searchParams.get('student')
 
 const [toateCererile, studenti, teme, sloturi] = await Promise.all([
-  cereriProfesor(u.id),
-  studentiCoordonati(u.id),
-  temeProfesor(u.id),
-  sloturiProfesor(u.id),
+  teacherRequests(u.id),
+  supervisedStudents(u.id),
+  teacherTopics(u.id),
+  teacherSlots(u.id),
 ])
 
-const inAsteptare = toateCererile.filter((c) => c.status === 'in_asteptare')
-const decise = toateCererile.filter((c) => c.status !== 'in_asteptare')
+const inAsteptare = toateCererile.filter((c) => c.status === 'pending')
+const decise = toateCererile.filter((c) => c.status !== 'pending')
 
 // Cronologia se încarcă pentru studentul deschis; implicit, primul coordonat.
 const cerereTimeline = studentDeschis
   ? studenti.find((s) => s.id === studentDeschis)
   : studenti[0]
-const jaloane = cerereTimeline ? await jaloaneCerere(u.id, cerereTimeline.id) : []
+const jaloane = cerereTimeline ? await requestMilestones(u.id, cerereTimeline.id) : []
 
 const sectiuni = [
   { cheie: 'cereri', text: 'Cereri', contor: inAsteptare.length },
   { cheie: 'studenti', text: 'Studenți coordonați', contor: studenti.length },
   { cheie: 'cronologie', text: 'Cronologie', contor: null },
-  { cheie: 'teme', text: 'Teme propuse', contor: teme.filter((t) => t.activa).length },
-  { cheie: 'consultatii', text: 'Consultații', contor: sloturi.filter((s) => !s.anulat).length },
+  { cheie: 'teme', text: 'Teme propuse', contor: teme.filter((t) => t.is_active).length },
+  { cheie: 'consultatii', text: 'Consultații', contor: sloturi.filter((s) => !s.is_cancelled).length },
 ]
 
 const caleCurenta = `/profesor/studenti?sectiune=${sectiune}`
@@ -94,27 +94,27 @@ const STARI_JALON: Record<string, string> = {
               {inAsteptare.map((c) => (
                 <li class="cerere">
                   <div class="cerere__cap">
-                    <span class="avatar" aria-hidden="true">{initiale(c.student_nume)}</span>
+                    <span class="avatar" aria-hidden="true">{initials(c.student_name)}</span>
                     <div class="cerere__ident">
-                      <strong>{c.student_nume}</strong>
+                      <strong>{c.student_name}</strong>
                       <span class="muted">
-                        {c.numar_matricol} · {c.program === 'master' ? 'Master' : 'Licență'} ·{' '}
-                        {c.specializare}
+                        {c.student_number} · {c.program === 'master' ? 'Master' : 'Licență'} ·{' '}
+                        {c.specialization}
                       </span>
                     </div>
                     <span class="muted" style="font-size:var(--t-xs)">
-                      depusă {acumRelativ(c.depusa_la)}
+                      depusă {timeAgo(c.submitted_at)}
                     </span>
                   </div>
 
-                  <h3 class="cerere__titlu">{c.titlu_ro}</h3>
-                  {c.titlu_en && <p class="cerere__titlu-en">{c.titlu_en}</p>}
-                  <p class="cerere__scop">{c.scop_obiective}</p>
+                  <h3 class="cerere__titlu">{c.title_ro}</h3>
+                  {c.title_en && <p class="cerere__titlu-en">{c.title_en}</p>}
+                  <p class="cerere__scop">{c.objectives}</p>
 
                   <div class="cerere__actiuni">
                     <form method="POST" action="/api/cereri/decizie">
                       <input type="hidden" name="cerere_id" value={c.id} />
-                      <input type="hidden" name="decizie" value="aprobata" />
+                      <input type="hidden" name="decizie" value="approved" />
                       <input type="hidden" name="redirect" value={caleCurenta} />
                       <button class="btn btn--primary btn--sm" type="submit">
                         Acceptă coordonarea
@@ -124,7 +124,7 @@ const STARI_JALON: Record<string, string> = {
                       class="btn btn--danger btn--sm"
                       type="button"
                       data-respinge={c.id}
-                      data-nume={c.student_nume}
+                      data-nume={c.student_name}
                     >
                       Respinge
                     </button>
@@ -157,15 +157,15 @@ const STARI_JALON: Record<string, string> = {
                 <tbody>
                   {decise.map((c) => (
                     <tr>
-                      <td class="numeric muted">{c.numar}</td>
-                      <td>{c.student_nume}</td>
-                      <td class="celula-titlu">{c.titlu_ro}</td>
+                      <td class="numeric muted">{c.number}</td>
+                      <td>{c.student_name}</td>
+                      <td class="celula-titlu">{c.title_ro}</td>
                       <td>
-                        <span class:list={['badge', CLASA_STATUS[c.status]]}>
-                          {ETICHETE_STATUS[c.status]}
+                        <span class:list={['badge', STATUS_CLASS[c.status]]}>
+                          {STATUS_LABELS[c.status]}
                         </span>
                       </td>
-                      <td class="muted">{dataRo(c.decisa_la)}</td>
+                      <td class="muted">{formatDate(c.decided_at)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -184,7 +184,7 @@ const STARI_JALON: Record<string, string> = {
         <div class="panel__header">
           <h2 class="section-title">Studenți coordonați</h2>
           <span class="muted" style="font-size:var(--t-sm)">
-            {studenti.length} din {(u.capacitate_licenta ?? 0) + (u.capacitate_master ?? 0)} locuri
+            {studenti.length} din {(u.bachelor_capacity ?? 0) + (u.master_capacity ?? 0)} locuri
           </span>
         </div>
 
@@ -210,36 +210,36 @@ const STARI_JALON: Record<string, string> = {
               </thead>
               <tbody>
                 {studenti.map((s) => {
-                  const procent = s.jaloane_total
-                    ? Math.round((s.jaloane_finalizate / s.jaloane_total) * 100)
+                  const procent = s.milestones_total
+                    ? Math.round((s.milestones_done / s.milestones_total) * 100)
                     : 0
                   return (
                     <tr>
                       <td>
                         <div class="row" style="gap:var(--s-3)">
-                          <span class="avatar" aria-hidden="true">{initiale(s.student_nume)}</span>
+                          <span class="avatar" aria-hidden="true">{initials(s.student_name)}</span>
                           <div class="stack stack--tight" style="gap:0">
-                            <strong>{s.student_nume}</strong>
+                            <strong>{s.student_name}</strong>
                             <span class="muted" style="font-size:var(--t-xs)">
-                              {s.numar_matricol} · {s.program === 'master' ? 'Master' : 'Licență'}
+                              {s.student_number} · {s.program === 'master' ? 'Master' : 'Licență'}
                             </span>
                           </div>
                         </div>
                       </td>
-                      <td class="celula-titlu">{s.titlu_ro}</td>
+                      <td class="celula-titlu">{s.title_ro}</td>
                       <td>
                         <div class="progres">
                           <div class="bara" role="img" aria-label={`Progres ${procent}%`}>
                             <span class="bara__fill" style={`--procent:${procent / 100}`} />
                           </div>
                           <span class="muted numeric" style="font-size:var(--t-xs)">
-                            {s.jaloane_finalizate}/{s.jaloane_total}
+                            {s.milestones_done}/{s.milestones_total}
                           </span>
                         </div>
                       </td>
                       <td>
-                        {s.mesaje_necitite > 0 ? (
-                          <span class="badge badge--asteptare">{s.mesaje_necitite} necitite</span>
+                        {s.unread > 0 ? (
+                          <span class="badge badge--asteptare">{s.unread} necitite</span>
                         ) : (
                           <span class="muted">—</span>
                         )}
@@ -295,7 +295,7 @@ const STARI_JALON: Record<string, string> = {
                     <select class="select" id="student" name="student" onchange="this.form.submit()">
                       {studenti.map((s) => (
                         <option value={s.id} selected={cerereTimeline?.id === s.id}>
-                          {s.student_nume} — {s.titlu_ro}
+                          {s.student_name} — {s.title_ro}
                         </option>
                       ))}
                     </select>
@@ -314,25 +314,25 @@ const STARI_JALON: Record<string, string> = {
               <div class="panel__header">
                 <h2 class="section-title">Cronologia lucrării</h2>
                 <span class="muted" style="font-size:var(--t-sm)">
-                  {jaloane.filter((j) => j.status === 'finalizat').length} din {jaloane.length} finalizate
+                  {milestones.filter((j) => j.status === 'done').length} din {milestones.length} finalizate
                 </span>
               </div>
 
               <ol class="cronologie">
-                {jaloane.map((j) => (
+                {milestones.map((j) => (
                   <li class:list={['jalon', `jalon--${j.status}`]}>
                     <span class="jalon__punct" aria-hidden="true" />
                     <details class="jalon__corp">
                       <summary>
-                        <span class="jalon__titlu">{j.titlu}</span>
+                        <span class="jalon__titlu">{j.title}</span>
                         <span class="jalon__meta">
-                          <span class="muted">{j.termen ? dataRo(j.termen) : 'fără termen'}</span>
+                          <span class="muted">{j.due_on ? formatDate(j.due_on) : 'fără termen'}</span>
                           <span
                             class:list={[
                               'badge',
-                              j.status === 'finalizat'
+                              j.status === 'done'
                                 ? 'badge--aprobata'
-                                : j.status === 'in_lucru'
+                                : j.status === 'in_progress'
                                   ? 'badge--asteptare'
                                   : 'badge--ciorna',
                             ]}
@@ -353,7 +353,7 @@ const STARI_JALON: Record<string, string> = {
 
                         <div class="field">
                           <label class="label" for={`titlu-${j.id}`}>Titlu</label>
-                          <input class="input" id={`titlu-${j.id}`} name="titlu" value={j.titlu} required />
+                          <input class="input" id={`titlu-${j.id}`} name="titlu" value={j.title} required />
                         </div>
 
                         <div class="row row--wrap" style="gap:var(--s-3);align-items:flex-end">
@@ -364,7 +364,7 @@ const STARI_JALON: Record<string, string> = {
                               id={`termen-${j.id}`}
                               name="termen"
                               type="date"
-                              value={j.termen ? j.termen.slice(0, 10) : ''}
+                              value={j.due_on ? j.due_on.slice(0, 10) : ''}
                             />
                           </div>
                           <div class="field" style="flex:1;min-width:160px">
@@ -385,7 +385,7 @@ const STARI_JALON: Record<string, string> = {
                             name="descriere"
                             rows="2"
                             style="min-height:64px"
-                          >{j.descriere ?? ''}</textarea>
+                          >{j.description ?? ''}</textarea>
                         </div>
 
                         <div class="row" style="gap:var(--s-2)">
@@ -458,17 +458,17 @@ const STARI_JALON: Record<string, string> = {
         ) : (
           <ul class="teme">
             {teme.map((t) => (
-              <li class:list={['tema', { 'is-inactiva': !t.activa }]}>
+              <li class:list={['tema', { 'is-inactiva': !t.is_active }]}>
                 <div class="tema__cap">
-                  <span class="badge badge--info">{t.nivel === 'master' ? 'Master' : 'Licență'}</span>
+                  <span class="badge badge--info">{t.level === 'master' ? 'Master' : 'Licență'}</span>
                   <span class="muted numeric" style="font-size:var(--t-xs)">
-                    {t.ocupate}/{t.locuri} locuri
+                    {t.taken}/{t.seats} locuri
                   </span>
                 </div>
-                <h3 class="tema__titlu">{t.titlu}</h3>
-                {t.metode && <p class="muted" style="font-size:var(--t-sm)">Metode: {t.metode}</p>}
-                {t.prerechizite && t.prerechizite !== '—' && (
-                  <p class="muted" style="font-size:var(--t-xs)">Prerechizite: {t.prerechizite}</p>
+                <h3 class="tema__titlu">{t.title}</h3>
+                {t.methods && <p class="muted" style="font-size:var(--t-sm)">Metode: {t.methods}</p>}
+                {t.prerequisites && t.prerequisites !== '—' && (
+                  <p class="muted" style="font-size:var(--t-xs)">Prerechizite: {t.prerequisites}</p>
                 )}
               </li>
             ))}
@@ -508,16 +508,16 @@ const STARI_JALON: Record<string, string> = {
               <tbody>
                 {sloturi.map((s) => (
                   <tr>
-                    <td>{dataRo(s.start_la)}</td>
+                    <td>{formatDate(s.starts_at)}</td>
                     <td class="numeric">
-                      {oraRo(s.start_la)}–{oraRo(s.sfarsit_la)}
+                      {formatTime(s.starts_at)}–{formatTime(s.ends_at)}
                     </td>
-                    <td>{s.mod === 'online' ? 'Online' : (s.locatie ?? 'Cabinet')}</td>
+                    <td>{s.mode === 'online' ? 'Online' : (s.location ?? 'Cabinet')}</td>
                     <td>
-                      {s.anulat ? (
+                      {s.is_cancelled ? (
                         <span class="badge badge--respinsa">Anulat</span>
-                      ) : s.rezervari > 0 ? (
-                        <span class="badge badge--aprobata">{s.student_nume}</span>
+                      ) : s.booked > 0 ? (
+                        <span class="badge badge--aprobata">{s.student_name}</span>
                       ) : (
                         <span class="muted">Liber</span>
                       )}
@@ -570,7 +570,7 @@ const STARI_JALON: Record<string, string> = {
       const camp = document.getElementById('dialog-cerere') as HTMLInputElement | null
       const nume = document.getElementById('dialog-nume')
       if (camp) camp.value = b.dataset.respinge ?? ''
-      if (nume) nume.textContent = b.dataset.nume ?? 'student'
+      if (nume) nume.textContent = b.dataset.name ?? 'student'
       dialog?.showModal()
     })
   })

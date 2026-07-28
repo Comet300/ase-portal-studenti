@@ -1,6 +1,6 @@
 ---
 import BaseLayout from './BaseLayout.astro'
-import { initiale } from '../lib/auth'
+import { initials } from '../lib/auth'
 
 interface Props {
   titlu: string
@@ -8,8 +8,8 @@ interface Props {
   activ?: string
 }
 
-const { titlu, descriere, activ } = Astro.props
-const u = Astro.locals.utilizator
+const { title, description, activ } = Astro.props
+const u = Astro.locals.user
 
 const linkuri = [
   { href: '/', text: 'Acasă', cheie: 'acasa' },
@@ -46,13 +46,13 @@ const linkuri = [
         {
           u ? (
             <>
-              {(u.rol === 'profesor' || u.rol === 'director') && (
+              {(u.role === 'teacher' || u.role === 'head') && (
                 <a href="/profesor" class="btn btn--secondary btn--sm">
                   Zona cadrelor didactice
                 </a>
               )}
-              <a href="/contul-meu" class="avatar" title={u.nume}>
-                {initiale(u.nume)}
+              <a href="/contul-meu" class="avatar" title={u.name}>
+                {initials(u.name)}
               </a>
             </>
           ) : (

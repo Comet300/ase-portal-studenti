@@ -1,6 +1,6 @@
 ---
 import BaseLayout from './BaseLayout.astro'
-import { initiale, DEMO_MODE } from '../lib/auth'
+import { initials, DEMO_MODE } from '../lib/auth'
 
 interface Props {
   titlu: string
@@ -8,14 +8,14 @@ interface Props {
   activ?: string
 }
 
-const { titlu, lede, activ } = Astro.props
-const u = Astro.locals.utilizator!
+const { title, lede, activ } = Astro.props
+const u = Astro.locals.user!
 
 const linkuri = [
   { href: '/profesor', cheie: 'dashboard', text: 'Dashboard', icon: 'grid' },
   { href: '/profesor/studenti', cheie: 'studenti', text: 'Studenți & Cereri', icon: 'users' },
   { href: '/profesor/mesaje', cheie: 'mesaje', text: 'Mesaje', icon: 'chat' },
-  ...(u.rol === 'director'
+  ...(u.role === 'head'
     ? [{ href: '/profesor/departament', cheie: 'departament', text: 'Departament', icon: 'chart' }]
     : []),
   { href: '/profesor/arhiva', cheie: 'arhiva', text: 'Arhivă & Setări', icon: 'archive' },
@@ -62,10 +62,10 @@ const cai: Record<string, string> = {
           Portalul studenților
         </a>
         <div class="user">
-          <span class="user__avatar">{initiale(u.nume)}</span>
+          <span class="user__avatar">{initials(u.name)}</span>
           <span class="user__meta">
-            <strong>{u.nume}</strong>
-            <small>{u.rol === 'director' ? 'Director de departament' : 'Cadru didactic'}</small>
+            <strong>{u.name}</strong>
+            <small>{u.role === 'head' ? 'Director de departament' : 'Cadru didactic'}</small>
           </span>
           <form method="POST" action="/api/deconectare">
             <button class="btn btn--ghost btn--sm" type="submit" title="Deconectare" aria-label="Deconectare">

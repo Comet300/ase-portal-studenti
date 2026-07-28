@@ -1,15 +1,15 @@
 ---
 import BaseLayout from '../layouts/BaseLayout.astro'
-import { conturiDemo, DEMO_MODE, initiale } from '../lib/auth'
+import { demoAccounts, DEMO_MODE, initials } from '../lib/auth'
 
 const redirect = Astro.url.searchParams.get('redirect') ?? ''
 const trimis = Astro.url.searchParams.get('trimis') === '1'
 const eroare = Astro.url.searchParams.get('eroare')
-const conturi = await conturiDemo()
+const conturi = await demoAccounts()
 
-if (Astro.locals.utilizator && !trimis) {
-  const u = Astro.locals.utilizator
-  return Astro.redirect(u.rol === 'student' ? '/cererile-mele' : '/profesor', 302)
+if (Astro.locals.user && !trimis) {
+  const u = Astro.locals.user
+  return Astro.redirect(u.role === 'student' ? '/cererile-mele' : '/profesor', 302)
 }
 
 const eticheteRol: Record<string, string> = {
@@ -62,7 +62,7 @@ const eticheteRol: Record<string, string> = {
                   type="email"
                   required
                   autocomplete="email"
-                  placeholder="prenume.nume@stud.ase.ro"
+                  placeholder="prenume.name@stud.ase.ro"
                 />
                 <span class="hint">Conturi @stud.ase.ro pentru studenți, @ase.ro pentru cadre didactice.</span>
               </div>
@@ -86,10 +86,10 @@ const eticheteRol: Record<string, string> = {
                     <input type="hidden" name="utilizator_id" value={c.id} />
                     <input type="hidden" name="redirect" value={redirect} />
                     <button class="demo__cont" type="submit">
-                      <span class="demo__avatar">{initiale(c.nume)}</span>
+                      <span class="demo__avatar">{initials(c.name)}</span>
                       <span class="demo__meta">
-                        <strong>{c.nume}</strong>
-                        <small>{eticheteRol[c.rol]}</small>
+                        <strong>{c.name}</strong>
+                        <small>{eticheteRol[c.role]}</small>
                       </span>
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
                         <path d="M5 12h14M13 6l6 6-6 6" />
@@ -162,7 +162,7 @@ const eticheteRol: Record<string, string> = {
     color: var(--ink-muted);
   }
 
-  .titlu {
+  .title {
     font-family: var(--serif);
     font-size: var(--t-2xl);
   }

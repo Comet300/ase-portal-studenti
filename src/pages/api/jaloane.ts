@@ -1,5 +1,5 @@
 import type { APIRoute } from 'astro'
-import { esteProfesor } from '../../lib/auth'
+import { isTeacher } from '../../lib/auth'
 import { execute } from '../../lib/db'
 
 /**
@@ -17,8 +17,8 @@ const inapoi = (url: URL, redirect: string, mesaj: string, eroare = false) =>
   )
 
 export const POST: APIRoute = async ({ request, locals, url }) => {
-  const u = locals.utilizator
-  if (!esteProfesor(u)) return new Response('Neautorizat', { status: 401 })
+  const u = locals.user
+  if (!isTeacher(u)) return new Response('Neautorizat', { status: 401 })
 
   const date = await request.formData()
   const actiune = String(date.get('actiune') ?? '')
@@ -33,11 +33,11 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
     if (!titlu) return inapoi(url, redirect, 'Titlul jalonului este obligatoriu.', true)
 
     const n = await execute(
-      `INSERT INTO jaloane (cerere_id, titlu, descriere, termen, ordine)
+      `INSERT INTO milestones (request_id, title, description, due_on, position)
        SELECT $2, $3, $4, NULLIF($5, '')::date,
-              COALESCE((SELECT max(ordine) + 1 FROM jaloane WHERE cerere_id = $2), 0)
-        WHERE EXISTS (SELECT 1 FROM cereri c WHERE c.id = $2 AND c.profesor_id = $1)`,
-      [u!.id, cerereId, titlu, descriere || null, termen],
+              COALESCE((SELECT max(position) + 1 FROM milestones WHERE request_id = $2), 0)
+        WHERE EXISTS (SELECT 1 FROM requests c WHERE c.id = $2 AND c.teacher_id = $1)`,
+      [u!.id, cerereId, title, descriere || null, termen],
     )
     return inapoi(url, redirect, n ? 'Jalon adăugat.' : 'Cererea nu a fost găsită.', !n)
   }
@@ -49,19 +49,19 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
     const descriere = String(date.get('descriere') ?? '').trim()
     const status = String(date.get('status') ?? '')
 
-    if (!['planificat', 'in_lucru', 'finalizat'].includes(status)) {
+    if (!['planned', 'in_progress', 'done'].includes(status)) {
       return inapoi(url, redirect, 'Stare invalidă.', true)
     }
 
     const n = await execute(
-      `UPDATE jaloane j
-          SET titlu = COALESCE(NULLIF($3, ''), j.titlu),
-              descriere = NULLIF($4, ''),
-              termen = NULLIF($5, '')::date,
+      `UPDATE milestones j
+          SET title = COALESCE(NULLIF($3, ''), j.title),
+              description = NULLIF($4, ''),
+              due_on = NULLIF($5, '')::date,
               status = $6
         WHERE j.id = $2
-          AND EXISTS (SELECT 1 FROM cereri c WHERE c.id = j.cerere_id AND c.profesor_id = $1)`,
-      [u!.id, jalonId, titlu, descriere, termen, status],
+          AND EXISTS (SELECT 1 FROM requests c WHERE c.id = j.request_id AND c.teacher_id = $1)`,
+      [u!.id, jalonId, title, description, due_on, status],
     )
     return inapoi(url, redirect, n ? 'Jalon actualizat.' : 'Jalonul nu a fost găsit.', !n)
   }
@@ -69,9 +69,9 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
   if (actiune === 'sterge') {
     const jalonId = String(date.get('jalon_id') ?? '')
     const n = await execute(
-      `DELETE FROM jaloane j
+      `DELETE FROM milestones j
         WHERE j.id = $2
-          AND EXISTS (SELECT 1 FROM cereri c WHERE c.id = j.cerere_id AND c.profesor_id = $1)`,
+          AND EXISTS (SELECT 1 FROM requests c WHERE c.id = j.request_id AND c.teacher_id = $1)`,
       [u!.id, jalonId],
     )
     return inapoi(url, redirect, n ? 'Jalon șters.' : 'Jalonul nu a fost găsit.', !n)
