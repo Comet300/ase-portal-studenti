@@ -15,11 +15,11 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
 
   const date = await request.formData()
   const actiune = String(date.get('actiune') ?? 'publica')
-  const redirect = '/profesor/studenti?sectiune=consultatii'
+  const redirectTo = '/profesor/studenti?sectiune=consultatii'
 
   const inapoi = (mesaj: string, eroare = false) =>
     redirect(
-      new URL(`${redirect}&notificare=${encodeURIComponent(mesaj)}${error ? '&kind=error' : ''}`, url),
+      new URL(`${redirectTo}&notificare=${encodeURIComponent(mesaj)}${error ? '&kind=error' : ''}`, url),
       303,
     )
 

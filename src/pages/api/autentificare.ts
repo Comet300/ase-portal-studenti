@@ -12,7 +12,7 @@ import { redirect } from '../../lib/http'
 export const POST: APIRoute = async ({ request, url }) => {
   const date = await request.formData()
   const email = String(date.get('email') ?? '').trim().toLowerCase()
-  const redirect = String(date.get('redirect') ?? '')
+  const redirectTo = String(date.get('redirect') ?? '')
 
   if (!email || !email.includes('@')) {
     return redirect(new URL('/autentificare?eroare=Adresă+de+email+invalidă.', url), 303)
@@ -21,7 +21,7 @@ export const POST: APIRoute = async ({ request, url }) => {
   const utilizator = await findUserByEmail(email)
 
   if (utilizator) {
-    const token = await createMagicLink(email, redirect || undefined)
+    const token = await createMagicLink(email, redirectTo || undefined)
     const baza = process.env.APP_BASE_URL ?? url.origin
     const link = `${baza}/intra?token=${token}`
 
