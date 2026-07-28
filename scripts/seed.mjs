@@ -229,6 +229,7 @@ const DEMO_MESSAGES = [
 
 console.log('[seed] pornit')
 
+console.log('[seed] etape')
 // Etape
 for (const [i, [titlu, descriere, interval, di, ds]] of STAGES.entries()) {
   await q(
@@ -260,7 +261,7 @@ async function upsertUser(campuri) {
   return rows[0].id
 }
 
-// Cadre didactice
+console.log('[seed] cadre didactice')
 const teacherIds = []
 for (const [nume, email, dep, titlu, birou, capL, capM, demo, bio, interese] of TEACHERS) {
   const id = await upsertUser([
@@ -289,7 +290,7 @@ await q(
   [headId, currentYear.id, capLD, capMD],
 )
 
-// Studenți
+console.log('[seed] studenți')
 const studentIds = []
 for (const [i, nume] of STUDENT_NAMES.entries()) {
   const isMaster = i % 3 === 2
@@ -329,7 +330,7 @@ const unassignedStudentId = await upsertUser([
 // a request, clear it so the account keeps meaning "not yet started".
 await q(`DELETE FROM requests WHERE student_id = $1`, [unassignedStudentId])
 
-// Teme
+console.log('[seed] teme')
 for (const [i, [titlu, nivel, limba, metode, prereq, locuri]] of TOPICS.entries()) {
   const profesorId = teacherIds[i % teacherIds.length]
   await q(
@@ -344,7 +345,14 @@ for (const [i, [titlu, nivel, limba, metode, prereq, locuri]] of TOPICS.entries(
   )
 }
 
-// Cereri — distribuite pe stări, majoritatea către primul profesor (contul demo)
+console.log('[seed] cereri')
+/* Cereri — distribuite pe stări, majoritatea către primul profesor (contul demo).
+ *
+ * Cheia de idempotență este perechea (student, an universitar), nu numărul
+ * cererii: numărul conține anul, iar la schimbarea anului o cerere „nouă” ar fi
+ * fost inserată pentru un student care are deja una activă — și ar fi lovit
+ * indexul unic parțial, oprind restul seed-ului.
+ */
 const STATES = ['pending', 'approved', 'approved', 'rejected', 'pending', 'approved']
 for (const [i, studentId] of studentIds.entries()) {
   const [titluRo, titluEn] = REQUEST_TITLES[i % REQUEST_TITLES.length]
@@ -360,7 +368,9 @@ for (const [i, studentId] of studentIds.entries()) {
             now() - ($11 || ' days')::interval,
             CASE WHEN $9 = 'pending' THEN NULL ELSE now() - ($12 || ' days')::interval END,
             CASE WHEN $9 = 'pending' THEN now() + ($13 || ' days')::interval END
-      WHERE NOT EXISTS (SELECT 1 FROM requests WHERE number = $2)
+      WHERE NOT EXISTS (
+        SELECT 1 FROM requests WHERE student_id = $3 AND academic_year_id = $1
+      )
      RETURNING id`,
     [
       currentYear.id, numar, studentId, profesorId, titluRo, titluEn, OBJECTIVES,
@@ -390,6 +400,31 @@ for (const [i, studentId] of studentIds.entries()) {
   }
 }
 
+/* Termenul de răspuns pentru cererile rămase de la o rulare anterioară.
+ *
+ * O cerere depusă „acum 30 de zile” are termenul depășit, iar portalul o
+ * respinge automat la prima cerere HTTP — demonstrația ar porni cu coada goală.
+ * Le împrospătăm, ca ecranul de triaj să aibă mereu ce arăta.
+ */
+await q(
+  `UPDATE requests
+      SET submitted_at = now() - interval '2 days',
+          expires_at   = now() + interval '5 days'
+    WHERE status = 'pending'
+      AND academic_year_id = $1
+      AND (expires_at IS NULL OR expires_at <= now() + interval '1 day')`,
+  [currentYear.id],
+)
+
+// Cererile dinaintea acestui câmp nu au motivație; fără ea ecranul
+// coordonatorului arată o secțiune goală acolo unde ar trebui să fie argumentul.
+await q(
+  `UPDATE requests SET motivation = $2
+    WHERE motivation IS NULL AND academic_year_id = $1`,
+  [currentYear.id, MOTIVATIONS[0]],
+)
+
+console.log('[seed] consultații')
 // Sloturi de consultații pentru profesorul demo și încă doi. Unul din trei este
 // online, ca linkul întâlnirii să fie vizibil undeva în interfață.
 for (const profesorId of [teacherIds[0], teacherIds[1], headId]) {
@@ -418,6 +453,7 @@ for (const profesorId of [teacherIds[0], teacherIds[1], headId]) {
   }
 }
 
+console.log('[seed] conversații')
 // Conversații + mesaje pentru studenții aprobați ai profesorului demo
 const { rows: approved } = await q(
   `SELECT student_id, teacher_id FROM requests WHERE status = 'approved' AND teacher_id = $1 LIMIT 6`,
@@ -425,27 +461,35 @@ const { rows: approved } = await q(
 )
 
 for (const { student_id, teacher_id } of approved) {
-  const { rows } = await q(
+  const conversatie = await one(
     `INSERT INTO conversations (student_id, teacher_id, last_message_at)
      VALUES ($1, $2, now())
-     ON CONFLICT (student_id, teacher_id) DO NOTHING
+     ON CONFLICT (student_id, teacher_id)
+     DO UPDATE SET last_message_at = conversations.last_message_at
      RETURNING id`,
     [student_id, teacher_id],
   )
-  if (!rows[0]) continue
-  const conversatieId = rows[0].id
+  const conversatieId = conversatie.id
 
-  // Firul începe cu evenimentul care l-a deschis, nu cu o replică.
+  // Firul începe cu evenimentul care l-a deschis, nu cu o replică. Ghidat pe
+  // tipul mesajului, nu pe existența conversației: firele create de o rulare
+  // anterioară au deja replici, dar niciun eveniment.
   await q(
     `INSERT INTO messages (conversation_id, sender_id, body, kind, event_type, read_at, created_at)
-     VALUES ($1, $2, $3, 'event', 'request_approved', now(), now() - interval '40 hours')`,
+     SELECT $1, $2, $3, 'event', 'request_approved', now(), now() - interval '40 hours'
+      WHERE NOT EXISTS (
+        SELECT 1 FROM messages WHERE conversation_id = $1 AND kind = 'event'
+      )`,
     [conversatieId, teacher_id, 'Cererea de coordonare a fost aprobată. Jaloanele lucrării sunt disponibile în portal.'],
   )
 
   for (const [i, [role, body]] of DEMO_MESSAGES.entries()) {
     await q(
       `INSERT INTO messages (conversation_id, sender_id, body, read_at, created_at)
-       VALUES ($1, $2, $3, $4, now() - ($5 || ' hours')::interval)`,
+       SELECT $1, $2, $3, $4, now() - ($5 || ' hours')::interval
+        WHERE NOT EXISTS (
+          SELECT 1 FROM messages WHERE conversation_id = $1 AND body = $3
+        )`,
       [
         conversatieId,
         role === 'student' ? student_id : teacher_id,
@@ -496,6 +540,7 @@ for (const r of demoPair) {
   console.log(`[seed] demo pair linked (request ${r.id})`)
 }
 
+console.log('[seed] invitație')
 /* --- o invitație în așteptare ---------------------------------------------
  * Studenta fără coordonator primește o propunere de la cadrul didactic demo.
  * Rămâne fără coordonator până răspunde, deci scenariul „niciun coordonator”
@@ -515,6 +560,7 @@ await q(
   ],
 )
 
+console.log('[seed] cerere de locuri')
 /* --- o cerere de locuri suplimentare, în așteptarea directorului ----------- */
 await q(
   `INSERT INTO seat_requests (teacher_id, academic_year_id, level, extra_seats, reason)
@@ -526,6 +572,7 @@ await q(
   [teacherIds[1], currentYear.id],
 )
 
+console.log('[seed] arhivă istorică')
 /* --- arhivă istorică -------------------------------------------------------
  * Anul trecut are date native în portal doar dacă a rulat cineva portalul
  * atunci — nu a rulat. Ambii ani încheiați primesc înregistrări introduse
