@@ -268,6 +268,43 @@ for (const { student_id, teacher_id } of approved) {
   await q(`UPDATE conversations SET last_message_at = (SELECT max(created_at) FROM messages WHERE conversation_id = $1) WHERE id = $1`, [conversatieId])
 }
 
+/* --- connect the two demo accounts ---------------------------------------
+ * The demo student and the demo teacher have to tell one complete story:
+ * an approved request, a milestone timeline, a thread and bookable slots.
+ * Without this the demo student signs in to an empty portal and the teacher's
+ * consultation slots are invisible to them. Idempotent like the rest.
+ */
+const { rows: demoPair } = await q(
+  `UPDATE requests r
+      SET status = 'approved', decided_at = COALESCE(r.decided_at, now())
+    FROM users s, users t
+   WHERE r.student_id = s.id
+     AND r.teacher_id = t.id
+     AND s.is_demo = true AND s.role = 'student'
+     AND t.is_demo = true AND t.role = 'teacher'
+     AND r.status <> 'approved'
+   RETURNING r.id, r.student_id, r.teacher_id`,
+)
+
+for (const r of demoPair) {
+  const { rows: existing } = await q('SELECT 1 FROM milestones WHERE request_id = $1 LIMIT 1', [r.id])
+  if (existing.length === 0) {
+    for (const [j, [title, description]] of MILESTONES.entries()) {
+      await q(
+        `INSERT INTO milestones (request_id, title, description, due_on, status, position)
+         VALUES ($1, $2, $3, (date '2026-01-15' + ($4 || ' days')::interval)::date, $5, $4::int)`,
+        [r.id, title, description, String(j * 45), j === 0 ? 'done' : j === 1 ? 'in_progress' : 'planned'],
+      )
+    }
+  }
+  await q(
+    `INSERT INTO conversations (student_id, teacher_id) VALUES ($1, $2)
+     ON CONFLICT (student_id, teacher_id) DO NOTHING`,
+    [r.student_id, r.teacher_id],
+  )
+  console.log(`[seed] demo pair linked (request ${r.id})`)
+}
+
 const { rows: [{ count: userCount }] } = await q('SELECT count(*)::int AS count FROM users')
 const { rows: [{ count: requestCount }] } = await q('SELECT count(*)::int AS count FROM requests')
 console.log(`[seed] done — ${userCount} users, ${requestCount} requests`)
