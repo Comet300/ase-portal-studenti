@@ -466,10 +466,48 @@ const caleCurenta = `/profesor/studenti?sectiune=${sectiune}`
                 {t.prerequisites && t.prerequisites !== '—' && (
                   <p class="muted" style="font-size:var(--t-xs)">Prerechizite: {t.prerequisites}</p>
                 )}
+                <form method="POST" action="/api/teme" style="margin-top:auto">
+                  <input type="hidden" name="actiune" value="comuta" />
+                  <input type="hidden" name="tema_id" value={t.id} />
+                  <button class="btn btn--ghost btn--sm" type="submit">
+                    {t.is_active ? 'Retrage din catalog' : 'Publică din nou'}
+                  </button>
+                </form>
               </li>
             ))}
           </ul>
         )}
+
+        <div class="panel__footer">
+          <form method="POST" action="/api/teme" class="row row--wrap" style="gap:var(--s-3);align-items:flex-end">
+            <input type="hidden" name="actiune" value="adauga" />
+            <div class="field" style="flex:3;min-width:240px">
+              <label class="label" for="tema-titlu">Temă nouă</label>
+              <input class="input" id="tema-titlu" name="titlu" required
+                placeholder="Ex: Adopția plăților contactless în mediul rural" />
+            </div>
+            <div class="field" style="flex:1;min-width:130px">
+              <label class="label" for="tema-nivel">Nivel</label>
+              <select class="select" id="tema-nivel" name="nivel">
+                <option value="bachelor">Licență</option>
+                <option value="master">Master</option>
+              </select>
+            </div>
+            <div class="field" style="flex:1;min-width:100px">
+              <label class="label" for="tema-locuri">Locuri</label>
+              <input class="input" id="tema-locuri" name="locuri" type="number" min="1" max="20" value="2" />
+            </div>
+            <div class="field" style="flex:2;min-width:200px">
+              <label class="label" for="tema-metode">Metode</label>
+              <input class="input" id="tema-metode" name="metode" placeholder="Ex: sondaj, analiză factorială" />
+            </div>
+            <div class="field" style="flex:2;min-width:200px">
+              <label class="label" for="tema-prerechizite">Prerechizite</label>
+              <input class="input" id="tema-prerechizite" name="prerechizite" placeholder="Ex: Statistică aplicată" />
+            </div>
+            <button class="btn btn--primary" type="submit">Publică tema</button>
+          </form>
+        </div>
       </section>
     )
   }
@@ -499,6 +537,7 @@ const caleCurenta = `/profesor/studenti?sectiune=${sectiune}`
                   <th>Interval</th>
                   <th>Mod</th>
                   <th>Rezervare</th>
+                  <th><span class="visually-hidden">Acțiuni</span></th>
                 </tr>
               </thead>
               <tbody>
@@ -518,12 +557,57 @@ const caleCurenta = `/profesor/studenti?sectiune=${sectiune}`
                         <span class="muted">Liber</span>
                       )}
                     </td>
+                    <td style="text-align:right">
+                      {!s.is_cancelled && (
+                        <form method="POST" action="/api/sloturi">
+                          <input type="hidden" name="actiune" value="anuleaza" />
+                          <input type="hidden" name="slot_id" value={s.id} />
+                          <button class="btn btn--ghost btn--sm" type="submit">Anulează</button>
+                        </form>
+                      )}
+                    </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
         )}
+
+        <div class="panel__footer">
+          <form method="POST" action="/api/sloturi" class="row row--wrap" style="gap:var(--s-3);align-items:flex-end">
+            <input type="hidden" name="actiune" value="publica" />
+            <div class="field" style="flex:1;min-width:160px">
+              <label class="label" for="slot-zi">Ziua</label>
+              <input class="input" id="slot-zi" name="zi" type="date" required />
+            </div>
+            <div class="field" style="min-width:96px">
+              <label class="label" for="slot-start">De la</label>
+              <input class="input" id="slot-start" name="ora_start" type="number" min="7" max="21" value="14" />
+            </div>
+            <div class="field" style="min-width:96px">
+              <label class="label" for="slot-final">Până la</label>
+              <input class="input" id="slot-final" name="ora_final" type="number" min="8" max="22" value="16" />
+            </div>
+            <div class="field" style="min-width:130px">
+              <label class="label" for="slot-mod">Mod</label>
+              <select class="select" id="slot-mod" name="mod">
+                <option value="in_person">La cabinet</option>
+                <option value="online">Online</option>
+              </select>
+            </div>
+            <div class="field" style="flex:2;min-width:200px">
+              <label class="label" for="slot-locatie">Sala sau linkul întâlnirii</label>
+              <input class="input" id="slot-locatie" name="location" value={u.office ?? ''}
+                placeholder="Corp Ion Angelescu, sala…" />
+            </div>
+            <input type="hidden" name="link_online" value="" />
+            <button class="btn btn--primary" type="submit">Publică intervalele</button>
+          </form>
+          <p class="hint" style="margin-top:var(--s-2)">
+            Se creează câte un interval de o oră. Studenții coordonați îl pot rezerva și primesc
+            invitație în calendar.
+          </p>
+        </div>
       </section>
     )
   }

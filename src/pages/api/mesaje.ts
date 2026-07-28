@@ -10,11 +10,13 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
   const u = locals.user
   if (!u) return new Response('Neautentificat', { status: 401 })
 
-  const date = await request.formData()
-  const conversationId = String(date.get('conversatie_id') ?? '')
-  const body = String(date.get('corp') ?? '').trim()
-  const redirectTo = String(date.get('redirect') ?? '/mesaje')
-  const file = date.get('fisier')
+  const form = await request.formData()
+  const conversationId = String(form.get('conversation_id') ?? '')
+  const body = String(form.get('body') ?? '').trim()
+  const redirectTo = String(form.get('redirect') ?? '/mesaje')
+  const file = form.get('file')
+
+  if (!conversationId) return new Response('Conversație lipsă', { status: 400 })
 
   // Apartenența la conversație este verificată în interogare.
   const conversation = await myConversation(u.id, conversationId)
