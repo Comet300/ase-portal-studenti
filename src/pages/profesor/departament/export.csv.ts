@@ -2,12 +2,16 @@ import type { APIRoute } from 'astro'
 import { isDepartmentHead } from '../../../lib/auth'
 import { query } from '../../../lib/db'
 import { STATUS_LABELS, programLabel } from '../../../lib/repo'
+import { id } from '../../../lib/ids'
+import { currentYearLabel } from '../../../lib/years'
 
 /** CSV of the department's requests, honouring the filters shown on screen. */
 export const GET: APIRoute = async ({ locals, url }) => {
   if (!isDepartmentHead(locals.user)) {
     return new Response('Pagina nu a fost găsită', { status: 404 })
   }
+
+  const sesiune = await currentYearLabel()
 
   const rows = await query<{
     number: string
@@ -26,12 +30,15 @@ export const GET: APIRoute = async ({ locals, url }) => {
        FROM requests r
        JOIN users s ON s.id = r.student_id
        JOIN users t ON t.id = r.teacher_id
-      WHERE ($1::uuid IS NULL OR r.teacher_id = $1)
+      WHERE r.academic_year_id = (SELECT id FROM academic_years WHERE is_current)
+        AND ($1::uuid IS NULL OR r.teacher_id = $1)
         AND ($2::text IS NULL OR s.program = $2)
         AND ($3::text IS NULL OR r.status = $3)
       ORDER BY t.name, s.name`,
     [
-      url.searchParams.get('coordonator') || null,
+      // Same year as the table this button sits under: an export that quietly
+      // spans every session does not reconcile with what is on screen.
+      id(url.searchParams.get('coordonator')),
       url.searchParams.get('program') || null,
       url.searchParams.get('status') || null,
     ],
@@ -57,7 +64,7 @@ export const GET: APIRoute = async ({ locals, url }) => {
   return new Response(csv, {
     headers: {
       'content-type': 'text/csv; charset=utf-8',
-      'content-disposition': 'attachment; filename="cereri-sesiune-2026.csv"',
+      'content-disposition': `attachment; filename="cereri-sesiune-${sesiune || 'curenta'}.csv"`,
     },
   })
 }

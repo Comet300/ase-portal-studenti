@@ -12,6 +12,7 @@ import { currentStage, formatDate, stages } from '../../lib/repo'
 
 const [list, current] = await Promise.all([stages(), currentStage()])
 const today = new Date().toISOString().slice(0, 10)
+const anCurent = new Date().getFullYear()
 ---
 
 <ProfesorLayout
@@ -87,7 +88,7 @@ const today = new Date().toISOString().slice(0, 10)
                       <div class="field" style="flex:2;min-width:220px">
                         <label class="label" for={`interval-${s.id}`}>Interval afișat</label>
                         <input class="input" id={`interval-${s.id}`} name="interval" value={s.interval_label} required />
-                        <span class="hint">Textul citit de studenți, ex. „Mai 2026”.</span>
+                        <span class="hint">Textul citit de studenți, ex. „Mai {anCurent}”.</span>
                       </div>
                     </div>
 
@@ -130,7 +131,7 @@ const today = new Date().toISOString().slice(0, 10)
           </div>
           <div class="field" style="flex:2;min-width:200px">
             <label class="label" for="etapa-interval">Interval afișat</label>
-            <input class="input" id="etapa-interval" name="interval" required placeholder="Ex: Mai 2026" />
+            <input class="input" id="etapa-interval" name="interval" required placeholder={`Ex: Mai ${anCurent}`} />
           </div>
           <div class="field" style="flex:1;min-width:160px">
             <label class="label" for="etapa-inceput">Începe</label>

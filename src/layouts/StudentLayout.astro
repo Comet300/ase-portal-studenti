@@ -1,6 +1,7 @@
 ---
 import BaseLayout from './BaseLayout.astro'
 import Avatar from '../components/Avatar.astro'
+import { currentYearLabel } from '../lib/years'
 
 interface Props {
   title: string
@@ -10,6 +11,7 @@ interface Props {
 
 const { title, description, active } = Astro.props
 const u = Astro.locals.user
+const sesiune = await currentYearLabel()
 
 // Arhiva și coordonările sunt publice pentru oricine autentificat, dar nu au ce
 // căuta în bara unui vizitator care nici nu le poate deschide.
@@ -103,7 +105,9 @@ const linkCont = { href: '/contul-meu', text: 'Contul meu', cheie: 'cont' }
       <p class="muted" style="font-size:var(--t-sm)">
         Academia de Studii Economice din București · Facultatea de Marketing
       </p>
-      <p class="muted" style="font-size:var(--t-sm)">Sesiunea de Finalizare a Studiilor 2026</p>
+      <p class="muted" style="font-size:var(--t-sm)">
+        Sesiunea de Finalizare a Studiilor {sesiune}
+      </p>
     </div>
   </footer>
 </BaseLayout>

@@ -104,7 +104,7 @@ export function template(title: string, body: string, action?: { text: string; u
       : ''
   }
   <p style="margin-top:32px;padding-top:16px;border-top:1px solid #e9ecef;font-size:12px;color:#5b6169">
-    Mesaj automat — Sesiunea de Finalizare a Studiilor 2026.
+    Mesaj automat din Portalul Studenți — Facultatea de Marketing, ASE București.
   </p>
 </div>`
 }

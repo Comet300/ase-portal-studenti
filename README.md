@@ -1,4 +1,4 @@
-# Portal Studenți — Sesiunea de Finalizare a Studiilor 2026
+# Portal Studenți — Sesiunea de Finalizare a Studiilor
 
 Facultatea de Marketing, Academia de Studii Economice din București.
 
@@ -9,13 +9,40 @@ Aplicație server-rendered (Astro + adaptorul Node) cu PostgreSQL. Interfața es
 
 | Rol | Ce vede |
 |---|---|
-| `student` | calendarul sesiunii, catalogul de coordonatori, cererile proprii, mesaje, consultații, ghid |
-| `teacher` | dashboard, triaj cereri, studenți coordonați cu cronologie editabilă, teme, program de consultații, mesaje, arhivă |
-| `head` | tot ce vede un cadru didactic, plus vederea pe departament (acoperire, încărcare, export CSV) |
+| `student` | calendarul sesiunii, catalogul de coordonatori și teme, cererile proprii, propunerile primite, mesaje, consultații, coordonările întregii sesiuni, arhiva, profiluri, ghid |
+| `teacher` | dashboard, triaj cereri, studenți coordonați cu cronologie editabilă, propuneri trimise, teme, program și programare de consultații, mesaje, studenții facultății, arhivă și profil |
+| `head` | tot ce vede un cadru didactic, plus departamentul (acoperire, încărcare, alocarea locurilor), calendarul sesiunii și anul universitar |
 
-Rutele `/profesor/*` cer rolul `teacher` sau `head`; `/profesor/departament` cere
-`head`. Un utilizator fără drept primește 404, nu 403 — nu confirmăm existența
-unei zone pe care nu o poate folosi.
+Rutele `/profesor/*` cer rolul `teacher` sau `head`; `/profesor/departament`,
+`/profesor/calendar` și `/profesor/an-universitar` cer `head`. Un utilizator
+fără drept primește 404, nu 403 — nu confirmăm existența unei zone pe care nu o
+poate folosi.
+
+## Anul universitar
+
+Anul este un obiect, nu o convenție: `academic_years` (octombrie–septembrie, un
+singur an curent, garantat de un index unic parțial). Tot ce se reia de la zero
+poartă `academic_year_id` — etapele calendarului, temele, cererile, alocarea
+locurilor, arhiva. Interogările din `src/lib/repo.ts` rezolvă singure anul curent,
+deci o pagină amestecă doi ani doar dacă cere explicit asta.
+
+Directorul deschide anul nou și alege ce se preia: programele de studiu, etapele
+calendarului, temele active. Nu se șterge nimic; anul precedent devine arhivă.
+
+## Reguli de coordonare
+
+- **Locurile** sunt alocate de director (`seat_allocations`, pe an), nu declarate
+  de cadrul didactic. Cine rămâne fără locuri cere altele în scris
+  (`seat_requests`). Un coordonator plin rămâne în catalog, estompat, cu studenții
+  lui vizibili — iar acceptarea, invitarea și depunerea sunt refuzate.
+- **O cerere expiră** după șapte zile fără răspuns: stare `expired`, email către
+  student, eveniment în conversație. Măturarea rulează din middleware, limitată
+  la o dată la cinci minute, și nu blochează niciun răspuns.
+- **Invitațiile** merg în sens invers: cadrul didactic propune, studentul acceptă
+  sau refuză motivat. Acceptarea nu creează coordonarea — studentul completează
+  aceeași cerere, dar aprobată la depunere.
+- **Deciziile și invitațiile** ajung în firul de discuție ca `messages.kind =
+  'event'`, afișate ca înregistrare, nu ca replică.
 
 ## Autentificare
 
@@ -56,9 +83,10 @@ npm run dev
 ```
 migrations/        SQL aplicat în ordinea numelor de fișier
 scripts/           migrate.mjs, seed.mjs
-src/lib/           db, auth, repo (interogări), chat, mail, ics, files, http
+src/lib/           db, auth, ids, repo (interogări), years, lifecycle, chat,
+                   mail, doc, ics, files, http
 src/layouts/       BaseLayout + chrome pentru student și cadru didactic
-src/components/    Chat.astro, folosit identic de ambele roluri
+src/components/    Chat.astro și Avatar.astro, folosite identic de ambele roluri
 src/pages/         rute (URL-urile rămân în română)
 src/styles/app.css sistemul de design
 ```
@@ -69,6 +97,11 @@ Nu există row-level security. Fiecare funcție care atinge datele unui cadru
 didactic primește `teacherId` ca prim parametru și îl folosește în aceeași
 instrucțiune care citește sau scrie — o verificare separată, înainte, ar lăsa o
 fereastră între control și acțiune.
+
+Identificatorii veniți din formulare sau din URL trec prin `src/lib/ids.ts`.
+Orice nu este uuid devine `null`, care nu se potrivește cu niciun rând: PostgreSQL
+respinge la fel de tare și șirul gol, iar un câmp modificat manual trebuie să
+răspundă „nu a fost găsit”, nu 500.
 
 ## Livrare
 

@@ -1,9 +1,14 @@
 ---
 import StudentLayout from '../layouts/StudentLayout.astro'
 import { formatDate, stages, currentStage, studentMilestones, studentRequests } from '../lib/repo'
+import { currentYearLabel } from '../lib/years'
 
 const u = Astro.locals.user
-const [stageList, currentStageRow] = await Promise.all([stages(), currentStage()])
+const [stageList, currentStageRow, sesiune] = await Promise.all([
+  stages(),
+  currentStage(),
+  currentYearLabel(),
+])
 
 // Un student autentificat vede propria situație în locul textului general.
 const requests = u?.role === 'student' ? await studentRequests(u.id) : []
@@ -21,13 +26,13 @@ const RESOURCES = [
 
 <StudentLayout
   title="Acasă"
-  description="Sesiunea de Finalizare a Studiilor 2026 — Facultatea de Marketing, ASE București"
+  description={`Sesiunea de Finalizare a Studiilor ${sesiune} — Facultatea de Marketing, ASE București`}
   active="acasa"
 >
   <div class="container stack stack--loose">
     <section class="hero">
       <div class="hero__text">
-        <p class="hero__sesiune">Sesiunea de Finalizare a Studiilor 2026</p>
+        <p class="hero__sesiune">Sesiunea de Finalizare a Studiilor {sesiune}</p>
         <h1 class="hero__titlu">Tot ce ține de lucrarea ta, într-un singur loc</h1>
         <p class="page-lede">
           Alegi coordonatorul, depui cererea, urmărești termenele și discuți cu profesorul — fără
