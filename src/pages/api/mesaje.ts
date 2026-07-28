@@ -59,7 +59,7 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
     const base = process.env.APP_BASE_URL ?? url.origin
     await sendEmail({
       to: recipient.email,
-      subject: `Message nou de la ${u.name}`,
+      subject: `Mesaj nou de la ${u.name}`,
       html: template(
         'Ai primit un mesaj',
         `<p><strong>${u.name}</strong> ți-a scris în portal:</p>

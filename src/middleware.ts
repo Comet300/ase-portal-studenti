@@ -7,7 +7,7 @@ import { SESSION_COOKIE, getUserFromSession } from './lib/auth'
  * right role gets 404 rather than 403: we do not confirm an area they cannot use.
  */
 
-const REQUIRES_SESSION = ['/cererile-mele', '/mesaje', '/consultatii']
+const REQUIRES_SESSION = ['/cererile-mele', '/mesaje', '/consultatii', '/contul-meu']
 const TEACHER_AREA = '/profesor'
 const HEAD_AREA = '/profesor/departament'
 

@@ -19,6 +19,10 @@ const linkuri = [
   { href: '/consultatii', text: 'Consultații', cheie: 'consultatii' },
   { href: '/ghid', text: 'Ghid', cheie: 'ghid' },
 ]
+
+// Shown only in the mobile menu: on a phone the avatar is easy to miss, and it
+// is the only route to signing out.
+const linkCont = { href: '/contul-meu', text: 'Contul meu', cheie: 'cont' }
 ---
 
 <BaseLayout title={title} description={description}>
@@ -51,7 +55,7 @@ const linkuri = [
                   Zona cadrelor didactice
                 </a>
               )}
-              <a href={u.role === 'student' ? '/cererile-mele' : '/profesor/arhiva'} class="avatar" title={u.name}>
+              <a href={u.role === 'student' ? '/contul-meu' : '/profesor/arhiva'} class="avatar" title={u.name}>
                 {initials(u.name)}
               </a>
             </>
@@ -71,7 +75,7 @@ const linkuri = [
 
     <nav class="meniu-mobil" id="meniu-mobil" aria-label="Navigație mobilă" hidden>
       {
-        linkuri.map((l) => (
+        [...linkuri, ...(u ? [linkCont] : [])].map((l) => (
           <a href={l.href} class:list={['meniu-mobil__link', { 'is-active': active === l.cheie }]}>
             {l.text}
           </a>
