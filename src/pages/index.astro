@@ -6,10 +6,10 @@ const u = Astro.locals.user
 const [stageList, currentStageRow] = await Promise.all([stages(), currentStage()])
 
 // Un student autentificat vede propria situație în locul textului general.
-const cereri = u?.role === 'student' ? await studentRequests(u.id) : []
-const cerereActiva = cereri.find((c) => c.status === 'approved' || c.status === 'pending')
-const jaloane = u?.role === 'student' ? await studentMilestones(u.id) : []
-const urmatorulJalon = jaloane.find((j) => j.status !== 'done')
+const requests = u?.role === 'student' ? await studentRequests(u.id) : []
+const activeRequest = requests.find((c) => c.status === 'approved' || c.status === 'pending')
+const milestones = u?.role === 'student' ? await studentMilestones(u.id) : []
+const nextMilestone = milestones.find((j) => j.status !== 'done')
 
 const RESOURCES = [
   { title: 'Ghid de redactare', text: 'Structura lucrării, citare, formatare.', href: '/ghid#redactare' },
