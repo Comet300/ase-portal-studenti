@@ -23,7 +23,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
 
   if (action === 'adauga') {
     const requestId = String(form.get('cerere_id') ?? '')
-    const title = String(form.get('titlu') ?? '').trim()
+    const title = String(form.get('title') ?? '').trim()
     const dueOn = String(form.get('termen') ?? '').trim()
     const description = String(form.get('descriere') ?? '').trim()
 
@@ -41,7 +41,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
 
   if (action === 'actualizeaza') {
     const milestoneId = String(form.get('jalon_id') ?? '')
-    const title = String(form.get('titlu') ?? '').trim()
+    const title = String(form.get('title') ?? '').trim()
     const dueOn = String(form.get('termen') ?? '').trim()
     const description = String(form.get('descriere') ?? '').trim()
     const status = String(form.get('status') ?? '')
