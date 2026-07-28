@@ -3,7 +3,7 @@ import StudentLayout from '../layouts/StudentLayout.astro'
 import { formatDate, stages, currentStage, studentMilestones, studentRequests } from '../lib/repo'
 
 const u = Astro.locals.user
-const [stageList, etapa] = await Promise.all([stages(), currentStage()])
+const [stageList, currentStageRow] = await Promise.all([stages(), currentStage()])
 
 // Un student autentificat vede propria situație în locul textului general.
 const cereri = u?.role === 'student' ? await studentRequests(u.id) : []
@@ -85,10 +85,10 @@ const RESOURCES = [
       <ol class="calendar">
         {
           stageList.map((e, i) => {
-            const active = etapa?.id === e.id
+            const active = currentStageRow?.id === e.id
             const past = e.ends_on ? new Date(e.ends_on) < new Date() : false
             return (
-              <li class:list={['etapa', { 'is-activa': activa, 'is-trecuta': trecuta }]}>
+              <li class:list={['currentStageRow', { 'is-activa': active, 'is-trecuta': past }]}>
                 <span class="etapa__index numeric" aria-hidden="true">
                   {String(i + 1).padStart(2, '0')}
                 </span>
@@ -185,13 +185,13 @@ const RESOURCES = [
     flex-direction: column;
   }
 
-  .etapa {
+  .currentStageRow {
     display: flex;
     gap: var(--s-4);
     padding: var(--s-4) 0;
     border-bottom: 1px solid var(--border);
   }
-  .etapa:last-child {
+  .currentStageRow:last-child {
     border-bottom: 0;
   }
 
@@ -204,10 +204,10 @@ const RESOURCES = [
     flex: none;
     width: 2.2rem;
   }
-  .etapa.is-activa .etapa__index {
+  .currentStageRow.is-activa .etapa__index {
     color: var(--red);
   }
-  .etapa.is-trecuta .etapa__index {
+  .currentStageRow.is-trecuta .etapa__index {
     color: var(--ok);
   }
 

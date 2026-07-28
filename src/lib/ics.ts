@@ -80,7 +80,7 @@ export function buildIcs(ev: CalendarEvent): string {
   return lines.map(fold).join('\r\n') + '\r\n'
 }
 
-/** Calendarul sesiunii, ca fișier descărcabil — etapele ca evenimente de dayStamp întreagă. */
+/** Calendarul sesiunii, ca fișier descărcabil — etapele ca evenimente de zi întreagă. */
 export function stagesIcs(stages: { title: string; description: string | null; starts_on: string | null; ends_on: string | null }[]): string {
   const dayStamp = (d: string) => d.slice(0, 10).replace(/-/g, '')
   const lines = [
@@ -94,7 +94,7 @@ export function stagesIcs(stages: { title: string; description: string | null; s
 
   for (const [i, e] of stages.entries()) {
     if (!e.starts_on || !e.ends_on) continue
-    // DTEND este exclusiv pentru evenimentele de day întreagă.
+    // DTEND este exclusiv pentru evenimentele de zi întreagă.
     const end = new Date(e.ends_on)
     end.setDate(end.getDate() + 1)
 
@@ -102,8 +102,8 @@ export function stagesIcs(stages: { title: string; description: string | null; s
       'BEGIN:VEVENT',
       `UID:etapa-${i + 1}@portal.stargrid.dev`,
       `DTSTAMP:${utc(new Date())}`,
-      `DTSTART;VALUE=DATE:${day(e.starts_on)}`,
-      `DTEND;VALUE=DATE:${day(end.toISOString())}`,
+      `DTSTART;VALUE=DATE:${dayStamp(e.starts_on)}`,
+      `DTEND;VALUE=DATE:${dayStamp(end.toISOString())}`,
       `SUMMARY:${escape(e.title)}`,
       e.description ? `DESCRIPTION:${escape(e.description)}` : '',
       'END:VEVENT',
