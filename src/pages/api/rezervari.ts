@@ -1,7 +1,7 @@
 import type { APIRoute } from 'astro'
 import { queryOne } from '../../lib/db'
 import { buildIcs } from '../../lib/ics'
-import { template, sendEmail } from '../../lib/mail'
+import { template, sendEmail, html } from '../../lib/mail'
 import { formatDate, formatTime } from '../../lib/repo'
 import { redirectWithNotice } from '../../lib/http'
 import { id as formId } from '../../lib/ids'
@@ -78,12 +78,12 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
       attendeeEmail: u.email,
     })
 
-    const body = `<p>Consultație confirmată:</p>
+    const body = html`<p>Consultație confirmată:</p>
       <p style="padding:12px 16px;background:#f8f9fa;border-radius:4px">
         <strong>${formatDate(slot.starts_at)}</strong>, ${formatTime(slot.starts_at)}–${formatTime(slot.ends_at)}<br>
         ${location}
       </p>
-      ${subject ? `<p><strong>Subiect:</strong> ${subject}</p>` : ''}
+      ${subject ? html`<p><strong>Subiect:</strong> ${subject}</p>` : ''}
       <p style="color:#5b6169;font-size:13px">Invitația atașată se adaugă automat în calendar.</p>`
 
     const attachment = [{ filename: 'consultatie.ics', content: ics, contentType: 'text/calendar; method=REQUEST' }]
@@ -100,7 +100,7 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
         subject: `Rezervare consultație — ${u.name}`,
         html: template(
           'Un student ți-a rezervat o consultație',
-          `<p><strong>${u.name}</strong> (${u.student_number ?? '—'}) a rezervat intervalul:</p>${body}`,
+          html`<p><strong>${u.name}</strong> (${u.student_number ?? '—'}) a rezervat intervalul:</p>${body}`,
         ),
         attachments: attachment,
       }),

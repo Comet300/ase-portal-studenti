@@ -1,7 +1,7 @@
 import type { APIRoute } from 'astro'
 import { myConversation } from '../../lib/chat'
 import { queryOne, transaction } from '../../lib/db'
-import { template, sendEmail } from '../../lib/mail'
+import { template, sendEmail, html } from '../../lib/mail'
 import { saveFile } from '../../lib/files'
 import { redirect } from '../../lib/http'
 import { id as formId } from '../../lib/ids'
@@ -63,7 +63,7 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
       subject: `Mesaj nou de la ${u.name}`,
       html: template(
         'Ai primit un mesaj',
-        `<p><strong>${u.name}</strong> ți-a scris în portal:</p>
+        html`<p><strong>${u.name}</strong> ți-a scris în portal:</p>
          <p style="padding:12px 16px;background:#f8f9fa;border-radius:4px;white-space:pre-wrap">${
            body.slice(0, 500) || '(fișier atașat)'
          }</p>`,

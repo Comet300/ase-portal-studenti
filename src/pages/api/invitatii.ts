@@ -4,7 +4,7 @@ import { postEvent } from '../../lib/chat'
 import { execute, queryOne } from '../../lib/db'
 import { redirect, redirectWithNotice } from '../../lib/http'
 import { INVITATION_WINDOW_DAYS, openInvitationFor } from '../../lib/lifecycle'
-import { sendEmail, template } from '../../lib/mail'
+import { html, quote, sendEmail, template } from '../../lib/mail'
 import { teacherSeats } from '../../lib/repo'
 import { id as formId } from '../../lib/ids'
 
@@ -103,7 +103,7 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
       subject: `Propunere de coordonare de la ${u.name}`,
       html: template(
         'Ai primit o propunere de coordonare',
-        `<p>Bună, ${student.name.split(' ')[0]}! <strong>${u.name}</strong> îți propune să îți coordoneze
+        html`<p>Bună, ${student.name.split(' ')[0]}! <strong>${u.name}</strong> îți propune să îți coordoneze
          lucrarea de finalizare a studiilor.</p>
          <p style="padding:12px 16px;background:#f8f9fa;border-radius:4px;white-space:pre-wrap">${message}</p>
          <p>Poți accepta sau refuza în portal. Propunerea expiră în ${INVITATION_WINDOW_DAYS} de zile.</p>`,
@@ -178,10 +178,9 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
         html: template(
           accepted ? 'Propunere acceptată' : 'Propunere refuzată',
           accepted
-            ? `<p><strong>${u.name}</strong> a acceptat propunerea. Urmează să depună cererea în portal,
+            ? html`<p><strong>${u.name}</strong> a acceptat propunerea. Urmează să depună cererea în portal,
                care va fi aprobată automat.</p>`
-            : `<p><strong>${u.name}</strong> a refuzat propunerea.</p>
-               <p style="padding:12px 16px;background:#f8f9fa;border-radius:4px;white-space:pre-wrap">${reason}</p>`,
+            : html`<p><strong>${u.name}</strong> a refuzat propunerea.</p>${quote(reason)}`,
           { text: 'Deschide portalul', url: `${base}${TEACHER_PAGE}` },
         ),
       })

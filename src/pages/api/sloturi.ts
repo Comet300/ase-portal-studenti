@@ -4,7 +4,7 @@ import { postEvent } from '../../lib/chat'
 import { execute, query, queryOne } from '../../lib/db'
 import { buildIcs } from '../../lib/ics'
 import { redirectWithNotice } from '../../lib/http'
-import { sendEmail, template } from '../../lib/mail'
+import { sendEmail, template, html } from '../../lib/mail'
 import { formatDate, formatTime } from '../../lib/repo'
 import { id as formId } from '../../lib/ids'
 
@@ -163,11 +163,11 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
       attendeeEmail: student.email,
     })
 
-    const details = `<p style="padding:12px 16px;background:#f8f9fa;border-radius:4px">
+    const details = html`<p style="padding:12px 16px;background:#f8f9fa;border-radius:4px">
         <strong>${formatDate(slot.starts_at)}</strong>, ${formatTime(slot.starts_at)}–${formatTime(slot.ends_at)}<br>
         ${place}
       </p>
-      ${note ? `<p><strong>Subiect:</strong> ${note}</p>` : ''}`
+      ${note ? html`<p><strong>Subiect:</strong> ${note}</p>` : ''}`
 
     const attachment = [
       { filename: 'consultatie.ics', content: ics, contentType: 'text/calendar; method=REQUEST' },
@@ -179,7 +179,7 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
         subject: `Consultație programată — ${formatDate(slot.starts_at)}`,
         html: template(
           'Coordonatorul ți-a programat o consultație',
-          `<p><strong>${u!.name}</strong> a programat o consultație cu tine:</p>${details}
+          html`<p><strong>${u!.name}</strong> a programat o consultație cu tine:</p>${details}
            <p style="color:#5b6169;font-size:13px">Invitația atașată se adaugă automat în calendar.</p>`,
           { text: 'Vezi consultațiile', url: `${base}/consultatii` },
         ),

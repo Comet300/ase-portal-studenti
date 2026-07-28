@@ -3,7 +3,7 @@ import { isDepartmentHead, isTeacher } from '../../lib/auth'
 import { execute, queryOne } from '../../lib/db'
 import { grantSeats } from '../../lib/lifecycle'
 import { redirectWithNotice } from '../../lib/http'
-import { sendEmail, template } from '../../lib/mail'
+import { html, quote, sendEmail, template } from '../../lib/mail'
 import { id as formId } from '../../lib/ids'
 
 /**
@@ -104,7 +104,7 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
         subject: `Cerere de locuri suplimentare — ${u!.name}`,
         html: template(
           'Cerere de locuri suplimentare',
-          `<p><strong>${u!.name}</strong> solicită <strong>${Math.trunc(extra)}</strong> locuri
+          html`<p><strong>${u!.name}</strong> solicită <strong>${Math.trunc(extra)}</strong> locuri
            suplimentare la ${level === 'master' ? 'master' : 'licență'}.</p>
            <p style="padding:12px 16px;background:#f8f9fa;border-radius:4px;white-space:pre-wrap">${reason}</p>`,
           { text: 'Deschide alocarea locurilor', url: `${base}${HEAD_PAGE}` },
@@ -157,12 +157,11 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
         html: template(
           granted ? 'Locuri suplimentare aprobate' : 'Cerere de locuri respinsă',
           granted
-            ? `<p>Directorul de departament ți-a alocat încă <strong>${decided.extra_seats}</strong> locuri la
-               ${decided.level === 'master' ? 'master' : 'licență'}.</p>
-               ${note ? `<p style="padding:12px 16px;background:#f8f9fa;border-radius:4px;white-space:pre-wrap">${note}</p>` : ''}`
-            : `<p>Cererea pentru ${decided.extra_seats} locuri la
+            ? html`<p>Directorul de departament ți-a alocat încă <strong>${decided.extra_seats}</strong> locuri la
+               ${decided.level === 'master' ? 'master' : 'licență'}.</p>${note ? quote(note) : ''}`
+            : html`<p>Cererea pentru ${decided.extra_seats} locuri la
                ${decided.level === 'master' ? 'master' : 'licență'} a fost respinsă.</p>
-               ${note ? `<p><strong>Motiv:</strong> ${note}</p>` : ''}`,
+               ${note ? html`<p><strong>Motiv:</strong> ${note}</p>` : ''}`,
           { text: 'Deschide portalul', url: `${base}/profesor/arhiva` },
         ),
       })

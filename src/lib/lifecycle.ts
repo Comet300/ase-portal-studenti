@@ -1,6 +1,6 @@
 import { query, queryOne, transaction } from './db'
 import { postEvent } from './chat'
-import { sendEmail, template } from './mail'
+import { html, sendEmail, template } from './mail'
 
 /**
  * The parts of a coordination that happen on a clock or across two inboxes:
@@ -198,7 +198,7 @@ export async function sweepDeadlines(baseUrl: string): Promise<void> {
         subject: `Cererea ${r.number} a expirat`,
         html: template(
           'Cererea ta a expirat',
-          `<p>Bună, ${r.student_name.split(' ')[0]}. Cererea <strong>${r.number}</strong> pentru lucrarea
+          html`<p>Bună, ${r.student_name.split(' ')[0]}. Cererea <strong>${r.number}</strong> pentru lucrarea
            „${r.title_ro}” nu a primit un răspuns de la ${r.teacher_name} în termenul de
            ${DECISION_WINDOW_DAYS} zile și a fost respinsă automat de portal.</p>
            <p>Poți depune imediat o cerere nouă, către alt coordonator.</p>`,

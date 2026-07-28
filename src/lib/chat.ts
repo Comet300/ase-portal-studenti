@@ -125,6 +125,25 @@ export async function postEvent(e: {
   /** Open the thread if the pair has none yet. Off for events that may precede one. */
   createConversation?: boolean
 }): Promise<string | null> {
+  // Never rejects. Every caller reaches this *after* committing the decision it
+  // describes, so throwing here would turn a successful approval into a 500 —
+  // and the coordinator would retry a request that no longer needs deciding.
+  try {
+    return await writeEvent(e)
+  } catch (err) {
+    console.error('[chat] evenimentul nu a putut fi scris în conversație', err)
+    return null
+  }
+}
+
+async function writeEvent(e: {
+  studentId: string
+  teacherId: string
+  senderId: string
+  eventType: string
+  body: string
+  createConversation?: boolean
+}): Promise<string | null> {
   const conversation = e.createConversation
     ? await queryOne<{ id: string }>(
         `INSERT INTO conversations (student_id, teacher_id, last_message_at)

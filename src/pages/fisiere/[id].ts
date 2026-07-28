@@ -1,9 +1,6 @@
-import { createReadStream } from 'node:fs'
-import { stat } from 'node:fs/promises'
-import { Readable } from 'node:stream'
 import type { APIRoute } from 'astro'
 import { queryOne } from '../../lib/db'
-import { filePath } from '../../lib/files'
+import { openFile } from '../../lib/files'
 import { id as routeId } from '../../lib/ids'
 
 /**
@@ -35,29 +32,15 @@ export const GET: APIRoute = async ({ params, locals }) => {
 
   if (!file?.conversation_id) return new Response('Fișierul nu a fost găsit', { status: 404 })
 
-  const path = filePath(file.conversation_id, file.stored_name)
-  if (!path) return new Response('Fișierul nu a fost găsit', { status: 404 })
+  const stored = await openFile(file.conversation_id, file.stored_name)
+  if (!stored) return new Response('Fișierul nu a fost găsit', { status: 404 })
 
-  let size: number
-  try {
-    const info = await stat(path)
-    if (!info.isFile()) return new Response('Fișierul nu a fost găsit', { status: 404 })
-    size = info.size
-  } catch {
-    return new Response('Fișierul nu a fost găsit', { status: 404 })
-  }
-
-  const stream = Readable.toWeb(createReadStream(path)) as unknown as ReadableStream
-
-  return new Response(stream, {
+  return new Response(stored.stream, {
     headers: {
       'content-type': file.mime ?? 'application/octet-stream',
-      'content-length': String(size),
-      // User-supplied content is never rendered in our origin.
+      'content-length': String(stored.size),
       'content-disposition': `attachment; filename*=UTF-8''${encodeURIComponent(file.original_name)}`,
-      'x-content-type-options': 'nosniff',
-      'content-security-policy': "default-src 'none'; sandbox",
-      'cache-control': 'private, max-age=0, must-revalidate',
+      'cache-control': 'private, no-store',
     },
   })
 }
