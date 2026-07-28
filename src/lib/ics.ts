@@ -104,8 +104,8 @@ export function stagesIcs(stages: { title: string; description: string | null; s
       `DTSTAMP:${utc(new Date())}`,
       `DTSTART;VALUE=DATE:${dayStamp(e.starts_on)}`,
       `DTEND;VALUE=DATE:${dayStamp(end.toISOString())}`,
-      `SUMMARY:${escape(e.title)}`,
-      e.description ? `DESCRIPTION:${escape(e.description)}` : '',
+      `SUMMARY:${escapeText(e.title)}`,
+      e.description ? `DESCRIPTION:${escapeText(e.description)}` : '',
       'END:VEVENT',
     )
   }
