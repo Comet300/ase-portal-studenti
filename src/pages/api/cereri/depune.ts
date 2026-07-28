@@ -1,6 +1,6 @@
 import type { APIRoute } from 'astro'
 import { postEvent } from '../../../lib/chat'
-import { queryOne } from '../../../lib/db'
+import { queryOne, transaction } from '../../../lib/db'
 import { template, sendEmail, html } from '../../../lib/mail'
 import { redirectWithNotice } from '../../../lib/http'
 import { DECISION_WINDOW_DAYS } from '../../../lib/lifecycle'
@@ -71,25 +71,43 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
   // The partial unique index on (student_id) for live statuses prevents a second
   // open request; the violation is caught here so the message is useful.
   try {
-    const year = new Date().getFullYear()
-    const number = `CRR-${year}-${Date.now().toString().slice(-6)}`
-    const created = await queryOne<{ id: string }>(
-      `INSERT INTO requests (academic_year_id, number, student_id, teacher_id, topic_id,
-                             title_ro, title_en, objectives, motivation, status,
-                             invitation_id, decided_at, expires_at)
-       VALUES ((SELECT id FROM academic_years WHERE is_current),
-               $1, $2, $3, NULLIF($4, '')::uuid, $5, NULLIF($6, ''), $7, $8, $9,
-               $10,
-               CASE WHEN $9 = 'approved' THEN now() END,
-               CASE WHEN $9 = 'pending' THEN now() + ($11 || ' days')::interval END)
-       RETURNING id`,
-      [
-        number, u.id, teacherId, topicId, titleRo, titleEn, objectives, motivation,
-        preApproved ? 'approved' : 'pending',
-        invitation?.id ?? null,
-        String(DECISION_WINDOW_DAYS),
-      ],
-    )
+    /* The number and the row are allocated together.
+     *
+     * The counter sits on the academic year and is bumped inside this
+     * transaction, so numbers run sequentially within the session they belong
+     * to, stay unique without depending on a clock, and leave no gap when the
+     * insert below is refused by the live-request index. */
+    const { number, created } = await transaction(async (tx) => {
+      const { rows: years } = await tx.query<{ label: string; request_counter: number }>(
+        `UPDATE academic_years SET request_counter = request_counter + 1
+          WHERE is_current
+          RETURNING id, label, request_counter`,
+      )
+      const year = years[0]
+      if (!year) throw new Error('Niciun an universitar curent')
+
+      const allocated = `CRR-${year.label.slice(0, 4)}-${String(year.request_counter).padStart(4, '0')}`
+
+      const { rows } = await tx.query<{ id: string }>(
+        `INSERT INTO requests (academic_year_id, number, student_id, teacher_id, topic_id,
+                               title_ro, title_en, objectives, motivation, status,
+                               invitation_id, decided_at, expires_at)
+         VALUES ((SELECT id FROM academic_years WHERE is_current),
+                 $1, $2, $3, NULLIF($4, '')::uuid, $5, NULLIF($6, ''), $7, $8, $9,
+                 $10,
+                 CASE WHEN $9 = 'approved' THEN now() END,
+                 CASE WHEN $9 = 'pending' THEN now() + ($11 || ' days')::interval END)
+         RETURNING id`,
+        [
+          allocated, u.id, teacherId, topicId, titleRo, titleEn, objectives, motivation,
+          preApproved ? 'approved' : 'pending',
+          invitation?.id ?? null,
+          String(DECISION_WINDOW_DAYS),
+        ],
+      )
+
+      return { number: allocated, created: rows[0] ?? null }
+    })
 
     const base = process.env.APP_BASE_URL ?? url.origin
 

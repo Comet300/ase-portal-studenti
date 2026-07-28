@@ -657,6 +657,18 @@ for (const [an, offset] of [[lastYear, 1], [olderYear, 2]]) {
   }
 }
 
+/* Numerotarea cererilor continuă de unde s-a oprit seed-ul.
+ * Contorul stă pe anul universitar, iar rândurile inserate aici nu au trecut
+ * prin el — fără această aliniere, prima cerere depusă din portal ar primi un
+ * număr deja folosit. */
+await q(
+  `UPDATE academic_years y
+      SET request_counter = GREATEST(
+        y.request_counter,
+        (SELECT count(*)::int FROM requests r WHERE r.academic_year_id = y.id)
+      )`,
+)
+
 const { rows: [{ count: userCount }] } = await q('SELECT count(*)::int AS count FROM users')
 const { rows: [{ count: requestCount }] } = await q('SELECT count(*)::int AS count FROM requests')
 console.log(`[seed] done — ${userCount} users, ${requestCount} requests`)
