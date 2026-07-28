@@ -269,7 +269,7 @@ for (const { student_id, teacher_id } of approved) {
 }
 
 const { rows: [{ count: userCount }] } = await q('SELECT count(*)::int AS count FROM users')
-const { rows: [{ count: nrCereri }] } = await q('SELECT count(*)::int AS count FROM cereri')
+const { rows: [{ count: requestCount }] } = await q('SELECT count(*)::int AS count FROM requests')
 console.log(`[seed] done — ${userCount} users, ${requestCount} requests`)
 
 await client.end()

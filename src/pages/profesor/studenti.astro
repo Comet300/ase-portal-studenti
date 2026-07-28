@@ -447,7 +447,7 @@ const caleCurenta = `/profesor/studenti?sectiune=${sectiune}`
           <div class="empty">
             <p class="empty__title">Nicio temă propusă</p>
             <p class="empty__text">
-              Temele propuse apar în catalogul public de supervisors, iar studenții pot depune cereri
+              Temele propuse apar în catalogul public de coordonatori, iar studenții pot depune cereri
               direct pe ele.
             </p>
           </div>
@@ -764,11 +764,11 @@ const caleCurenta = `/profesor/studenti?sectiune=${sectiune}`
     z-index: 1;
   }
 
-  .jalon--finalizat .jalon__punct {
+  .jalon--done .jalon__punct {
     background: var(--ok);
     border-color: var(--ok);
   }
-  .jalon--in_lucru .jalon__punct {
+  .jalon--in_progress .jalon__punct {
     background: var(--red);
     border-color: var(--red);
   }
@@ -800,7 +800,7 @@ const caleCurenta = `/profesor/studenti?sectiune=${sectiune}`
     font-size: var(--t-sm);
     font-weight: 600;
   }
-  .jalon--finalizat .jalon__titlu {
+  .jalon--done .jalon__titlu {
     color: var(--ink-muted);
   }
 
