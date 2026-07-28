@@ -73,6 +73,9 @@ export async function sendEmail(mail: MailMessage): Promise<{ ok: boolean; id?: 
       return { ok: false, eroare: error.message }
     }
 
+    // Logged so delivery is provable from the container logs: without an id
+    // there is no way to tell "sent" from "silently dropped".
+    console.log(`[mail] sent ${data?.id} → ${recipient} · ${mail.subject}`)
     return { ok: true, id: data?.id }
   } catch (err) {
     console.error('[mail] excepție la trimitere', err)
