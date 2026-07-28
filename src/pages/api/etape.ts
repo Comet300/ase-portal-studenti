@@ -35,10 +35,17 @@ export const POST: APIRoute = async ({ request, locals }) => {
       return back('Data de început este după data de sfârșit.', true)
     }
 
+    // Etapa aparține anului în curs, iar poziția se numără doar între etapele
+    // acelui an: altfel prima etapă a unui an nou ar continua numerotarea celui
+    // încheiat, iar coloana este NOT NULL, deci omiterea ei nu trece deloc.
     await execute(
-      `INSERT INTO session_stages (position, title, description, interval_label, starts_on, ends_on)
-       VALUES (COALESCE((SELECT max(position) + 1 FROM session_stages), 1),
-               $1, NULLIF($2, ''), $3, NULLIF($4, '')::date, NULLIF($5, '')::date)`,
+      `INSERT INTO session_stages
+         (academic_year_id, position, title, description, interval_label, starts_on, ends_on)
+       SELECT y.id,
+              COALESCE((SELECT max(position) + 1 FROM session_stages WHERE academic_year_id = y.id), 1),
+              $1, NULLIF($2, ''), $3, NULLIF($4, '')::date, NULLIF($5, '')::date
+         FROM academic_years y
+        WHERE y.is_current`,
       [title, description, intervalLabel, startsOn, endsOn],
     )
     return back('Etapă adăugată.')
@@ -77,11 +84,14 @@ export const POST: APIRoute = async ({ request, locals }) => {
     // Swap with the neighbour rather than renumbering the whole list: fewer
     // writes, and the order stays stable if two edits land close together.
     const n = await execute(
-      `WITH me AS (SELECT id, position FROM session_stages WHERE id = $1),
+      `WITH me AS (
+              SELECT id, position, academic_year_id FROM session_stages WHERE id = $1
+            ),
             neighbour AS (
               SELECT s.id, s.position FROM session_stages s, me
-               WHERE ($2 = 'sus'  AND s.position < me.position)
-                  OR ($2 = 'jos'  AND s.position > me.position)
+               WHERE s.academic_year_id = me.academic_year_id
+                 AND (($2 = 'sus' AND s.position < me.position)
+                   OR ($2 = 'jos' AND s.position > me.position))
                ORDER BY CASE WHEN $2 = 'sus' THEN -s.position ELSE s.position END
                LIMIT 1
             )
