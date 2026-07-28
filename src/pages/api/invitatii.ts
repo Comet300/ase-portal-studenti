@@ -78,7 +78,7 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
     try {
       await execute(
         `INSERT INTO invitations (academic_year_id, teacher_id, student_id, topic_id, message, expires_at)
-         VALUES ((SELECT id FROM academic_years WHERE is_current), $1, $2, NULLIF($3, '')::uuid, $4,
+         VALUES ((SELECT id FROM academic_years WHERE is_current), $1, $2, $3, $4,
                  now() + ($5 || ' days')::interval)`,
         [u.id, studentId, topicId, message, String(INVITATION_WINDOW_DAYS)],
       )
@@ -90,7 +90,7 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
     }
 
     await postEvent({
-      studentId,
+      studentId: student.id,
       teacherId: u.id,
       senderId: u.id,
       eventType: 'invitation_sent',
