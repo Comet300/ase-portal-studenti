@@ -413,6 +413,19 @@ const sectiuni = [
             studenții pe care îi coordonează.
           </p>
 
+          {/* A form cannot span table cells, so each row's form lives outside the
+              table and its fields point at it by id. That keeps every input in
+              the column its header names — the alternative, one cell spanning
+              three columns, put the numbers under the wrong titles. */}
+          {
+            withSeats.map((t) => (
+              <form id={`locuri-${t.id}`} method="POST" action="/api/locuri" hidden>
+                <input type="hidden" name="actiune" value="aloca" />
+                <input type="hidden" name="profesor_id" value={t.id} />
+              </form>
+            ))
+          }
+
           <div class="table-wrap">
             <table class="table">
               <thead>
@@ -438,36 +451,40 @@ const sectiuni = [
                         {t.taken} / {t.seats}
                       </span>
                     </td>
-                    <td colspan="3">
-                      <form method="POST" action="/api/locuri" class="row" style="gap:var(--s-2);justify-content:flex-end">
-                        <input type="hidden" name="actiune" value="aloca" />
-                        <input type="hidden" name="profesor_id" value={t.id} />
-                        <label class="visually-hidden" for={`lic-${t.id}`}>
-                          Locuri licență pentru {t.name}
-                        </label>
-                        <input
-                          class="input input--num"
-                          id={`lic-${t.id}`}
-                          name="locuri_licenta"
-                          type="number"
-                          min={t.bachelor_taken}
-                          max="40"
-                          value={t.bachelor_seats}
-                        />
-                        <label class="visually-hidden" for={`mas-${t.id}`}>
-                          Locuri master pentru {t.name}
-                        </label>
-                        <input
-                          class="input input--num"
-                          id={`mas-${t.id}`}
-                          name="locuri_master"
-                          type="number"
-                          min={t.master_taken}
-                          max="40"
-                          value={t.master_seats}
-                        />
-                        <button class="btn btn--secondary btn--sm" type="submit">Salvează</button>
-                      </form>
+                    <td>
+                      <label class="visually-hidden" for={`lic-${t.id}`}>
+                        Locuri licență pentru {t.name}
+                      </label>
+                      <input
+                        class="input input--num"
+                        id={`lic-${t.id}`}
+                        form={`locuri-${t.id}`}
+                        name="locuri_licenta"
+                        type="number"
+                        min="0"
+                        max="40"
+                        value={t.bachelor_seats}
+                      />
+                    </td>
+                    <td>
+                      <label class="visually-hidden" for={`mas-${t.id}`}>
+                        Locuri master pentru {t.name}
+                      </label>
+                      <input
+                        class="input input--num"
+                        id={`mas-${t.id}`}
+                        form={`locuri-${t.id}`}
+                        name="locuri_master"
+                        type="number"
+                        min="0"
+                        max="40"
+                        value={t.master_seats}
+                      />
+                    </td>
+                    <td style="text-align:right">
+                      <button class="btn btn--secondary btn--sm" type="submit" form={`locuri-${t.id}`}>
+                        Salvează
+                      </button>
                     </td>
                   </tr>
                 ))}
