@@ -1,0 +1,29 @@
+---
+import { consumaMagicLink, creeazaSesiune, COOKIE_SESIUNE } from '../lib/auth'
+
+/** Consumă tokenul din email, deschide sesiunea și trimite utilizatorul unde trebuie. */
+
+const token = Astro.url.searchParams.get('token') ?? ''
+const rezultat = await consumaMagicLink(token)
+
+if (!rezultat) {
+  return Astro.redirect(
+    '/autentificare?eroare=' +
+      encodeURIComponent('Linkul este expirat sau a fost deja folosit. Cere unul nou.'),
+    302,
+  )
+}
+
+const sesiuneId = await creeazaSesiune(rezultat.utilizator.id)
+
+Astro.cookies.set(COOKIE_SESIUNE, sesiuneId, {
+  path: '/',
+  httpOnly: true,
+  sameSite: 'lax',
+  secure: Astro.url.protocol === 'https:',
+  maxAge: 60 * 60 * 24 * 30,
+})
+
+const implicit = rezultat.utilizator.rol === 'student' ? '/cererile-mele' : '/profesor'
+return Astro.redirect(rezultat.redirectLa || implicit, 302)
+---
