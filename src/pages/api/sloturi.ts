@@ -6,6 +6,7 @@ import { buildIcs } from '../../lib/ics'
 import { redirectWithNotice } from '../../lib/http'
 import { sendEmail, template } from '../../lib/mail'
 import { formatDate, formatTime } from '../../lib/repo'
+import { id as formId } from '../../lib/ids'
 
 /**
  * Consultation intervals.
@@ -92,7 +93,7 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
   /* --- schedule one meeting with one student -------------------------------- */
 
   if (action === 'programeaza') {
-    const studentId = String(form.get('student_id') ?? '')
+    const studentId = formId(form.get('student_id'))
     const day = String(form.get('zi') ?? '')
     const startHour = Number(form.get('ora_start') ?? 14)
     const durationHours = Number(form.get('durata') ?? 1)
@@ -207,7 +208,7 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
   /* --- cancel --------------------------------------------------------------- */
 
   if (action === 'anuleaza') {
-    const slotId = String(form.get('slot_id') ?? '')
+    const slotId = formId(form.get('slot_id'))
 
     // Anularea marchează și rezervările, ca studentul să nu rămână cu o
     // rezervare la un interval care nu mai există.

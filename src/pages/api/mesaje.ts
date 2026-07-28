@@ -4,6 +4,7 @@ import { queryOne, transaction } from '../../lib/db'
 import { template, sendEmail } from '../../lib/mail'
 import { saveFile } from '../../lib/files'
 import { redirect } from '../../lib/http'
+import { id as formId } from '../../lib/ids'
 
 /** Trimite un mesaj, cu atașament opțional. */
 export const POST: APIRoute = async ({ request, locals, url }) => {
@@ -11,7 +12,7 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
   if (!u) return new Response('Neautentificat', { status: 401 })
 
   const form = await request.formData()
-  const conversationId = String(form.get('conversation_id') ?? '')
+  const conversationId = formId(form.get('conversation_id'))
   const body = String(form.get('body') ?? '').trim()
   const redirectTo = String(form.get('redirect') ?? '/mesaje')
   const file = form.get('file')

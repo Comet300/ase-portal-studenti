@@ -3,6 +3,7 @@ import { isDepartmentHead } from '../../lib/auth'
 import { execute, queryOne } from '../../lib/db'
 import { redirectWithNotice } from '../../lib/http'
 import { openYear } from '../../lib/years'
+import { id as formId } from '../../lib/ids'
 
 /**
  * The academic year, and everything that resets with it.
@@ -71,7 +72,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
   }
 
   if (action === 'comuta_program') {
-    const id = String(form.get('program_id') ?? '')
+    const id = formId(form.get('program_id'))
     const n = await execute(
       `UPDATE study_programmes SET is_active = NOT is_active
         WHERE id = $1 AND academic_year_id = (SELECT id FROM academic_years WHERE is_current)`,
@@ -83,7 +84,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
   /* --- historical import ---------------------------------------------------- */
 
   if (action === 'importa') {
-    const yearId = String(form.get('an_id') ?? '')
+    const yearId = formId(form.get('an_id'))
     const raw = String(form.get('randuri') ?? '').trim()
 
     const year = await queryOne<{ label: string }>(`SELECT label FROM academic_years WHERE id = $1`, [

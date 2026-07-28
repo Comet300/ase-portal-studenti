@@ -5,6 +5,7 @@ import { template, sendEmail } from '../../../lib/mail'
 import { redirectWithNotice } from '../../../lib/http'
 import { DECISION_WINDOW_DAYS } from '../../../lib/lifecycle'
 import { seedMilestones, teacherSeats } from '../../../lib/repo'
+import { id as formId } from '../../../lib/ids'
 
 /**
  * A student submits a supervision request.
@@ -22,13 +23,13 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
   }
 
   const form = await request.formData()
-  const teacherId = String(form.get('profesor_id') ?? '')
-  const topicId = String(form.get('tema_id') ?? '')
+  const teacherId = formId(form.get('profesor_id'))
+  const topicId = formId(form.get('tema_id'))
   const titleRo = String(form.get('titlu_ro') ?? '').trim()
   const titleEn = String(form.get('titlu_en') ?? '').trim()
   const objectives = String(form.get('scop_obiective') ?? '').trim()
   const motivation = String(form.get('motivatie') ?? '').trim()
-  const invitationId = String(form.get('invitatie_id') ?? '')
+  const invitationId = formId(form.get('invitatie_id'))
 
   const back = (message: string, isError = false) =>
     redirectWithNotice('/cererile-mele', message, isError)

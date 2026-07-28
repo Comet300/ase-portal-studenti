@@ -4,6 +4,7 @@ import { execute, queryOne } from '../../lib/db'
 import { grantSeats } from '../../lib/lifecycle'
 import { redirectWithNotice } from '../../lib/http'
 import { sendEmail, template } from '../../lib/mail'
+import { id as formId } from '../../lib/ids'
 
 /**
  * Seats.
@@ -31,7 +32,7 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
   if (action === 'aloca') {
     if (!isDepartmentHead(u)) return new Response('Pagina nu a fost găsită', { status: 404 })
 
-    const teacherId = String(form.get('profesor_id') ?? '')
+    const teacherId = formId(form.get('profesor_id'))
     const bachelor = Number(form.get('locuri_licenta') ?? 0)
     const master = Number(form.get('locuri_master') ?? 0)
     const clamp = (n: number) => (Number.isFinite(n) ? Math.min(40, Math.max(0, Math.trunc(n))) : 0)
@@ -119,7 +120,7 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
   if (action === 'decide') {
     if (!isDepartmentHead(u)) return new Response('Pagina nu a fost găsită', { status: 404 })
 
-    const seatRequestId = String(form.get('cerere_id') ?? '')
+    const seatRequestId = formId(form.get('cerere_id'))
     const decision = String(form.get('decizie') ?? '')
     const note = String(form.get('nota') ?? '').trim()
 

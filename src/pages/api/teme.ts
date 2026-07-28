@@ -2,6 +2,7 @@ import type { APIRoute } from 'astro'
 import { isTeacher } from '../../lib/auth'
 import { execute } from '../../lib/db'
 import { redirectWithNotice } from '../../lib/http'
+import { id as formId } from '../../lib/ids'
 
 /** Temele propuse de un cadru didactic. Proprietarul este verificat în fiecare instrucțiune. */
 export const POST: APIRoute = async ({ request, locals, url }) => {
@@ -45,7 +46,7 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
   }
 
   if (action === 'comuta') {
-    const topicId = String(form.get('tema_id') ?? '')
+    const topicId = formId(form.get('tema_id'))
     const n = await execute(
       `UPDATE topics SET is_active = NOT is_active WHERE id = $2 AND teacher_id = $1`,
       [u!.id, topicId],

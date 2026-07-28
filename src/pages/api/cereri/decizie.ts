@@ -5,6 +5,7 @@ import { queryOne, transaction } from '../../../lib/db'
 import { template, sendEmail } from '../../../lib/mail'
 import { redirectWithNotice } from '../../../lib/http'
 import { DEFAULT_MILESTONES, teacherSeats } from '../../../lib/repo'
+import { id as formId } from '../../../lib/ids'
 
 /**
  * The coordinator's decision.
@@ -19,7 +20,7 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
   if (!isTeacher(u)) return new Response('Neautorizat', { status: 401 })
 
   const form = await request.formData()
-  const requestId = String(form.get('cerere_id') ?? '')
+  const requestId = formId(form.get('cerere_id'))
   const decision = String(form.get('decizie') ?? '')
   const note = String(form.get('motiv') ?? '').trim()
   const redirectTo = String(form.get('redirect') ?? '/profesor/studenti')

@@ -2,6 +2,7 @@ import type { APIRoute } from 'astro'
 import { isDepartmentHead } from '../../lib/auth'
 import { execute } from '../../lib/db'
 import { redirectWithNotice } from '../../lib/http'
+import { id as formId } from '../../lib/ids'
 
 /**
  * The session calendar.
@@ -44,7 +45,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
   }
 
   if (action === 'actualizeaza') {
-    const id = String(form.get('etapa_id') ?? '')
+    const id = formId(form.get('etapa_id'))
     const title = String(form.get('titlu') ?? '').trim()
     const intervalLabel = String(form.get('interval') ?? '').trim()
     const description = String(form.get('descriere') ?? '').trim()
@@ -69,7 +70,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
   }
 
   if (action === 'muta') {
-    const id = String(form.get('etapa_id') ?? '')
+    const id = formId(form.get('etapa_id'))
     const direction = String(form.get('directie') ?? '')
     if (!['sus', 'jos'].includes(direction)) return back('Direcție invalidă.', true)
 
@@ -95,7 +96,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
   }
 
   if (action === 'sterge') {
-    const id = String(form.get('etapa_id') ?? '')
+    const id = formId(form.get('etapa_id'))
     const n = await execute('DELETE FROM session_stages WHERE id = $1', [id])
     return back(n ? 'Etapă ștearsă.' : 'Etapa nu a fost găsită.', !n)
   }

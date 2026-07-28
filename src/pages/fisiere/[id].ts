@@ -4,6 +4,7 @@ import { Readable } from 'node:stream'
 import type { APIRoute } from 'astro'
 import { queryOne } from '../../lib/db'
 import { filePath } from '../../lib/files'
+import { id as routeId } from '../../lib/ids'
 
 /**
  * Attachment download.
@@ -16,6 +17,9 @@ export const GET: APIRoute = async ({ params, locals }) => {
   const u = locals.user
   if (!u) return new Response('Neautentificat', { status: 401 })
 
+  const fileId = routeId(params.id ?? null)
+  if (!fileId) return new Response('Fișierul nu a fost găsit', { status: 404 })
+
   const file = await queryOne<{
     conversation_id: string
     stored_name: string
@@ -26,7 +30,7 @@ export const GET: APIRoute = async ({ params, locals }) => {
        FROM files f
        JOIN conversations c ON c.id = f.conversation_id
       WHERE f.id = $2 AND (c.student_id = $1 OR c.teacher_id = $1)`,
-    [u.id, params.id],
+    [u.id, fileId],
   )
 
   if (!file?.conversation_id) return new Response('Fișierul nu a fost găsit', { status: 404 })
