@@ -2,7 +2,7 @@ import type { APIRoute } from 'astro'
 import { isTeacher } from '../../../lib/auth'
 import { queryOne, transaction } from '../../../lib/db'
 import { template, sendEmail } from '../../../lib/mail'
-import { redirect } from '../../../lib/http'
+import { redirect, redirectWithNotice } from '../../../lib/http'
 
 /** Jaloanele implicite, create odată cu acceptarea, ca studentul să nu pornească din gol. */
 const JALOANE_IMPLICITE = [
@@ -28,13 +28,7 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
   }
 
   if (decizie === 'rejected' && motiv.length < 10) {
-    return redirect(
-      new URL(
-        `${redirectTo}?notificare=${encodeURIComponent('Motivul respingerii este obligatoriu (minimum 10 caractere).')}&tip=error`,
-        url,
-      ),
-      303,
-    )
+    return redirectWithNotice(redirectTo, 'Motivul respingerii este obligatoriu (minimum 10 caractere).', true)
   }
 
   // Condiția de proprietate stă în aceeași instrucțiune cu scrierea: o cerere a
@@ -74,10 +68,7 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
   })
 
   if (!cerere) {
-    return redirect(
-      new URL(`${redirectTo}?notificare=${encodeURIComponent('Cererea nu mai poate fi modificată.')}&tip=error`, url),
-      303,
-    )
+    return redirectWithNotice(redirectTo, 'Cererea nu mai poate fi modificată.', true)
   }
 
   const student = await queryOne<{ email: string; name: string }>(
@@ -108,13 +99,5 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
     })
   }
 
-  return redirect(
-    new URL(
-      `${redirectTo}?notificare=${encodeURIComponent(
-        decizie === 'approved' ? 'Cerere aprobată. Studentul a fost notificat.' : 'Cerere respinsă. Studentul a fost notificat.',
-      )}`,
-      url,
-    ),
-    303,
-  )
+  return redirectWithNotice(redirectTo, decizie === 'approved' ? 'Cerere aprobată. Studentul a fost notificat.' : 'Cerere respinsă. Studentul a fost notificat.',)
 }

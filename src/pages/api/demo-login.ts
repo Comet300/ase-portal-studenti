@@ -26,10 +26,7 @@ export const POST: APIRoute = async ({ request, cookies, url }) => {
   )
 
   if (!utilizator) {
-    return redirect(
-      new URL('/autentificare?eroare=' + encodeURIComponent('Cont demonstrativ inexistent.'), url),
-      303,
-    )
+    return redirect('/autentificare?eroare=' + encodeURIComponent('Cont demonstrativ inexistent.'))
   }
 
   const sesiuneId = await createSession(utilizator.id)
@@ -43,5 +40,5 @@ export const POST: APIRoute = async ({ request, cookies, url }) => {
   })
 
   const implicit = utilizator.role === 'student' ? '/cererile-mele' : '/profesor'
-  return redirect(new URL(redirectTo || implicit, url), 303)
+  return redirect(redirectTo || implicit)
 }

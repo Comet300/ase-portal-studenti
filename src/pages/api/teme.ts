@@ -1,7 +1,7 @@
 import type { APIRoute } from 'astro'
 import { isTeacher } from '../../lib/auth'
 import { execute } from '../../lib/db'
-import { redirect } from '../../lib/http'
+import { redirect, redirectWithNotice } from '../../lib/http'
 
 /** Temele propuse de un cadru didactic. Proprietarul este verificat în fiecare instrucțiune. */
 export const POST: APIRoute = async ({ request, locals, url }) => {
@@ -13,10 +13,7 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
   const redirectTo = '/profesor/studenti?sectiune=teme'
 
   const inapoi = (mesaj: string, eroare = false) =>
-    redirect(
-      new URL(`${redirectTo}&notificare=${encodeURIComponent(mesaj)}${error ? '&kind=error' : ''}`, url),
-      303,
-    )
+    redirectWithNotice(redirectTo, mesaj, isError)
 
   if (action === 'adauga') {
     const title = String(date.get('title') ?? '').trim()
