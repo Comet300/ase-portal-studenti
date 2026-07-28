@@ -50,4 +50,6 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=45s --retries=5 \
   CMD curl -fsS http://127.0.0.1:3000/api/sanatate || exit 1
 
 # Schema first: serving against an unmigrated database is worse than failing to boot.
-CMD ["sh", "-c", "node scripts/migrate.mjs && node scripts/seed.mjs && node ./dist/server/entry.mjs"]
+# Migrations must succeed; seeding is demo data, so a failure there is logged and
+# the app still serves rather than crash-looping on a fixture.
+CMD ["sh", "-c", "node scripts/migrate.mjs && { node scripts/seed.mjs || echo '[seed] failed, continuing'; } && node ./dist/server/entry.mjs"]

@@ -179,7 +179,7 @@ for (const [i, [titlu, nivel, metode, prereq, locuri]] of TEME.entries()) {
 const STATES = ['pending', 'approved', 'approved', 'rejected', 'pending', 'approved']
 for (const [i, studentId] of studentIds.entries()) {
   const [titluRo, titluEn] = TITLURI_CERERI[i % TITLURI_CERERI.length]
-  const status = STATES[i % STARI.length]
+  const status = STATES[i % STATES.length]
   // Primii 10 studenți merg la profesorul demo, ca dashboardul lui să aibă conținut.
   const profesorId = i < 10 ? teacherIds[0] : teacherIds[i % teacherIds.length]
   const numar = `CRR-2026-${String(i + 1).padStart(4, '0')}`
