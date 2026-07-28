@@ -22,7 +22,7 @@ const q = (sql, params = []) => client.query(sql, params)
 
 /* --- etapele sesiunii ------------------------------------------------------ */
 
-const ETAPE = [
+const STAGES = [
   ['Alegere coordonator', 'Depunerea cererilor către cadrele didactice și confirmarea temei.', 'Octombrie 2025 – Ianuarie 2026', '2025-10-01', '2026-01-31'],
   ['Elaborare și consultații', 'Redactarea lucrării, consultații periodice cu coordonatorul.', 'Februarie – Mai 2026', '2026-02-01', '2026-05-15'],
   ['Înscriere examen', 'Depunerea dosarului de înscriere la secretariat.', 'Mai 2026', '2026-05-04', '2026-05-29'],
@@ -32,7 +32,7 @@ const ETAPE = [
 
 /* --- cadre didactice ------------------------------------------------------- */
 
-const PROFESORI = [
+const TEACHERS = [
   ['Prof. univ. dr. Mihaela Ionescu', 'mihaela.ionescu@ase.ro', 'Marketing', 'Prof. univ. dr.', 'Corp Ion Angelescu, sala 2314', 8, 5, true],
   ['Conf. univ. dr. Cristian Vasile', 'cristian.vasile@ase.ro', 'Marketing', 'Conf. univ. dr.', 'Corp Virgil Madgearu, sala 1108', 6, 4, false],
   ['Lect. univ. dr. Simona Radu', 'simona.radu@ase.ro', 'Marketing', 'Lect. univ. dr.', 'Corp Ion Angelescu, sala 2210', 6, 3, false],
@@ -43,11 +43,11 @@ const PROFESORI = [
   ['Lect. univ. dr. Radu Stoica', 'radu.stoica@ase.ro', 'Marketing internațional', 'Lect. univ. dr.', 'Corp Ion Angelescu, sala 2205', 4, 4, false],
 ]
 
-const DIRECTOR = ['Prof. univ. dr. Daniela Constantin', 'daniela.constantin@ase.ro', 'Marketing', 'Prof. univ. dr.', 'Corp Ion Angelescu, sala 2301', 4, 3, true]
+const HEAD = ['Prof. univ. dr. Daniela Constantin', 'daniela.constantin@ase.ro', 'Marketing', 'Prof. univ. dr.', 'Corp Ion Angelescu, sala 2301', 4, 3, true]
 
 /* --- studenți -------------------------------------------------------------- */
 
-const NUME_STUDENTI = [
+const STUDENT_NAMES = [
   'Dan Marinescu', 'Elena Popescu', 'Andrei Vasilescu', 'Ioana Dumitru', 'Mihai Stoica',
   'Andreea Barbu', 'Radu Gheorghe', 'Cristina Neagu', 'Alexandru Munteanu', 'Diana Preda',
   'Ștefan Ilie', 'Raluca Sandu', 'Vlad Petrescu', 'Bianca Toma', 'George Ionescu',
@@ -55,12 +55,12 @@ const NUME_STUDENTI = [
   'Sorin Bălan', 'Teodora Rusu', 'Adrian Costache', 'Gabriela Matei',
 ]
 
-const SPECIALIZARI_LICENTA = ['Marketing', 'Marketing (engleză)']
-const SPECIALIZARI_MASTER = ['Marketing strategic', 'Cercetări de marketing', 'Marketing digital']
+const BACHELOR_TRACKS = ['Marketing', 'Marketing (engleză)']
+const MASTER_TRACKS = ['Marketing strategic', 'Cercetări de marketing', 'Marketing digital']
 
 /* --- teme ------------------------------------------------------------------ */
 
-const TEME = [
+const TOPICS = [
   ['Comportamentul consumatorului în comerțul electronic românesc', 'bachelor', 'Cantitativă, SPSS, modelare structurală', 'Marketing cantitativ, nota minimă 8', 3],
   ['Transformarea digitală a strategiilor B2B', 'master', 'Studii de caz multiple, interviuri semi-structurate', 'Management strategic', 2],
   ['Credibilitatea influencerilor și decizia de cumpărare la generația Z', 'bachelor', 'Chestionar online, analiză factorială', 'Statistică descriptivă', 4],
@@ -75,7 +75,7 @@ const TEME = [
   ['Impactul recenziilor online asupra vânzărilor', 'bachelor', 'Analiză de date secundare, regresie', 'Econometrie', 3],
 ]
 
-const TITLURI_CERERI = [
+const REQUEST_TITLES = [
   ['Impactul inteligenței artificiale în strategiile de personalizare', 'The impact of artificial intelligence on personalisation strategies'],
   ['Strategii de comunicare digitală pentru branduri locale', 'Digital communication strategies for local brands'],
   ['Analiza comportamentului de cumpărare în magazinele online', 'Analysis of purchasing behaviour in online stores'],
@@ -90,9 +90,9 @@ const TITLURI_CERERI = [
   ['Eficiența campaniilor de retargeting în e-commerce', 'The effectiveness of retargeting campaigns in e-commerce'],
 ]
 
-const SCOP = `Lucrarea își propune să analizeze modul în care factorii identificați influențează decizia consumatorului pe piața din România. Obiectivele urmărite sunt: (1) delimitarea conceptuală a fenomenului studiat pe baza literaturii recente; (2) identificarea factorilor determinanți printr-o cercetare cantitativă pe un eșantion de minimum 200 de respondenți; (3) formularea unor recomandări aplicabile pentru companiile care activează în sectorul analizat.`
+const OBJECTIVES = `Lucrarea își propune să analizeze modul în care factorii identificați influențează decizia consumatorului pe piața din România. Obiectivele urmărite sunt: (1) delimitarea conceptuală a fenomenului studiat pe baza literaturii recente; (2) identificarea factorilor determinanți printr-o cercetare cantitativă pe un eșantion de minimum 200 de respondenți; (3) formularea unor recomandări aplicabile pentru companiile care activează în sectorul analizat.`
 
-const JALOANE = [
+const MILESTONES = [
   ['Stabilirea temei și a bibliografiei', 'Temă aprobată, minimum 20 de titluri bibliografice.', 0],
   ['Capitolul teoretic', 'Sinteza literaturii de specialitate, cadrul conceptual.', 1],
   ['Metodologia cercetării', 'Instrument de cercetare validat, eșantion stabilit.', 2],
@@ -112,7 +112,7 @@ const DEMO_MESSAGES = [
 console.log('[seed] pornit')
 
 // Etape
-for (const [i, [titlu, descriere, interval, di, ds]] of ETAPE.entries()) {
+for (const [i, [titlu, descriere, interval, di, ds]] of STAGES.entries()) {
   await q(
     `INSERT INTO session_stages (position, title, description, interval_label, starts_on, ends_on)
      SELECT $1, $2, $3, $4, $5::date, $6::date
@@ -135,23 +135,23 @@ async function upsertUser(campuri) {
 
 // Cadre didactice
 const teacherIds = []
-for (const [nume, email, dep, titlu, birou, capL, capM, demo] of PROFESORI) {
+for (const [nume, email, dep, titlu, birou, capL, capM, demo] of TEACHERS) {
   teacherIds.push(
     await upsertUser([email, nume, 'teacher', null, null, null, null, titlu, dep, birou, capL, capM, demo]),
   )
 }
 
-const [numeD, emailD, depD, titluD, birouD, capLD, capMD] = DIRECTOR
+const [numeD, emailD, depD, titluD, birouD, capLD, capMD] = HEAD
 const headId = await upsertUser([emailD, numeD, 'head', null, null, null, null, titluD, depD, birouD, capLD, capMD, true])
 
 // Studenți
 const studentIds = []
-for (const [i, nume] of NUME_STUDENTI.entries()) {
+for (const [i, nume] of STUDENT_NAMES.entries()) {
   const eMaster = i % 3 === 2
   const program = eMaster ? 'master' : 'bachelor'
   const specializare = eMaster
-    ? SPECIALIZARI_MASTER[i % SPECIALIZARI_MASTER.length]
-    : SPECIALIZARI_LICENTA[i % SPECIALIZARI_LICENTA.length]
+    ? MASTER_TRACKS[i % MASTER_TRACKS.length]
+    : BACHELOR_TRACKS[i % BACHELOR_TRACKS.length]
   const email = `${nume.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, '.')}@stud.ase.ro`
   studentIds.push(
     await upsertUser([
@@ -165,7 +165,7 @@ for (const [i, nume] of NUME_STUDENTI.entries()) {
 }
 
 // Teme
-for (const [i, [titlu, nivel, metode, prereq, locuri]] of TEME.entries()) {
+for (const [i, [titlu, nivel, metode, prereq, locuri]] of TOPICS.entries()) {
   const profesorId = teacherIds[i % teacherIds.length]
   await q(
     `INSERT INTO topics (teacher_id, title, description, level, methods, prerequisites, seats)
@@ -178,7 +178,7 @@ for (const [i, [titlu, nivel, metode, prereq, locuri]] of TEME.entries()) {
 // Cereri — distribuite pe stări, majoritatea către primul profesor (contul demo)
 const STATES = ['pending', 'approved', 'approved', 'rejected', 'pending', 'approved']
 for (const [i, studentId] of studentIds.entries()) {
-  const [titluRo, titluEn] = TITLURI_CERERI[i % TITLURI_CERERI.length]
+  const [titluRo, titluEn] = REQUEST_TITLES[i % REQUEST_TITLES.length]
   const status = STATES[i % STATES.length]
   // Primii 10 studenți merg la profesorul demo, ca dashboardul lui să aibă conținut.
   const profesorId = i < 10 ? teacherIds[0] : teacherIds[i % teacherIds.length]
@@ -192,7 +192,7 @@ for (const [i, studentId] of studentIds.entries()) {
       WHERE NOT EXISTS (SELECT 1 FROM requests WHERE number = $1)
      RETURNING id`,
     [
-      numar, studentId, profesorId, titluRo, titluEn, SCOP, status,
+      numar, studentId, profesorId, titluRo, titluEn, OBJECTIVES, status,
       status === 'rejected'
         ? 'Tema propusă se suprapune cu o lucrare deja alocată. Vă rog să reformulați direcția de cercetare sau să alegeți una dintre temele propuse.'
         : null,
@@ -203,7 +203,7 @@ for (const [i, studentId] of studentIds.entries()) {
   // Jaloane pentru cererile aprobate
   if (rows[0] && status === 'approved') {
     const cerereId = rows[0].id
-    for (const [j, [titlu, descriere, ordine]] of JALOANE.entries()) {
+    for (const [j, [titlu, descriere, ordine]] of MILESTONES.entries()) {
       const stare = j === 0 ? 'done' : j === 1 ? (i % 2 === 0 ? 'done' : 'in_progress') : j === 2 ? 'in_progress' : 'planned'
       await q(
         `INSERT INTO milestones (request_id, title, description, due_on, status, position)
