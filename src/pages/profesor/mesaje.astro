@@ -1,0 +1,55 @@
+---
+import Chat from '../../components/Chat.astro'
+import ProfesorLayout from '../../layouts/ProfesorLayout.astro'
+import {
+  conversationMessages,
+  markRead,
+  myConversation,
+  myConversations,
+} from '../../lib/chat'
+import { queryOne } from '../../lib/db'
+
+const u = Astro.locals.user!
+
+// Arriving from the students table carries ?student=…; open (or create) that
+// thread, but only if this teacher actually supervises them.
+const studentId = Astro.url.searchParams.get('student')
+if (studentId) {
+  await queryOne<{ id: string }>(
+    `INSERT INTO conversations (student_id, teacher_id)
+     SELECT $2, $1
+      WHERE EXISTS (
+        SELECT 1 FROM requests r
+         WHERE r.student_id = $2 AND r.teacher_id = $1 AND r.status = 'approved'
+      )
+     ON CONFLICT (student_id, teacher_id) DO NOTHING
+     RETURNING id`,
+    [u.id, studentId],
+  )
+}
+
+const conversations = await myConversations(u.id, false)
+const requested =
+  Astro.url.searchParams.get('conversatie') ??
+  (studentId ? conversations.find((c) => c.student_id === studentId)?.id : null)
+
+const active = requested ? await myConversation(u.id, requested) : (conversations[0] ?? null)
+
+if (active) await markRead(u.id, active.id)
+const messages = active ? await conversationMessages(u.id, active.id) : []
+---
+
+<ProfesorLayout
+  title="Mesaje"
+  lede="Discuțiile cu studenții coordonați, într-un singur loc."
+  active="mesaje"
+>
+  <Chat
+    conversations={conversations}
+    active={active}
+    messages={messages}
+    userId={u.id}
+    base="/profesor/mesaje"
+    emptyText="Firele de discuție apar pe măsură ce accepți cereri de coordonare."
+  />
+</ProfesorLayout>

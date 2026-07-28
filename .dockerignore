@@ -1,4 +1,9 @@
+node_modules
+dist
+.astro
 .git
 .github
-README.md
+.env
+.DS_Store
 *.md
+!README.md
