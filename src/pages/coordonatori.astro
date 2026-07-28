@@ -3,13 +3,13 @@ import StudentLayout from '../layouts/StudentLayout.astro'
 import { initials } from '../lib/auth'
 import { supervisors, publicTopics } from '../lib/repo'
 
-const [profesori, teme] = await Promise.all([supervisors(), publicTopics()])
+const [teachers, allTopics] = await Promise.all([supervisors(), publicTopics()])
 const u = Astro.locals.user
 
-const departamente = [...new Set(profesori.map((p) => p.department).filter(Boolean))] as string[]
+const departments = [...new Set(teachers.map((p) => p.department).filter(Boolean))] as string[]
 
-const topicsByTeacher = new Map<string, typeof teme>()
-for (const t of topics) {
+const topicsByTeacher = new Map<string, typeof allTopics>()
+for (const t of allTopics) {
   const lista = topicsByTeacher.get(t.teacher_id) ?? []
   lista.push(t)
   topicsByTeacher.set(t.teacher_id, lista)
@@ -46,7 +46,7 @@ for (const t of topics) {
           <label class="label" for="departament">Departament</label>
           <select class="select" id="departament">
             <option value="">Toate departamentele</option>
-            {departamente.map((d) => <option value={d}>{d}</option>)}
+            {departments.map((d) => <option value={d}>{d}</option>)}
           </select>
         </div>
         <div class="field" style="flex:1;min-width:150px">
@@ -66,15 +66,15 @@ for (const t of topics) {
 
     <ul class="lista-coord" id="lista">
       {
-        profesori.map((p) => {
+        teachers.map((p) => {
           const theirTopics = topicsByTeacher.get(p.id) ?? []
           return (
             <li
               class="coord"
               data-nume={p.name.toLowerCase()}
               data-departament={p.department ?? ''}
-              data-teme={temeleLui.map((t) => `${t.title} ${t.methods ?? ''}`).join(' ').toLowerCase()}
-              data-niveluri={[...new Set(temeleLui.map((t) => t.level))].join(' ')}
+              data-teme={theirTopics.map((t) => `${t.title} ${t.methods ?? ''}`).join(' ').toLowerCase()}
+              data-niveluri={[...new Set(theirTopics.map((t) => t.level))].join(' ')}
             >
               <div class="coord__cap">
                 <span class="coord__avatar" aria-hidden="true">{initials(p.name)}</span>
@@ -92,9 +92,9 @@ for (const t of topics) {
                 )}
               </div>
 
-              {temeleLui.length > 0 ? (
-                <ul class="topic_count">
-                  {temeleLui.map((t) => (
+              {theirTopics.length > 0 ? (
+                <ul class="teme">
+                  {theirTopics.map((t) => (
                     <li class="tema" data-level={t.level}>
                       <div class="row row--between" style="gap:var(--s-2);align-items:flex-start">
                         <h3 class="tema__titlu">{t.title}</h3>
@@ -115,7 +115,7 @@ for (const t of topics) {
                 </ul>
               ) : (
                 <p class="muted" style="font-size:var(--t-sm);padding:var(--s-3) 0">
-                  Nu a publicat topics pentru această sesiune. Poți propune o temă proprie în request.
+                  Nu a publicat teme pentru această sesiune. Poți propune o temă proprie în cerere.
                 </p>
               )}
             </li>

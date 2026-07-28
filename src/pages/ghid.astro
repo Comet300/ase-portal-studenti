@@ -159,7 +159,7 @@ const DOCS = [
         <h2 class="section-title">Documente</h2>
         <ul class="documente">
           {
-            DOCUMENTE.map((d) => (
+            DOCS.map((d) => (
               <li>
                 <a href={d.href} class="document" download={d.href.endsWith('.ics') ? '' : undefined}>
                   <span class="document__tip">{d.tip}</span>
