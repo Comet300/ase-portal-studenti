@@ -416,32 +416,40 @@ await q(
   [currentYear.id],
 )
 
-/* Dacă termenul a trecut peste tot, coada de triaj rămâne goală.
+/* Contul demonstrativ al cadrului didactic trebuie să aibă mereu ce tria.
  *
- * Se întâmplă exact o dată: la introducerea termenului de răspuns, cererile
- * vechi de o lună au primit un termen deja depășit și portalul le-a expirat
- * corect, la prima cerere HTTP. Readucem câteva în coadă, ca ecranul de triaj
- * să aibă ce arăta. Condiția interioară păstrează regula „o singură cerere
- * activă per student”.
+ * Cererile pe care le primise erau deja decise, iar termenul de răspuns —
+ * introdus ulterior — a expirat restul chiar înainte de prima privire. Ecranul
+ * de triaj, care este primul lucru pe care îl deschide cineva, rămânea gol.
+ * Readucem în coadă cereri decise ale acestui cadru didactic, dar numai pentru
+ * studenți care nu au altă cerere activă: regula „o singură cerere activă per
+ * student” este un index, nu o convenție.
  */
 await q(
   `UPDATE requests
-      SET status = 'pending', decided_at = NULL, rejection_reason = NULL,
+      SET status = 'pending', decided_at = NULL, rejection_reason = NULL, decision_note = NULL,
           submitted_at = now() - interval '2 days',
           expires_at = now() + interval '5 days'
     WHERE id IN (
-      SELECT r.id FROM requests r
-       WHERE r.academic_year_id = $1 AND r.status = 'expired'
+      SELECT r.id
+        FROM requests r
+        JOIN users t ON t.id = r.teacher_id
+       WHERE t.is_demo = true AND t.role = 'teacher'
+         AND r.academic_year_id = $1
+         AND r.status IN ('rejected', 'expired')
          AND NOT EXISTS (
            SELECT 1 FROM requests activa
             WHERE activa.student_id = r.student_id AND activa.status IN ('pending', 'approved')
          )
        ORDER BY r.submitted_at DESC
-       LIMIT 4
+       LIMIT 3
     )
-      AND NOT EXISTS (
-        SELECT 1 FROM requests p WHERE p.academic_year_id = $1 AND p.status = 'pending'
-      )`,
+      AND (
+        SELECT count(*) FROM requests p
+          JOIN users t2 ON t2.id = p.teacher_id
+         WHERE t2.is_demo = true AND t2.role = 'teacher'
+           AND p.status = 'pending' AND p.academic_year_id = $1
+      ) < 2`,
   [currentYear.id],
 )
 
