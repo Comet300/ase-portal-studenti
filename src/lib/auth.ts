@@ -104,13 +104,29 @@ export function findUserByEmail(email: string): Promise<User | null> {
   ])
 }
 
-/** Accounts offered on the sign-in page while demo mode is on. */
-export function demoAccounts(): Promise<User[]> {
+export interface DemoAccount extends User {
+  /** Whether this student already has an approved supervisor. */
+  has_supervisor: boolean
+}
+
+/**
+ * Accounts offered on the sign-in page while demo mode is on.
+ *
+ * Carries whether a student is already supervised, because two student accounts
+ * that look identical in a list are useless for testing: the whole point of the
+ * second one is that it has no coordinator yet.
+ */
+export function demoAccounts(): Promise<DemoAccount[]> {
   if (!DEMO_MODE) return Promise.resolve([])
-  return query<User>(
-    `SELECT ${USER_FIELDS} FROM users
-      WHERE is_demo = true
-      ORDER BY CASE role WHEN 'student' THEN 1 WHEN 'teacher' THEN 2 ELSE 3 END, name`,
+  return query<DemoAccount>(
+    `SELECT ${USER_FIELDS.split(',').map((c) => `u.${c.trim()}`).join(', ')},
+            EXISTS (
+              SELECT 1 FROM requests r
+               WHERE r.student_id = u.id AND r.status = 'approved'
+            ) AS has_supervisor
+       FROM users u
+      WHERE u.is_demo = true
+      ORDER BY CASE u.role WHEN 'student' THEN 1 WHEN 'teacher' THEN 2 ELSE 3 END, u.name`,
   )
 }
 

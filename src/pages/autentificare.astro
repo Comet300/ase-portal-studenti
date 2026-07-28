@@ -84,7 +84,11 @@ if (Astro.locals.user && !trimis) {
                       <span class="demo__avatar">{initials(c.name)}</span>
                       <span class="demo__meta">
                         <strong>{c.name}</strong>
-                        <small>{ROLE_LABELS[c.role]}</small>
+                        <small>
+                          {ROLE_LABELS[c.role]}
+                          {c.role === 'student' &&
+                            (c.has_supervisor ? ' · are coordonator' : ' · fără coordonator')}
+                        </small>
                       </span>
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
                         <path d="M5 12h14M13 6l6 6-6 6" />
