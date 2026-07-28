@@ -416,6 +416,35 @@ await q(
   [currentYear.id],
 )
 
+/* Dacă termenul a trecut peste tot, coada de triaj rămâne goală.
+ *
+ * Se întâmplă exact o dată: la introducerea termenului de răspuns, cererile
+ * vechi de o lună au primit un termen deja depășit și portalul le-a expirat
+ * corect, la prima cerere HTTP. Readucem câteva în coadă, ca ecranul de triaj
+ * să aibă ce arăta. Condiția interioară păstrează regula „o singură cerere
+ * activă per student”.
+ */
+await q(
+  `UPDATE requests
+      SET status = 'pending', decided_at = NULL, rejection_reason = NULL,
+          submitted_at = now() - interval '2 days',
+          expires_at = now() + interval '5 days'
+    WHERE id IN (
+      SELECT r.id FROM requests r
+       WHERE r.academic_year_id = $1 AND r.status = 'expired'
+         AND NOT EXISTS (
+           SELECT 1 FROM requests activa
+            WHERE activa.student_id = r.student_id AND activa.status IN ('pending', 'approved')
+         )
+       ORDER BY r.submitted_at DESC
+       LIMIT 4
+    )
+      AND NOT EXISTS (
+        SELECT 1 FROM requests p WHERE p.academic_year_id = $1 AND p.status = 'pending'
+      )`,
+  [currentYear.id],
+)
+
 // Cererile dinaintea acestui câmp nu au motivație; fără ea ecranul
 // coordonatorului arată o secțiune goală acolo unde ar trebui să fie argumentul.
 await q(
