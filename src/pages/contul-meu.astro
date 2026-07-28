@@ -1,0 +1,173 @@
+---
+import StudentLayout from '../layouts/StudentLayout.astro'
+import { ROLE_LABELS, initials } from '../lib/auth'
+import { formatDate, programLabel, studentRequests } from '../lib/repo'
+
+const u = Astro.locals.user!
+
+// A teacher landing here has a richer page of their own.
+if (u.role !== 'student') return Astro.redirect('/profesor/arhiva', 302)
+
+const requests = await studentRequests(u.id)
+const active = requests.find((r) => r.status === 'approved' || r.status === 'pending')
+---
+
+<StudentLayout title="Contul meu" active="cont">
+  <div class="container stack stack--loose">
+    <header class="stack stack--tight">
+      <h1 class="page-title">Contul meu</h1>
+      <p class="page-lede">Datele contului instituțional și sesiunea curentă.</p>
+    </header>
+
+    <section class="panel">
+      <div class="panel__body identity">
+        <span class="identity__avatar" aria-hidden="true">{initials(u.name)}</span>
+        <div class="stack stack--tight" style="gap:2px">
+          <strong class="identity__name">{u.name}</strong>
+          <span class="muted">{ROLE_LABELS[u.role]}</span>
+        </div>
+      </div>
+
+      <dl class="details">
+        <div>
+          <dt>Email instituțional</dt>
+          <dd>{u.email}</dd>
+        </div>
+        <div>
+          <dt>Număr matricol</dt>
+          <dd>{u.student_number ?? '—'}</dd>
+        </div>
+        <div>
+          <dt>Program</dt>
+          <dd>{programLabel(u.program)}</dd>
+        </div>
+        <div>
+          <dt>Specializare</dt>
+          <dd>{u.specialization ?? '—'}</dd>
+        </div>
+        <div>
+          <dt>An de studiu</dt>
+          <dd>{u.study_year ?? '—'}</dd>
+        </div>
+        <div>
+          <dt>Coordonator</dt>
+          <dd>{active ? active.teacher_name : 'Nealocat'}</dd>
+        </div>
+      </dl>
+
+      <p class="panel__footer hint">
+        Datele de identificare vin din evidența facultății și nu pot fi modificate din portal.
+        Pentru corecturi, contactează secretariatul.
+      </p>
+    </section>
+
+    <section class="panel">
+      <div class="panel__header">
+        <h2 class="section-title">Cererile mele</h2>
+        <a href="/cererile-mele" class="btn btn--ghost btn--sm">Vezi toate</a>
+      </div>
+      {
+        requests.length === 0 ? (
+          <div class="empty">
+            <p class="empty__title">Nicio cerere depusă</p>
+            <p class="empty__text">Alege un coordonator din catalog și depune prima cerere.</p>
+            <a href="/coordonatori" class="btn btn--primary btn--sm">Vezi coordonatorii</a>
+          </div>
+        ) : (
+          <ul class="requests">
+            {requests.map((r) => (
+              <li>
+                <span class="numeric muted">{r.number}</span>
+                <span class="requests__title">{r.title_ro}</span>
+                <span class="muted">{formatDate(r.submitted_at)}</span>
+              </li>
+            ))}
+          </ul>
+        )
+      }
+    </section>
+
+    <section class="panel">
+      <div class="panel__header">
+        <h2 class="section-title">Sesiune</h2>
+      </div>
+      <div class="panel__body row row--between row--wrap" style="gap:var(--s-4)">
+        <p class="muted" style="font-size:var(--t-sm);max-width:52ch">
+          Ieșirea din cont închide sesiunea pe acest dispozitiv. Poți reveni oricând cerând un
+          link nou de autentificare pe adresa instituțională.
+        </p>
+        <form method="POST" action="/api/deconectare">
+          <button class="btn btn--danger" type="submit">Ieși din cont</button>
+        </form>
+      </div>
+    </section>
+  </div>
+</StudentLayout>
+
+<style>
+  .identity {
+    display: flex;
+    align-items: center;
+    gap: var(--s-4);
+  }
+
+  .identity__avatar {
+    display: grid;
+    place-items: center;
+    width: 52px;
+    height: 52px;
+    border-radius: 50%;
+    background: var(--surface-sunken);
+    border: 1px solid var(--border-strong);
+    font-size: var(--t-md);
+    font-weight: 600;
+    color: var(--ink-soft);
+    flex: none;
+  }
+
+  .identity__name {
+    font-family: var(--serif);
+    font-size: var(--t-lg);
+  }
+
+  .details {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: var(--s-4);
+    margin: 0;
+    padding: 0 var(--s-5) var(--s-5);
+  }
+  .details dt {
+    font-size: var(--t-xs);
+    color: var(--ink-muted);
+  }
+  .details dd {
+    margin: 0;
+    font-size: var(--t-sm);
+    font-weight: 500;
+  }
+
+  .requests {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+  .requests li {
+    display: flex;
+    align-items: baseline;
+    gap: var(--s-3);
+    padding: var(--s-3) var(--s-5);
+    border-bottom: 1px solid var(--border);
+    font-size: var(--t-sm);
+  }
+  .requests li:last-child {
+    border-bottom: 0;
+  }
+  .requests__title {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+</style>

@@ -45,10 +45,10 @@ export function escapeHtml(s: string): string {
     .replace(/"/g, '&quot;')
 }
 
-export async function sendEmail(mail: MailMessage): Promise<{ ok: boolean; id?: string; eroare?: string }> {
+export async function sendEmail(mail: MailMessage): Promise<{ ok: boolean; id?: string; error?: string }> {
   if (!resend) {
     console.warn(`[mail] RESEND_API_KEY lipsește — mail nelivrat: "${mail.subject}" → ${mail.to}`)
-    return { ok: false, eroare: 'RESEND_API_KEY lipsește' }
+    return { ok: false, error: 'RESEND_API_KEY lipsește' }
   }
 
   const recipient = REDIRECT || mail.to
@@ -70,7 +70,7 @@ export async function sendEmail(mail: MailMessage): Promise<{ ok: boolean; id?: 
 
     if (error) {
       console.error('[mail] eroare Resend', error)
-      return { ok: false, eroare: error.message }
+      return { ok: false, error: error.message }
     }
 
     // Logged so delivery is provable from the container logs: without an id
@@ -79,7 +79,7 @@ export async function sendEmail(mail: MailMessage): Promise<{ ok: boolean; id?: 
     return { ok: true, id: data?.id }
   } catch (err) {
     console.error('[mail] excepție la trimitere', err)
-    return { ok: false, eroare: String(err) }
+    return { ok: false, error: String(err) }
   }
 }
 
@@ -104,7 +104,7 @@ export function template(title: string, body: string, action?: { text: string; u
       : ''
   }
   <p style="margin-top:32px;padding-top:16px;border-top:1px solid #e9ecef;font-size:12px;color:#5b6169">
-    MailMessage automat — Sesiunea de Finalizare a Studiilor 2026.
+    Mesaj automat — Sesiunea de Finalizare a Studiilor 2026.
   </p>
 </div>`
 }
