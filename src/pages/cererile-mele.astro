@@ -1,6 +1,9 @@
 ---
+import Avatar from '../components/Avatar.astro'
 import StudentLayout from '../layouts/StudentLayout.astro'
+import { INVITATION_WINDOW_DAYS, studentInvitations } from '../lib/lifecycle'
 import {
+  MILESTONE_LABELS,
   STATUS_CLASS,
   STATUS_LABELS,
   studentRequests,
@@ -9,6 +12,7 @@ import {
   studentMilestones,
   publicTopics,
 } from '../lib/repo'
+import { LEVEL_LABELS, groupLabel, languageLabel } from '../lib/years'
 
 const u = Astro.locals.user!
 
@@ -16,22 +20,38 @@ const u = Astro.locals.user!
 // îl trimitem în zona lui în loc să-i arătăm un ecran gol fără sens.
 if (u.role !== 'student') return Astro.redirect('/profesor', 302)
 
-const [requests, milestones, teachers, topics] = await Promise.all([
+const [requests, milestones, teachers, topics, invitations] = await Promise.all([
   studentRequests(u.id),
   studentMilestones(u.id),
   supervisors(),
   publicTopics(),
+  studentInvitations(u.id),
 ])
 
 const preselectedTeacher = Astro.url.searchParams.get('coordonator') ?? ''
+const preselectedTopic = Astro.url.searchParams.get('tema') ?? ''
 const hasActiveRequest = requests.some((c) => c.status === 'pending' || c.status === 'approved')
 const approvedRequest = requests.find((c) => c.status === 'approved')
 
-const MILESTONE_STATES: Record<string, string> = {
-  planned: 'Planificat',
-  in_progress: 'În lucru',
-  done: 'Finalizat',
-}
+const pendingInvitations = invitations.filter((i) => i.status === 'pending')
+
+/**
+ * An accepted invitation the student has not yet turned into a request.
+ *
+ * This is what makes the form below an approval rather than a submission: the
+ * coordinator already said yes, so the request is created approved. Carried in
+ * the URL after accepting, and re-validated server-side when the form posts.
+ */
+const acceptedInvitationId = Astro.url.searchParams.get('invitatie') ?? ''
+const acceptedInvitation = acceptedInvitationId
+  ? invitations.find((i) => i.id === acceptedInvitationId && i.status === 'accepted')
+  : invitations.find((i) => i.status === 'accepted' && !hasActiveRequest)
+
+const openWith = acceptedInvitation
+  ? { teacher: acceptedInvitation.teacher_id, topic: acceptedInvitation.topic_id ?? '' }
+  : { teacher: preselectedTeacher, topic: preselectedTopic }
+
+const shouldOpenForm = Boolean(openWith.teacher) && !hasActiveRequest
 ---
 
 <StudentLayout title="Cererile mele" active="cereri">
@@ -51,6 +71,67 @@ const MILESTONE_STATES: Record<string, string> = {
         )
       }
     </header>
+
+    {/* ---------------------------------------------------- propuneri primite */}
+    {
+      pendingInvitations.map((i) => (
+        <section class="propunere">
+          <div class="propunere__cap">
+            <Avatar name={i.teacher_name} size="md" href={`/profil/${i.teacher_id}`} />
+            <div class="stack stack--tight" style="gap:2px">
+              <strong class="propunere__titlu">
+                {i.teacher_name} îți propune să îți coordoneze lucrarea
+              </strong>
+              <span class="muted" style="font-size:var(--t-xs)">
+                Propunere primită {formatDate(i.created_at)} · expiră {formatDate(i.expires_at)}
+              </span>
+            </div>
+          </div>
+
+          {i.topic_title && (
+            <p class="propunere__tema">
+              <span class="muted">Temă propusă:</span> <strong>{i.topic_title}</strong>
+            </p>
+          )}
+
+          <p class="propunere__mesaj">{i.message}</p>
+
+          <p class="hint">
+            Dacă accepți, completezi aceeași cerere ca oricare alta — titlul, obiectivele și
+            motivația rămân necesare — dar este aprobată direct, fără să mai aștepți o decizie.
+          </p>
+
+          <div class="row row--wrap" style="gap:var(--s-2)">
+            <form method="POST" action="/api/invitatii">
+              <input type="hidden" name="actiune" value="raspunde" />
+              <input type="hidden" name="invitatie_id" value={i.id} />
+              <input type="hidden" name="raspuns" value="accepted" />
+              <button class="btn btn--primary btn--sm" type="submit" disabled={hasActiveRequest}>
+                Acceptă propunerea
+              </button>
+            </form>
+            <button
+              class="btn btn--danger btn--sm"
+              type="button"
+              data-refuza={i.id}
+              data-nume={i.teacher_name}
+            >
+              Refuză
+            </button>
+            <a class="btn btn--ghost btn--sm" href={`/profil/${i.teacher_id}`}>
+              Vezi profilul coordonatorului
+            </a>
+          </div>
+
+          {hasActiveRequest && (
+            <p class="hint">
+              Ai deja o cerere activă. Retrage-o sau așteaptă decizia înainte de a accepta
+              propunerea.
+            </p>
+          )}
+        </section>
+      ))
+    }
 
     {
       requests.length === 0 ? (
@@ -81,21 +162,35 @@ const MILESTONE_STATES: Record<string, string> = {
                   <span class="numeric muted" style="font-size:var(--t-xs)">
                     {c.number} · depusă {formatDate(c.submitted_at)}
                   </span>
-                  <span class:list={['badge', STATUS_CLASS[c.status]]}>
-                    {STATUS_LABELS[c.status]}
-                  </span>
+                  <span class:list={['badge', STATUS_CLASS[c.status]]}>{STATUS_LABELS[c.status]}</span>
                 </div>
 
                 <h3 class="cerere__titlu">{c.title_ro}</h3>
                 {c.title_en && <p class="cerere__en">{c.title_en}</p>}
 
                 <p class="muted" style="font-size:var(--t-sm)">
-                  Coordonator: <strong>{c.teacher_name}</strong>
+                  Coordonator: <a href={`/profil/${c.teacher_id}`}>{c.teacher_name}</a>
                 </p>
 
-                {c.status === 'rejected' && c.rejection_reason && (
+                {c.status === 'pending' && c.expires_at && (
+                  <p class="hint">
+                    Coordonatorul are timp să răspundă până la {formatDate(c.expires_at)}. Dacă nu
+                    răspunde, cererea se respinge automat și poți depune alta.
+                  </p>
+                )}
+
+                {c.status === 'approved' && c.decision_note && (
+                  <div class="mesaj-decizie">
+                    <strong>Mesaj de la coordonator</strong>
+                    <p>{c.decision_note}</p>
+                  </div>
+                )}
+
+                {(c.status === 'rejected' || c.status === 'expired') && c.rejection_reason && (
                   <div class="motiv">
-                    <strong>Motivul respingerii</strong>
+                    <strong>
+                      {c.status === 'expired' ? 'De ce s-a închis cererea' : 'Motivul respingerii'}
+                    </strong>
                     <p>{c.rejection_reason}</p>
                     <a href="/coordonatori" class="btn btn--secondary btn--sm">Depune o cerere nouă</a>
                   </div>
@@ -103,7 +198,10 @@ const MILESTONE_STATES: Record<string, string> = {
 
                 {c.status === 'approved' && (
                   <div class="row row--wrap" style="gap:var(--s-2)">
-                    <a class="btn btn--secondary btn--sm" href="/mesaje">Scrie coordonatorului</a>
+                    <a class="btn btn--secondary btn--sm" href={`/documente/cerere/${c.id}`} target="_blank">
+                      Descarcă cererea semnabilă
+                    </a>
+                    <a class="btn btn--ghost btn--sm" href="/mesaje">Scrie coordonatorului</a>
                     <a class="btn btn--ghost btn--sm" href="/consultatii">Programează o consultație</a>
                   </div>
                 )}
@@ -140,7 +238,7 @@ const MILESTONE_STATES: Record<string, string> = {
                             : 'badge--ciorna',
                       ]}
                     >
-                      {MILESTONE_STATES[j.status]}
+                      {MILESTONE_LABELS[j.status]}
                     </span>
                   </div>
                   <span class="muted" style="font-size:var(--t-xs)">
@@ -156,26 +254,48 @@ const MILESTONE_STATES: Record<string, string> = {
     }
   </div>
 
-  <dialog id="dialog-cerere">
+  <dialog id="dialog-cerere" data-deschide-imediat={shouldOpenForm ? '' : undefined}>
     <form method="POST" action="/api/cereri/depune" class="formular" id="formular-cerere">
       <div class="formular__cap">
         <h2 class="section-title">Cerere de coordonare</h2>
         <button class="btn btn--ghost btn--sm" type="button" data-inchide aria-label="Închide">✕</button>
       </div>
 
+      {
+        acceptedInvitation && (
+          <p class="formular__nota">
+            Completezi cererea pe baza propunerii acceptate de la{' '}
+            <strong>{acceptedInvitation.teacher_name}</strong>. La depunere este aprobată automat.
+          </p>
+        )
+      }
+      <input type="hidden" name="invitatie_id" value={acceptedInvitation?.id ?? ''} />
+
       <div class="pas" data-pas="1">
         <div class="field">
           <label class="label" for="profesor_id">Coordonator științific</label>
-          <select class="select" id="profesor_id" name="profesor_id" required>
+          <select
+            class="select"
+            id="profesor_id"
+            name="profesor_id"
+            required
+            disabled={Boolean(acceptedInvitation)}
+          >
             <option value="">Alege un cadru didactic…</option>
             {
               teachers.map((p) => (
-                <option value={p.id} selected={p.id === preselectedTeacher}>
+                <option value={p.id} selected={p.id === openWith.teacher} disabled={p.is_full}>
                   {p.name}
+                  {p.is_full ? ' — fără locuri disponibile' : ''}
                 </option>
               ))
             }
           </select>
+          {
+            acceptedInvitation && (
+              <input type="hidden" name="profesor_id" value={acceptedInvitation.teacher_id} />
+            )
+          }
         </div>
 
         <div class="field">
@@ -184,8 +304,14 @@ const MILESTONE_STATES: Record<string, string> = {
             <option value="">Propun o temă proprie</option>
             {
               topics.map((t) => (
-                <option value={t.id} data-profesor={t.teacher_id} data-title={t.title}>
-                  {t.title}
+                <option
+                  value={t.id}
+                  data-profesor={t.teacher_id}
+                  data-title={t.title}
+                  selected={t.id === openWith.topic}
+                >
+                  {t.title} — {LEVEL_LABELS[t.level]}
+                  {t.language !== 'ro' ? ` · ${languageLabel(t.language)}` : ''}
                 </option>
               ))
             }
@@ -219,8 +345,26 @@ const MILESTONE_STATES: Record<string, string> = {
             required
             minlength="40"
             placeholder="Descrie direcția generală a cercetării, problema abordată și minimum 3 obiective urmărite…"
-          ></textarea>
-          <span class="hint"><span id="contor">0</span> caractere · minimum 40</span>
+          />
+          <span class="hint"><span id="contor-scop">0</span> caractere · minimum 40</span>
+        </div>
+
+        {/* Obiectivele descriu lucrarea; motivația descrie alegerea. Coordonatorul
+            decide pe amândouă, iar a doua e cea care lipsea. */}
+        <div class="field">
+          <label class="label" for="motivatie">De ce ai ales această temă</label>
+          <textarea
+            class="textarea"
+            id="motivatie"
+            name="motivatie"
+            required
+            minlength="40"
+            placeholder="Ce te leagă de subiect: un curs, un stagiu, acces la date, planuri pentru master…"
+          />
+          <span class="hint">
+            <span id="contor-motivatie">0</span> caractere · minimum 40. Ajunge la coordonator
+            odată cu cererea și rămâne în documentul tipărit.
+          </span>
         </div>
 
         <div class="row" style="justify-content:flex-end;gap:var(--s-2)">
@@ -237,19 +381,58 @@ const MILESTONE_STATES: Record<string, string> = {
 
         <dl class="previzualizare">
           <dt>Student</dt>
-          <dd>{u.name} · {u.student_number} · {u.program === 'master' ? 'Master' : 'Licență'}</dd>
+          <dd>{u.name} · {u.student_number} · {groupLabel(u)}</dd>
           <dt>Coordonator</dt>
           <dd id="pv-profesor">—</dd>
           <dt>Titlul lucrării</dt>
           <dd id="pv-title">—</dd>
           <dt>Scop și obiective</dt>
           <dd id="pv-scop">—</dd>
+          <dt>Motivația alegerii</dt>
+          <dd id="pv-motivatie">—</dd>
         </dl>
 
         <div class="row" style="justify-content:flex-end;gap:var(--s-2)">
           <button class="btn btn--secondary" type="button" id="inapoi-pas-1">Înapoi</button>
-          <button class="btn btn--primary" type="submit">Depune cererea</button>
+          <button class="btn btn--primary" type="submit">
+            {acceptedInvitation ? 'Depune și confirmă coordonarea' : 'Depune cererea'}
+          </button>
         </div>
+      </div>
+    </form>
+  </dialog>
+
+  {/* Refuzul cere un motiv: coordonatorul a scris o propunere personală și merită
+      să știe de ce nu s-a potrivit. */}
+  <dialog id="dialog-refuz">
+    <form method="POST" action="/api/invitatii" class="formular">
+      <div class="formular__cap">
+        <h2 class="section-title">Refuză propunerea</h2>
+        <button class="btn btn--ghost btn--sm" type="button" data-inchide-refuz aria-label="Închide">✕</button>
+      </div>
+      <input type="hidden" name="actiune" value="raspunde" />
+      <input type="hidden" name="raspuns" value="declined" />
+      <input type="hidden" name="invitatie_id" id="refuz-id" />
+
+      <p class="muted" style="font-size:var(--t-sm)">
+        Motivul ajunge la <strong id="refuz-nume">coordonator</strong> prin email și în conversație.
+      </p>
+
+      <div class="field">
+        <label class="label" for="motiv-refuz">Motivul refuzului</label>
+        <textarea
+          class="textarea"
+          id="motiv-refuz"
+          name="motiv"
+          required
+          minlength="10"
+          placeholder="Ex: Mulțumesc pentru propunere, dar am depus deja o cerere pe o temă de marketing digital."
+        />
+      </div>
+
+      <div class="row" style="justify-content:flex-end;gap:var(--s-2)">
+        <button class="btn btn--secondary" type="button" data-inchide-refuz>Renunță</button>
+        <button class="btn btn--primary" type="submit">Trimite refuzul</button>
       </div>
     </form>
   </dialog>
@@ -262,10 +445,9 @@ const MILESTONE_STATES: Record<string, string> = {
   const openDialog = () => dialog?.showModal()
   document.getElementById('deschide-cerere')?.addEventListener('click', openDialog)
   document.getElementById('deschide-cerere-gol')?.addEventListener('click', openDialog)
-  dialog?.querySelectorAll('[data-inchide]').forEach((b) => b.addEventListener('click', () => dialog.close()))
-
-  // Dacă s-a venit din catalog cu un coordonator ales, formularul se deschide direct.
-  if (new URLSearchParams(location.search).get('coordonator')) openDialog()
+  dialog
+    ?.querySelectorAll('[data-inchide]')
+    .forEach((b) => b.addEventListener('click', () => dialog.close()))
 
   const step1 = dialog?.querySelector<HTMLElement>('[data-pas="1"]')
   const step2 = dialog?.querySelector<HTMLElement>('[data-pas="2"]')
@@ -273,19 +455,24 @@ const MILESTONE_STATES: Record<string, string> = {
   const topicSelect = document.getElementById('tema_id') as HTMLSelectElement
   const title = document.getElementById('titlu_ro') as HTMLInputElement
   const objectivesField = document.getElementById('scop_obiective') as HTMLTextAreaElement
-  const counter = document.getElementById('contor')
+  const motivationField = document.getElementById('motivatie') as HTMLTextAreaElement
 
-  objectivesField?.addEventListener('input', () => {
-    if (counter) counter.textContent = String(objectivesField.value.length)
-  })
+  const count = (field: HTMLTextAreaElement | null, id: string) => {
+    const el = document.getElementById(id)
+    field?.addEventListener('input', () => {
+      if (el) el.textContent = String(field.value.length)
+    })
+  }
+  count(objectivesField, 'contor-scop')
+  count(motivationField, 'contor-motivatie')
 
   // Temele se restrâng la coordonatorul ales, ca să nu se poată cere o temă
   // care aparține altcuiva.
   function syncTopics() {
-    const options = [...topicSelect.options]
-    for (const o of options) {
+    const chosen = teacherSelect?.value
+    for (const o of [...topicSelect.options]) {
       if (!o.value) continue
-      o.hidden = Boolean(teacherSelect.value) && o.dataset.profesor !== teacherSelect.value
+      o.hidden = Boolean(chosen) && o.dataset.profesor !== chosen
     }
     if (topicSelect.selectedOptions[0]?.hidden) topicSelect.value = ''
   }
@@ -293,14 +480,27 @@ const MILESTONE_STATES: Record<string, string> = {
   teacherSelect?.addEventListener('change', syncTopics)
   syncTopics()
 
-  topicSelect?.addEventListener('change', () => {
+  const fillTitleFromTopic = () => {
     const t = topicSelect.selectedOptions[0]?.dataset.title
     if (t && !title.value) title.value = t
-  })
+  }
+  topicSelect?.addEventListener('change', fillTitleFromTopic)
+
+  // Venind din catalog cu un coordonator (și poate o temă) deja aleși,
+  // formularul se deschide direct și cu titlul completat.
+  if (dialog?.hasAttribute('data-deschide-imediat')) {
+    fillTitleFromTopic()
+    openDialog()
+  }
 
   document.getElementById('spre-pas-2')?.addEventListener('click', () => {
     // Validarea nativă rulează înainte de previzualizare.
-    if (!teacherSelect.value || !title.value || objectivesField.value.length < 40) {
+    if (
+      !title.value ||
+      objectivesField.value.length < 40 ||
+      motivationField.value.length < 40 ||
+      (!teacherSelect.disabled && !teacherSelect.value)
+    ) {
       form?.reportValidity()
       return
     }
@@ -308,9 +508,10 @@ const MILESTONE_STATES: Record<string, string> = {
       const el = document.getElementById(id)
       if (el) el.textContent = val
     }
-    set('pv-profesor', teacherSelect.selectedOptions[0]?.textContent ?? '—')
+    set('pv-profesor', teacherSelect.selectedOptions[0]?.textContent?.trim() ?? '—')
     set('pv-title', title.value)
     set('pv-scop', objectivesField.value)
+    set('pv-motivatie', motivationField.value)
     if (step1) step1.hidden = true
     if (step2) step2.hidden = false
   })
@@ -319,9 +520,63 @@ const MILESTONE_STATES: Record<string, string> = {
     if (step1) step1.hidden = false
     if (step2) step2.hidden = true
   })
+
+  /* --- refuzul unei propuneri ------------------------------------------- */
+
+  const refuz = document.getElementById('dialog-refuz') as HTMLDialogElement | null
+  document.querySelectorAll<HTMLButtonElement>('[data-refuza]').forEach((b) => {
+    b.addEventListener('click', () => {
+      const camp = document.getElementById('refuz-id') as HTMLInputElement | null
+      const nume = document.getElementById('refuz-nume')
+      if (camp) camp.value = b.dataset.refuza ?? ''
+      if (nume) nume.textContent = b.dataset.nume ?? 'coordonator'
+      refuz?.showModal()
+    })
+  })
+  refuz
+    ?.querySelectorAll('[data-inchide-refuz]')
+    .forEach((b) => b.addEventListener('click', () => refuz.close()))
 </script>
 
 <style>
+  /* Propunerea nu este o notificare: e o decizie care așteaptă studentul, așa că
+     stă deasupra listei și poartă sigiliul roșu. */
+  .propunere {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-3);
+    padding: var(--s-5);
+    background: var(--surface);
+    border: 1px solid var(--red);
+    border-left-width: 3px;
+    border-radius: var(--r-lg);
+  }
+
+  .propunere__cap {
+    display: flex;
+    align-items: center;
+    gap: var(--s-3);
+  }
+
+  .propunere__titlu {
+    font-family: var(--serif);
+    font-size: var(--t-md);
+  }
+
+  .propunere__tema {
+    font-size: var(--t-sm);
+  }
+
+  .propunere__mesaj {
+    padding: var(--s-4);
+    background: var(--surface-sunken);
+    border-radius: var(--r-md);
+    font-size: var(--t-sm);
+    white-space: pre-wrap;
+    text-wrap: pretty;
+    max-width: 76ch;
+  }
+
   .cereri {
     list-style: none;
     margin: 0;
@@ -365,6 +620,26 @@ const MILESTONE_STATES: Record<string, string> = {
   }
   .motiv strong {
     color: var(--danger);
+  }
+
+  .mesaj-decizie {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-1);
+    padding: var(--s-4);
+    background: var(--surface-sunken);
+    border-left: 2px solid var(--ok);
+    border-radius: 0 var(--r-md) var(--r-md) 0;
+    font-size: var(--t-sm);
+    max-width: 76ch;
+  }
+  .mesaj-decizie strong {
+    font-size: var(--t-xs);
+    color: var(--ink-muted);
+  }
+  .mesaj-decizie p {
+    white-space: pre-wrap;
+    text-wrap: pretty;
   }
 
   .cronologie {
@@ -442,6 +717,15 @@ const MILESTONE_STATES: Record<string, string> = {
     align-items: center;
     justify-content: space-between;
     gap: var(--s-3);
+    margin-bottom: var(--s-4);
+  }
+
+  .formular__nota {
+    padding: var(--s-3) var(--s-4);
+    background: var(--red-tint);
+    color: var(--red);
+    border-radius: var(--r-md);
+    font-size: var(--t-sm);
     margin-bottom: var(--s-4);
   }
 

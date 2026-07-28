@@ -1,0 +1,354 @@
+---
+import ProfesorLayout from '../../layouts/ProfesorLayout.astro'
+import { query } from '../../lib/db'
+import { formatDate } from '../../lib/repo'
+import { LANGUAGE_LABELS, LEVEL_LABELS, allYears, programmes } from '../../lib/years'
+
+/**
+ * The academic year, and the catalogue of programmes inside it.
+ *
+ * This is the department's setup screen, opened once a year and then left alone.
+ * Everything on it is deliberately explicit — which year is running, what
+ * carries over into the next one, which programmes exist — because the cost of
+ * getting it wrong is a session that students cannot start.
+ */
+
+const years = await allYears()
+const current = years.find((y) => y.is_current)
+const programList = current ? await programmes(current.id) : []
+
+const archiveCounts = await query<{ academic_year_id: string; imported: number; native: number }>(
+  `SELECT y.id AS academic_year_id,
+          (SELECT count(*)::int FROM archive_entries a WHERE a.academic_year_id = y.id) AS imported,
+          (SELECT count(*)::int FROM requests r
+            WHERE r.academic_year_id = y.id AND r.status = 'approved') AS native
+     FROM academic_years y`,
+)
+const countFor = (id: string) => archiveCounts.find((c) => c.academic_year_id === id)
+
+// Suggested next year, so the form opens already filled in with the obvious answer.
+const nextStart = current ? new Date(current.ends_on).getFullYear() : new Date().getFullYear()
+const suggested = {
+  label: `${nextStart}–${nextStart + 1}`,
+  startsOn: `${nextStart}-10-01`,
+  endsOn: `${nextStart + 1}-09-30`,
+}
+
+const byLevel = {
+  bachelor: programList.filter((p) => p.level === 'bachelor'),
+  master: programList.filter((p) => p.level === 'master'),
+}
+---
+
+<ProfesorLayout
+  title="An universitar"
+  lede="Anul în curs, programele de studiu și importul datelor istorice."
+  active="an"
+>
+  <div class="stack stack--loose">
+    <section class="panel">
+      <div class="panel__header">
+        <h2 class="section-title">Anii universitari</h2>
+        <span class="muted" style="font-size:var(--t-sm)">{years.length} înregistrați</span>
+      </div>
+
+      <div class="table-wrap">
+        <table class="table">
+          <thead>
+            <tr>
+              <th>An</th>
+              <th>Interval</th>
+              <th>Coordonări în portal</th>
+              <th>Înregistrări importate</th>
+              <th>Stare</th>
+            </tr>
+          </thead>
+          <tbody>
+            {
+              years.map((y) => (
+                <tr>
+                  <td><strong>{y.label}</strong></td>
+                  <td class="muted">
+                    {formatDate(y.starts_on)} – {formatDate(y.ends_on)}
+                  </td>
+                  <td class="numeric">{countFor(y.id)?.native ?? 0}</td>
+                  <td class="numeric">{countFor(y.id)?.imported ?? 0}</td>
+                  <td>
+                    {y.is_current ? (
+                      <span class="badge badge--aprobata">În curs</span>
+                    ) : (
+                      <span class="muted">Încheiat</span>
+                    )}
+                  </td>
+                </tr>
+              ))
+            }
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel__header">
+        <h2 class="section-title">Deschide un an nou</h2>
+      </div>
+
+      <form method="POST" action="/api/an-universitar" class="panel__body stack">
+        <input type="hidden" name="actiune" value="deschide_an" />
+
+        <p class="hint">
+          Anul în curs, <strong>{current?.label}</strong>, trece în arhivă cu tot ce conține: cereri,
+          coordonări, consultații. Nu se șterge nimic. Anul nou pornește cu un calendar gol și un
+          catalog de teme gol, dacă nu alegi altfel mai jos.
+        </p>
+
+        <div class="row row--wrap" style="gap:var(--s-3)">
+          <div class="field" style="flex:1;min-width:160px">
+            <label class="label" for="eticheta">Denumire</label>
+            <input class="input" id="eticheta" name="eticheta" value={suggested.label} required />
+          </div>
+          <div class="field" style="flex:1;min-width:170px">
+            <label class="label" for="inceput">Începe</label>
+            <input class="input" id="inceput" name="inceput" type="date" value={suggested.startsOn} required />
+          </div>
+          <div class="field" style="flex:1;min-width:170px">
+            <label class="label" for="sfarsit">Se încheie</label>
+            <input class="input" id="sfarsit" name="sfarsit" type="date" value={suggested.endsOn} required />
+          </div>
+        </div>
+
+        <fieldset class="preia">
+          <legend class="label">Ce se preia din anul curent</legend>
+          <label class="check">
+            <input type="checkbox" name="preia_programe" value="da" checked />
+            <span>
+              Programele de studiu
+              <small>Aceleași specializări, limbi și durate. Aproape întotdeauna corect.</small>
+            </span>
+          </label>
+          <label class="check">
+            <input type="checkbox" name="preia_etape" value="da" />
+            <span>
+              Etapele calendarului
+              <small>Titlurile și ordinea, fără date — le stabilești în „Calendarul sesiunii”.</small>
+            </span>
+          </label>
+          <label class="check">
+            <input type="checkbox" name="preia_teme" value="da" />
+            <span>
+              Temele active propuse
+              <small>
+                Rar util: o temă propusă pentru promoția trecută nu este automat pe listă din nou.
+              </small>
+            </span>
+          </label>
+        </fieldset>
+
+        <div class="row" style="justify-content:flex-end">
+          <button class="btn btn--primary" type="submit">Deschide anul universitar</button>
+        </div>
+      </form>
+    </section>
+
+    <section class="panel">
+      <div class="panel__header">
+        <h2 class="section-title">Programe de studiu</h2>
+        <span class="muted" style="font-size:var(--t-sm)">{current?.label}</span>
+      </div>
+
+      {
+        programList.length === 0 ? (
+          <div class="empty">
+            <p class="empty__title">Niciun program definit</p>
+            <p class="empty__text">
+              Programele sunt gruparea după care se filtrează studenții, temele și rapoartele.
+              Adaugă primul mai jos.
+            </p>
+          </div>
+        ) : (
+          <div class="programe">
+            {(['bachelor', 'master'] as const).map((level) =>
+              byLevel[level].length > 0 ? (
+                <div class="programe__grup">
+                  <h3 class="programe__titlu">{LEVEL_LABELS[level]}</h3>
+                  <ul>
+                    {byLevel[level].map((p) => (
+                      <li class:list={['program', { 'is-inactiv': !p.is_active }]}>
+                        <div class="stack stack--tight" style="gap:0">
+                          <strong>{p.name}</strong>
+                          <span class="muted" style="font-size:var(--t-xs)">
+                            {LANGUAGE_LABELS[p.language]} · {p.duration_years} ani ·{' '}
+                            {p.students} {p.students === 1 ? 'student' : 'studenți'}
+                          </span>
+                        </div>
+                        <form method="POST" action="/api/an-universitar">
+                          <input type="hidden" name="actiune" value="comuta_program" />
+                          <input type="hidden" name="program_id" value={p.id} />
+                          <button class="btn btn--ghost btn--sm" type="submit">
+                            {p.is_active ? 'Dezactivează' : 'Reactivează'}
+                          </button>
+                        </form>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null,
+            )}
+          </div>
+        )
+      }
+
+      <div class="panel__footer">
+        <form method="POST" action="/api/an-universitar" class="row row--wrap" style="gap:var(--s-3);align-items:flex-end">
+          <input type="hidden" name="actiune" value="adauga_program" />
+          <div class="field" style="flex:2;min-width:220px">
+            <label class="label" for="denumire">Program nou</label>
+            <input class="input" id="denumire" name="denumire" required placeholder="Ex: Marketing digital" />
+          </div>
+          <div class="field" style="min-width:140px">
+            <label class="label" for="nivel">Nivel</label>
+            <select class="select" id="nivel" name="nivel">
+              <option value="bachelor">Licență</option>
+              <option value="master">Master</option>
+            </select>
+          </div>
+          <div class="field" style="min-width:150px">
+            <label class="label" for="limba">Limba de studiu</label>
+            <select class="select" id="limba" name="limba">
+              {Object.entries(LANGUAGE_LABELS).map(([cod, text]) => <option value={cod}>{text}</option>)}
+            </select>
+          </div>
+          <div class="field" style="min-width:110px">
+            <label class="label" for="durata">Durata</label>
+            <input class="input" id="durata" name="durata" type="number" min="1" max="6" value="3" />
+          </div>
+          <button class="btn btn--primary" type="submit">Adaugă programul</button>
+        </form>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel__header">
+        <h2 class="section-title">Import de date istorice</h2>
+      </div>
+
+      <form method="POST" action="/api/an-universitar" class="panel__body stack">
+        <input type="hidden" name="actiune" value="importa" />
+
+        <p class="hint">
+          Sesiunile dinaintea portalului nu au cereri, dar au avut coordonări. Se lipesc aici din
+          fișierul de evidență și devin vizibile tuturor în arhiva publică, alături de coordonările
+          înregistrate în portal.
+        </p>
+
+        <div class="field" style="max-width:280px">
+          <label class="label" for="an_id">Anul universitar</label>
+          <select class="select" id="an_id" name="an_id" required>
+            {
+              years
+                .filter((y) => !y.is_current)
+                .map((y) => <option value={y.id}>{y.label}</option>)
+            }
+          </select>
+        </div>
+
+        <div class="field">
+          <label class="label" for="randuri">Rânduri</label>
+          <textarea
+            class="textarea"
+            id="randuri"
+            name="randuri"
+            rows="6"
+            required
+            spellcheck="false"
+            placeholder={`Nume student;Număr matricol;Program;Nivel;Limbă;Coordonator;Titlul lucrării;Data susținerii
+Ana Petre;MK-2021-0142;Marketing strategic;master;ro;Conf. univ. dr. Cristian Vasile;Strategii de preț în piața asigurărilor;2022-07-05`}
+          />
+          <span class="hint">
+            Un rând pe înregistrare, câmpuri separate prin <strong>;</strong> — punctul și virgula,
+            pentru că titlurile și numele conțin virgule. Doar primul, al șaselea și al șaptelea
+            câmp sunt obligatorii. Rândurile deja existente sunt ignorate, deci un import repetat
+            nu dublează nimic.
+          </span>
+        </div>
+
+        <div class="row" style="justify-content:flex-end">
+          <button class="btn btn--primary" type="submit">Importă</button>
+        </div>
+      </form>
+    </section>
+  </div>
+</ProfesorLayout>
+
+<style>
+  .preia {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-3);
+    border: 1px solid var(--border);
+    border-radius: var(--r-md);
+    padding: var(--s-4);
+  }
+  .preia legend {
+    padding-inline: var(--s-2);
+  }
+
+  .check {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--s-3);
+    cursor: pointer;
+  }
+  .check input {
+    margin-top: 3px;
+    flex: none;
+  }
+  .check span {
+    display: flex;
+    flex-direction: column;
+    font-size: var(--t-sm);
+  }
+  .check small {
+    font-size: var(--t-xs);
+    color: var(--ink-muted);
+  }
+
+  .programe {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: var(--s-5);
+    padding: var(--s-5);
+  }
+
+  .programe__titlu {
+    font-size: var(--t-xs);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--ink-muted);
+    margin-bottom: var(--s-2);
+  }
+
+  .programe ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  .program {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--s-3);
+    padding: var(--s-3) 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .program:last-child {
+    border-bottom: 0;
+  }
+  .program.is-inactiv {
+    opacity: 0.55;
+  }
+  .program strong {
+    font-size: var(--t-sm);
+  }
+</style>

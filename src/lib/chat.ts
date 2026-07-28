@@ -16,6 +16,7 @@ export interface Conversation {
   peer_id: string
   peer_name: string
   peer_detail: string | null
+  peer_avatar: string | null
   last_message: string | null
   unread: number
 }
@@ -44,6 +45,7 @@ export function myConversations(userId: string, asStudent: boolean) {
             peer.id   AS peer_id,
             peer.name AS peer_name,
             COALESCE(peer.academic_title, peer.student_number) AS peer_detail,
+            peer.avatar_path AS peer_avatar,
             (SELECT m.body FROM messages m WHERE m.conversation_id = c.id
               ORDER BY m.created_at DESC LIMIT 1) AS last_message,
             (SELECT count(*)::int FROM messages m
@@ -63,6 +65,7 @@ export function myConversation(userId: string, conversationId: string) {
             peer.id   AS peer_id,
             peer.name AS peer_name,
             COALESCE(peer.academic_title, peer.student_number) AS peer_detail,
+            peer.avatar_path AS peer_avatar,
             NULL::text AS last_message,
             0 AS unread
        FROM conversations c

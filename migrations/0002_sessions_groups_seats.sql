@@ -25,14 +25,16 @@ CREATE TABLE academic_years (
 CREATE UNIQUE INDEX idx_years_one_current ON academic_years ((is_current)) WHERE is_current;
 
 -- Everything already in the database belongs to the session that is running now.
+-- The academic year runs October to September, so anything before October still
+-- belongs to the year that started the previous autumn.
 INSERT INTO academic_years (label, starts_on, ends_on, is_current)
-VALUES (
-  (EXTRACT(YEAR FROM current_date - interval '6 months')::int)::text || '–' ||
-  (EXTRACT(YEAR FROM current_date + interval '6 months')::int)::text,
-  date_trunc('year', current_date - interval '6 months')::date,
-  (date_trunc('year', current_date + interval '6 months') + interval '1 year - 1 day')::date,
-  true
-);
+SELECT y::text || '–' || (y + 1)::text, make_date(y, 10, 1), make_date(y + 1, 9, 30), true
+  FROM (
+    SELECT CASE
+             WHEN EXTRACT(MONTH FROM current_date) >= 10 THEN EXTRACT(YEAR FROM current_date)::int
+             ELSE EXTRACT(YEAR FROM current_date)::int - 1
+           END AS y
+  ) t;
 
 -- --- study programmes (the grouping the director owns) -----------------------
 

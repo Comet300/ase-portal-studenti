@@ -160,19 +160,27 @@ export interface Seats {
   free: number
 }
 
-const SEAT_COLUMNS = `
+/**
+ * Seat counts for a coordinator, as SQL fragments.
+ *
+ * The year comes from the parameter rather than from the joined allocation row:
+ * a coordinator the head has not allocated seats to yet has no row at all, and
+ * reading the year off it would report zero students supervised rather than zero
+ * seats available — two very different facts.
+ */
+const seatColumns = (yearParam: number) => `
   COALESCE(a.bachelor_seats, 0) AS bachelor_seats,
   COALESCE(a.master_seats, 0)   AS master_seats,
   (SELECT count(*)::int FROM requests r JOIN users s2 ON s2.id = r.student_id
     WHERE r.teacher_id = t.id AND r.status = 'approved'
-      AND r.academic_year_id = a.academic_year_id AND s2.program = 'bachelor') AS bachelor_taken,
+      AND r.academic_year_id = ${thisYear(yearParam)} AND s2.program = 'bachelor') AS bachelor_taken,
   (SELECT count(*)::int FROM requests r JOIN users s2 ON s2.id = r.student_id
     WHERE r.teacher_id = t.id AND r.status = 'approved'
-      AND r.academic_year_id = a.academic_year_id AND s2.program = 'master')   AS master_taken`
+      AND r.academic_year_id = ${thisYear(yearParam)} AND s2.program = 'master')   AS master_taken`
 
 export async function teacherSeats(teacherId: string, yearId?: string): Promise<Seats> {
   const row = await queryOne<Omit<Seats, 'total_seats' | 'total_taken' | 'free'>>(
-    `SELECT ${SEAT_COLUMNS}
+    `SELECT ${seatColumns(2)}
        FROM users t
        LEFT JOIN seat_allocations a
          ON a.teacher_id = t.id AND a.academic_year_id = ${thisYear(2)}
@@ -385,11 +393,11 @@ export function supervisors(yearId?: string): Promise<Supervisor[]> {
             (SELECT count(*)::int FROM topics tp
               WHERE tp.teacher_id = t.id AND tp.is_active
                 AND tp.academic_year_id = a.academic_year_id) AS topic_count,
-            ${SEAT_COLUMNS},
+            ${seatColumns(1)},
             (COALESCE(a.bachelor_seats, 0) + COALESCE(a.master_seats, 0)) <= (
               SELECT count(*)::int FROM requests r
                WHERE r.teacher_id = t.id AND r.status = 'approved'
-                 AND r.academic_year_id = a.academic_year_id
+                 AND r.academic_year_id = ${thisYear(1)}
             ) AS is_full
        FROM users t
        LEFT JOIN seat_allocations a

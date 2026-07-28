@@ -1,0 +1,248 @@
+---
+import Avatar from '../../components/Avatar.astro'
+import ProfesorLayout from '../../layouts/ProfesorLayout.astro'
+import { studentDirectory } from '../../lib/repo'
+import { LANGUAGE_LABELS, LEVEL_LABELS, languageLabel, levelLabel } from '../../lib/years'
+
+/**
+ * The whole cohort, split the way the faculty thinks about it.
+ *
+ * A coordinator's own list answers "how are my students doing". This one answers
+ * "who is out there" — which is the question behind choosing whom to invite, and
+ * behind noticing that the entire English-language group is still unassigned two
+ * weeks before the deadline.
+ *
+ * Grouping is server-side and the filters are links, so a particular slice of the
+ * cohort is a URL somebody can send to a colleague.
+ */
+
+const nivel = Astro.url.searchParams.get('nivel') ?? ''
+const limba = Astro.url.searchParams.get('limba') ?? ''
+const stare = Astro.url.searchParams.get('stare') ?? ''
+const cauta = (Astro.url.searchParams.get('q') ?? '').trim().toLowerCase()
+
+const all = await studentDirectory()
+
+const filtered = all.filter((s) => {
+  if (nivel && s.program !== nivel) return false
+  if (limba && s.study_language !== limba) return false
+  if (stare === 'coordonat' && s.request_status !== 'approved') return false
+  if (stare === 'asteptare' && s.request_status !== 'pending') return false
+  if (stare === 'neinceput' && s.request_status) return false
+  if (cauta) {
+    const haystack = `${s.name} ${s.student_number ?? ''} ${s.specialization ?? ''} ${s.teacher_name ?? ''}`
+    if (!haystack.toLowerCase().includes(cauta)) return false
+  }
+  return true
+})
+
+/** Grupele: nivel · specializare · limbă — exact cheia după care se face orarul. */
+const groups = new Map<string, typeof filtered>()
+for (const s of filtered) {
+  const key = `${s.program ?? 'bachelor'}|${s.specialization ?? '—'}|${s.study_language}`
+  const list = groups.get(key) ?? []
+  list.push(s)
+  groups.set(key, list)
+}
+
+const grouped = [...groups.entries()]
+  .map(([key, students]) => {
+    const [level, specialization, language] = key.split('|')
+    return {
+      key,
+      level,
+      specialization,
+      language,
+      students,
+      coordonati: students.filter((s) => s.request_status === 'approved').length,
+    }
+  })
+  .sort(
+    (a, b) =>
+      a.level.localeCompare(b.level) ||
+      a.specialization.localeCompare(b.specialization) ||
+      a.language.localeCompare(b.language),
+  )
+
+const languages = [...new Set(all.map((s) => s.study_language))]
+
+const totals = {
+  toti: all.length,
+  coordonati: all.filter((s) => s.request_status === 'approved').length,
+  asteptare: all.filter((s) => s.request_status === 'pending').length,
+}
+const neinceput = totals.toti - totals.coordonati - totals.asteptare
+
+const STARI = [
+  { value: '', text: 'Toate stările' },
+  { value: 'coordonat', text: 'Cu coordonator' },
+  { value: 'asteptare', text: 'Cerere în așteptare' },
+  { value: 'neinceput', text: 'Fără cerere depusă' },
+]
+---
+
+<ProfesorLayout
+  title="Studenții facultății"
+  lede="Toți studenții din sesiune, grupați pe program, specializare și limbă de studiu."
+  active="facultate"
+>
+  <a slot="actiuni" class="btn btn--secondary btn--sm" href="/profesor/coordonari.csv">
+    Export coordonări
+  </a>
+
+  <div class="stack stack--loose">
+    <div class="grid-auto">
+      <div class="metric">
+        <span class="metric__value numeric">{totals.toti}</span>
+        <span class="metric__label">studenți în sesiune</span>
+      </div>
+      <div class="metric">
+        <span class="metric__value numeric">{totals.coordonati}</span>
+        <span class="metric__label">cu coordonator confirmat</span>
+      </div>
+      <div class="metric">
+        <span class="metric__value numeric">{totals.asteptare}</span>
+        <span class="metric__label">cu cerere în așteptare</span>
+      </div>
+      <div class:list={['metric', { 'metric--alert': neinceput > 0 }]}>
+        <span class="metric__value numeric">{neinceput}</span>
+        <span class="metric__label">fără cerere depusă</span>
+      </div>
+    </div>
+
+    <form method="GET" class="panel">
+      <div class="panel__body row row--wrap" style="gap:var(--s-3);align-items:flex-end">
+        <div class="field" style="flex:2;min-width:220px">
+          <label class="label" for="q">Caută</label>
+          <input class="input" id="q" name="q" type="search" value={cauta}
+            placeholder="Nume, număr matricol sau coordonator…" />
+        </div>
+        <div class="field" style="min-width:150px">
+          <label class="label" for="nivel">Nivel</label>
+          <select class="select" id="nivel" name="nivel">
+            <option value="">Licență și master</option>
+            {
+              Object.entries(LEVEL_LABELS).map(([v, t]) => (
+                <option value={v} selected={nivel === v}>{t}</option>
+              ))
+            }
+          </select>
+        </div>
+        <div class="field" style="min-width:150px">
+          <label class="label" for="limba">Limbă</label>
+          <select class="select" id="limba" name="limba">
+            <option value="">Toate limbile</option>
+            {
+              languages.map((l) => (
+                <option value={l} selected={limba === l}>{LANGUAGE_LABELS[l] ?? l}</option>
+              ))
+            }
+          </select>
+        </div>
+        <div class="field" style="min-width:190px">
+          <label class="label" for="stare">Stare</label>
+          <select class="select" id="stare" name="stare">
+            {STARI.map((s) => <option value={s.value} selected={stare === s.value}>{s.text}</option>)}
+          </select>
+        </div>
+        <button class="btn btn--secondary" type="submit">Filtrează</button>
+      </div>
+    </form>
+
+    {
+      grouped.length === 0 ? (
+        <section class="panel">
+          <div class="empty">
+            <p class="empty__title">Niciun student pentru filtrele alese</p>
+            <p class="empty__text">Schimbă nivelul, limba sau starea, ori golește căutarea.</p>
+          </div>
+        </section>
+      ) : (
+        grouped.map((g) => (
+          <section class="panel">
+            <div class="panel__header">
+              <h2 class="section-title">
+                {levelLabel(g.level)} · {g.specialization}
+                {g.language !== 'ro' ? ` · ${languageLabel(g.language).toLowerCase()}` : ''}
+              </h2>
+              <span class="muted" style="font-size:var(--t-sm)">
+                {g.coordonati} din {g.students.length} au coordonator
+              </span>
+            </div>
+
+            <div class="table-wrap">
+              <table class="table">
+                <thead>
+                  <tr>
+                    <th>Student</th>
+                    <th>Grupa</th>
+                    <th>An</th>
+                    <th>Coordonator</th>
+                    <th>Stare</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {g.students.map((s) => (
+                    <tr>
+                      <td>
+                        <div class="row" style="gap:var(--s-3)">
+                          <Avatar name={s.name} src={s.avatar_path} size="xs" href={`/profil/${s.id}`} />
+                          <div class="stack stack--tight" style="gap:0">
+                            <strong>{s.name}</strong>
+                            <span class="muted" style="font-size:var(--t-xs)">{s.student_number}</span>
+                          </div>
+                        </div>
+                      </td>
+                      <td class="muted numeric">{s.study_group ?? '—'}</td>
+                      <td class="muted numeric">{s.study_year ?? '—'}</td>
+                      <td>
+                        {s.teacher_name ? (
+                          <a href={`/profil/${s.teacher_id}`}>{s.teacher_name}</a>
+                        ) : (
+                          <span class="muted">—</span>
+                        )}
+                      </td>
+                      <td>
+                        {s.request_status === 'approved' ? (
+                          <span class="badge badge--aprobata">Coordonat</span>
+                        ) : s.request_status === 'pending' ? (
+                          <span class="badge badge--asteptare">Cerere depusă</span>
+                        ) : (
+                          <span class="badge badge--ciorna">Fără cerere</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        ))
+      )
+    }
+  </div>
+</ProfesorLayout>
+
+<style>
+  .metric {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-1);
+    padding: var(--s-4);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--r-lg);
+  }
+  .metric--alert {
+    border-color: var(--warn);
+  }
+  .metric__value {
+    font-size: var(--t-2xl);
+    font-weight: 600;
+    line-height: 1.15;
+  }
+  .metric__label {
+    font-size: var(--t-sm);
+    color: var(--ink-soft);
+  }
+</style>

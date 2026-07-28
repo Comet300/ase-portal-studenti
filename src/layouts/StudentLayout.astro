@@ -1,6 +1,6 @@
 ---
 import BaseLayout from './BaseLayout.astro'
-import { initials } from '../lib/auth'
+import Avatar from '../components/Avatar.astro'
 
 interface Props {
   title: string
@@ -11,12 +11,20 @@ interface Props {
 const { title, description, active } = Astro.props
 const u = Astro.locals.user
 
+// Arhiva și coordonările sunt publice pentru oricine autentificat, dar nu au ce
+// căuta în bara unui vizitator care nici nu le poate deschide.
 const linkuri = [
   { href: '/', text: 'Acasă', cheie: 'acasa' },
   { href: '/coordonatori', text: 'Coordonatori', cheie: 'coordonatori' },
   { href: '/cererile-mele', text: 'Cererile Mele', cheie: 'cereri' },
   { href: '/mesaje', text: 'Mesaje', cheie: 'mesaje' },
   { href: '/consultatii', text: 'Consultații', cheie: 'consultatii' },
+  ...(u
+    ? [
+        { href: '/coordonari', text: 'Coordonări', cheie: 'coordonari' },
+        { href: '/arhiva', text: 'Arhivă', cheie: 'arhiva' },
+      ]
+    : []),
   { href: '/ghid', text: 'Ghid', cheie: 'ghid' },
 ]
 
@@ -55,9 +63,11 @@ const linkCont = { href: '/contul-meu', text: 'Contul meu', cheie: 'cont' }
                   Zona cadrelor didactice
                 </a>
               )}
-              <a href={u.role === 'student' ? '/contul-meu' : '/profesor/arhiva'} class="avatar" title={u.name}>
-                {initials(u.name)}
-              </a>
+              <Avatar
+                name={u.name}
+                src={u.avatar_path}
+                href={u.role === 'student' ? '/contul-meu' : '/profesor/arhiva'}
+              />
             </>
           ) : (
             <a href="/autentificare" class="btn btn--primary btn--sm">

@@ -1,34 +1,81 @@
 ---
+import Avatar from '../components/Avatar.astro'
 import StudentLayout from '../layouts/StudentLayout.astro'
-import { initials } from '../lib/auth'
-import { supervisors, publicTopics } from '../lib/repo'
+import { pairings, publicTopics, supervisors } from '../lib/repo'
+import { LANGUAGE_LABELS, LEVEL_LABELS, languageLabel } from '../lib/years'
 
-const [teachers, allTopics] = await Promise.all([supervisors(), publicTopics()])
+/**
+ * The catalogue, from both ends.
+ *
+ * A student who knows whom they want browses coordinators. A student who knows
+ * what they want to write about browses topics and finds the coordinator through
+ * one — the far more common case, and the one the previous version had no answer
+ * for. Same data, two entry points, one URL parameter apart.
+ *
+ * Coordinators who have filled their seats stay in the list. Hiding them would
+ * answer "why is my professor not here" with silence; showing them greyed, with
+ * the students they already supervise, answers it.
+ */
+
 const u = Astro.locals.user
+const view = Astro.url.searchParams.get('vedere') === 'teme' ? 'teme' : 'coordonatori'
+
+const [teachers, allTopics, allPairings] = await Promise.all([
+  supervisors(),
+  publicTopics(),
+  pairings(),
+])
 
 const departments = [...new Set(teachers.map((p) => p.department).filter(Boolean))] as string[]
 
 const topicsByTeacher = new Map<string, typeof allTopics>()
 for (const t of allTopics) {
-  const lista = topicsByTeacher.get(t.teacher_id) ?? []
-  lista.push(t)
-  topicsByTeacher.set(t.teacher_id, lista)
+  const list = topicsByTeacher.get(t.teacher_id) ?? []
+  list.push(t)
+  topicsByTeacher.set(t.teacher_id, list)
 }
+
+const studentsByTeacher = new Map<string, typeof allPairings>()
+for (const p of allPairings) {
+  const list = studentsByTeacher.get(p.teacher_id) ?? []
+  list.push(p)
+  studentsByTeacher.set(p.teacher_id, list)
+}
+
+// A student arrives already belonging to a group; the catalogue opens on their
+// own level and language instead of on everything.
+const isStudent = u?.role === 'student'
+const defaultLevel = isStudent ? (u?.program ?? '') : ''
+const defaultLanguage = isStudent ? (u?.study_language ?? '') : ''
+
+const languages = [...new Set(allTopics.map((t) => t.language))]
+const freeTeachers = teachers.filter((t) => !t.is_full).length
 ---
 
 <StudentLayout
   title="Coordonatori & Teme"
-  description="Catalogul cadrelor didactice și temele propuse pentru sesiunea 2026"
+  description="Catalogul cadrelor didactice și temele propuse pentru sesiunea în curs"
   active="coordonatori"
 >
   <div class="container stack stack--loose">
     <header class="stack stack--tight">
       <h1 class="page-title">Coordonatori & Teme</h1>
       <p class="page-lede">
-        Alege un cadru didactic și o direcție de cercetare, apoi depune cererea de coordonare.
-        Poți propune și o temă proprie.
+        Alege un cadru didactic și o direcție de cercetare, apoi depune cererea de coordonare. Poți
+        porni de la persoană sau de la temă — și poți propune o temă proprie.
       </p>
     </header>
+
+    <nav class="vederi" aria-label="Mod de răsfoire">
+      <a href="/coordonatori?vedere=coordonatori" class:list={['vedere', { 'is-activ': view === 'coordonatori' }]}>
+        După coordonator
+        <span class="vedere__contor numeric">{teachers.length}</span>
+      </a>
+      <a href="/coordonatori?vedere=teme" class:list={['vedere', { 'is-activ': view === 'teme' }]}>
+        După temă
+        <span class="vedere__contor numeric">{allTopics.length}</span>
+      </a>
+    </nav>
 
     <div class="filtre panel">
       <div class="panel__body row row--wrap" style="gap:var(--s-4)">
@@ -38,111 +85,262 @@ for (const t of allTopics) {
             class="input"
             id="cauta"
             type="search"
-            placeholder="Nume cadru didactic sau cuvânt din temă…"
+            placeholder={view === 'teme' ? 'Cuvânt din temă, metodă sau nume…' : 'Nume cadru didactic sau cuvânt din temă…'}
             autocomplete="off"
           />
         </div>
-        <div class="field" style="flex:1;min-width:180px">
-          <label class="label" for="departament">Departament</label>
-          <select class="select" id="departament">
-            <option value="">Toate departamentele</option>
-            {departments.map((d) => <option value={d}>{d}</option>)}
-          </select>
-        </div>
-        <div class="field" style="flex:1;min-width:150px">
+        <div class="field" style="flex:1;min-width:170px">
           <label class="label" for="nivel">Nivel</label>
           <select class="select" id="nivel">
             <option value="">Licență și master</option>
-            <option value="licenta">Licență</option>
-            <option value="master">Master</option>
+            {
+              Object.entries(LEVEL_LABELS).map(([v, t]) => (
+                <option value={v} selected={defaultLevel === v}>{t}</option>
+              ))
+            }
           </select>
         </div>
+        <div class="field" style="flex:1;min-width:170px">
+          <label class="label" for="limba">Limba lucrării</label>
+          <select class="select" id="limba">
+            <option value="">Toate limbile</option>
+            {
+              languages.map((l) => (
+                <option value={l} selected={defaultLanguage === l}>{LANGUAGE_LABELS[l] ?? l}</option>
+              ))
+            }
+          </select>
+        </div>
+        {
+          view === 'coordonatori' && (
+            <div class="field" style="flex:1;min-width:180px">
+              <label class="label" for="departament">Departament</label>
+              <select class="select" id="departament">
+                <option value="">Toate departamentele</option>
+                {departments.map((d) => <option value={d}>{d}</option>)}
+              </select>
+            </div>
+          )
+        }
+        <label class="doar-libere">
+          <input type="checkbox" id="doar-libere" />
+          <span>Doar cu locuri libere</span>
+        </label>
       </div>
     </div>
 
     <p class="muted" id="rezultat" style="font-size:var(--t-sm)" aria-live="polite">
-      {teachers.length} cadre didactice
+      {
+        view === 'teme'
+          ? `${allTopics.length} teme propuse`
+          : `${teachers.length} cadre didactice · ${freeTeachers} cu locuri libere`
+      }
     </p>
 
-    <ul class="lista-coord" id="lista">
-      {
-        teachers.map((p) => {
-          const theirTopics = topicsByTeacher.get(p.id) ?? []
-          return (
-            <li
-              class="coord"
-              data-nume={p.name.toLowerCase()}
-              data-departament={p.department ?? ''}
-              data-teme={theirTopics.map((t) => `${t.title} ${t.methods ?? ''}`).join(' ').toLowerCase()}
-              data-niveluri={[...new Set(theirTopics.map((t) => t.level))].join(' ')}
-            >
-              <div class="coord__cap">
-                <span class="coord__avatar" aria-hidden="true">{initials(p.name)}</span>
-                <div class="coord__ident">
-                  <h2 class="coord__nume">{p.name}</h2>
-                  <p class="muted" style="font-size:var(--t-xs)">
-                    {p.department}
-                    {p.office ? ` · ${p.office}` : ''}
-                  </p>
+    {/* ------------------------------------------------- după coordonator */}
+    {
+      view === 'coordonatori' && (
+        <ul class="lista-coord" id="lista">
+          {teachers.map((p) => {
+            const theirTopics = topicsByTeacher.get(p.id) ?? []
+            const theirStudents = studentsByTeacher.get(p.id) ?? []
+            const free = p.bachelor_seats + p.master_seats - (p.bachelor_taken + p.master_taken)
+            return (
+              <li
+                class:list={['coord', { 'is-plin': p.is_full }]}
+                data-nume={`${p.name} ${p.interests ?? ''}`.toLowerCase()}
+                data-departament={p.department ?? ''}
+                data-teme={theirTopics.map((t) => `${t.title} ${t.methods ?? ''}`).join(' ').toLowerCase()}
+                data-niveluri={[...new Set(theirTopics.map((t) => t.level))].join(' ')}
+                data-limbi={[...new Set(theirTopics.map((t) => t.language))].join(' ')}
+                data-liber={p.is_full ? 'nu' : 'da'}
+              >
+                <div class="coord__cap">
+                  <Avatar name={p.name} src={p.avatar_path} size="md" href={`/profil/${p.id}`} />
+                  <div class="coord__ident">
+                    <h2 class="coord__nume">
+                      <a href={`/profil/${p.id}`}>{p.name}</a>
+                    </h2>
+                    <p class="muted" style="font-size:var(--t-xs)">
+                      {p.department}
+                      {p.office ? ` · ${p.office}` : ''}
+                    </p>
+                  </div>
+
+                  {p.is_full ? (
+                    <span class="badge badge--respinsa">Fără locuri disponibile</span>
+                  ) : (
+                    <span class="badge badge--aprobata">
+                      {free} {free === 1 ? 'loc liber' : 'locuri libere'}
+                    </span>
+                  )}
+
+                  {u?.role === 'student' &&
+                    (p.is_full ? (
+                      <span class="btn btn--secondary btn--sm is-dezactivat" aria-disabled="true">
+                        Depune cerere
+                      </span>
+                    ) : (
+                      <a class="btn btn--primary btn--sm" href={`/cererile-mele?coordonator=${p.id}`}>
+                        Depune cerere
+                      </a>
+                    ))}
                 </div>
-                {u?.role === 'student' && (
-                  <a class="btn btn--primary btn--sm" href={`/cererile-mele?coordonator=${p.id}`}>
-                    Depune cerere
-                  </a>
+
+                {p.interests && <p class="coord__interese">{p.interests}</p>}
+
+                {theirTopics.length > 0 ? (
+                  <ul class="teme">
+                    {theirTopics.map((t) => (
+                      <li class="tema" data-level={t.level} data-limba={t.language}>
+                        <div class="row row--between" style="gap:var(--s-2);align-items:flex-start">
+                          <h3 class="tema__titlu">{t.title}</h3>
+                          <span class="badge badge--info">
+                            {LEVEL_LABELS[t.level]}
+                            {t.language !== 'ro' ? ` · ${languageLabel(t.language)}` : ''}
+                          </span>
+                        </div>
+                        {t.methods && (
+                          <p class="muted" style="font-size:var(--t-xs)">Metode: {t.methods}</p>
+                        )}
+                        {t.prerequisites && t.prerequisites !== '—' && (
+                          <p class="muted" style="font-size:var(--t-xs)">
+                            Prerechizite: {t.prerequisites}
+                          </p>
+                        )}
+                        {u?.role === 'student' && !p.is_full && (
+                          <a
+                            class="btn btn--ghost btn--sm tema__alege"
+                            href={`/cererile-mele?coordonator=${p.id}&tema=${t.id}`}
+                          >
+                            Alege tema
+                          </a>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p class="muted" style="font-size:var(--t-sm);padding:var(--s-3) 0">
+                    Nu a publicat teme pentru această sesiune. Poți propune o temă proprie în cerere.
+                  </p>
                 )}
+
+                {theirStudents.length > 0 && (
+                  <details class="coord__studenti">
+                    <summary>
+                      Coordonează {theirStudents.length}{' '}
+                      {theirStudents.length === 1 ? 'student' : 'studenți'} în această sesiune
+                    </summary>
+                    <ul>
+                      {theirStudents.map((s) => (
+                        <li>
+                          <a href={`/profil/${s.student_id}`}>{s.student_name}</a>
+                          <span class="muted"> — {s.title_ro}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </details>
+                )}
+              </li>
+            )
+          })}
+        </ul>
+      )
+    }
+
+    {/* -------------------------------------------------------- după temă */}
+    {
+      view === 'teme' && (
+        <ul class="lista-teme" id="lista">
+          {allTopics.map((t) => (
+            <li
+              class:list={['card-tema', { 'is-plin': t.teacher_is_full }]}
+              data-nume={`${t.teacher_name} ${t.title} ${t.methods ?? ''} ${t.description ?? ''}`.toLowerCase()}
+              data-teme={`${t.title} ${t.methods ?? ''}`.toLowerCase()}
+              data-niveluri={t.level}
+              data-limbi={t.language}
+              data-liber={t.teacher_is_full ? 'nu' : 'da'}
+            >
+              <div class="row row--between" style="gap:var(--s-3);align-items:flex-start">
+                <h2 class="card-tema__titlu">{t.title}</h2>
+                <span class="badge badge--info">
+                  {LEVEL_LABELS[t.level]}
+                  {t.language !== 'ro' ? ` · ${languageLabel(t.language)}` : ''}
+                </span>
               </div>
 
-              {theirTopics.length > 0 ? (
-                <ul class="teme">
-                  {theirTopics.map((t) => (
-                    <li class="tema" data-level={t.level}>
-                      <div class="row row--between" style="gap:var(--s-2);align-items:flex-start">
-                        <h3 class="tema__titlu">{t.title}</h3>
-                        <span class="badge badge--info">
-                          {t.level === 'master' ? 'Master' : 'Licență'}
-                        </span>
-                      </div>
-                      {t.methods && (
-                        <p class="muted" style="font-size:var(--t-xs)">Metode: {t.methods}</p>
-                      )}
-                      {t.prerequisites && t.prerequisites !== '—' && (
-                        <p class="muted" style="font-size:var(--t-xs)">
-                          Prerechizite: {t.prerequisites}
-                        </p>
-                      )}
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <p class="muted" style="font-size:var(--t-sm);padding:var(--s-3) 0">
-                  Nu a publicat teme pentru această sesiune. Poți propune o temă proprie în cerere.
-                </p>
-              )}
+              {t.description && <p class="card-tema__descriere">{t.description}</p>}
+
+              <dl class="card-tema__detalii">
+                {t.methods && (
+                  <div>
+                    <dt>Metode</dt>
+                    <dd>{t.methods}</dd>
+                  </div>
+                )}
+                {t.prerequisites && t.prerequisites !== '—' && (
+                  <div>
+                    <dt>Prerechizite</dt>
+                    <dd>{t.prerequisites}</dd>
+                  </div>
+                )}
+                <div>
+                  <dt>Locuri pe temă</dt>
+                  <dd class="numeric">{t.taken} / {t.seats}</dd>
+                </div>
+              </dl>
+
+              <footer class="card-tema__pied">
+                <a class="card-tema__profesor" href={`/profil/${t.teacher_id}`}>
+                  <Avatar name={t.teacher_name} size="xs" />
+                  <span class="stack stack--tight" style="gap:0">
+                    <strong>{t.teacher_name}</strong>
+                    <small class="muted">{t.department}</small>
+                  </span>
+                </a>
+
+                {t.teacher_is_full ? (
+                  <span class="badge badge--respinsa">Coordonator fără locuri</span>
+                ) : (
+                  u?.role === 'student' && (
+                    <a
+                      class="btn btn--primary btn--sm"
+                      href={`/cererile-mele?coordonator=${t.teacher_id}&tema=${t.id}`}
+                    >
+                      Alege tema
+                    </a>
+                  )
+                )}
+              </footer>
             </li>
-          )
-        })
-      }
-    </ul>
+          ))}
+        </ul>
+      )
+    }
 
     <p class="empty__text" id="fara-rezultate" hidden>
-      Niciun coordonator nu corespunde filtrelor. Încearcă un alt cuvânt-cheie sau alege „toate
-      departamentele”.
+      Nimic nu corespunde filtrelor. Încearcă un alt cuvânt-cheie, altă limbă, sau debifează „doar
+      cu locuri libere”.
     </p>
   </div>
 </StudentLayout>
 
 <script>
   const search = document.getElementById('cauta') as HTMLInputElement
-  const dep = document.getElementById('departament') as HTMLSelectElement
   const level = document.getElementById('nivel') as HTMLSelectElement
+  const language = document.getElementById('limba') as HTMLSelectElement
+  const dep = document.getElementById('departament') as HTMLSelectElement | null
+  const onlyFree = document.getElementById('doar-libere') as HTMLInputElement
   const resultLabel = document.getElementById('rezultat')!
   const emptyLabel = document.getElementById('fara-rezultate')!
-  const cards = [...document.querySelectorAll<HTMLLIElement>('.coord')]
+  const cards = [...document.querySelectorAll<HTMLLIElement>('[data-nume]')]
+  const isTopicView = new URLSearchParams(location.search).get('vedere') === 'teme'
 
   function filter() {
     const q = search.value.trim().toLowerCase()
-    const d = dep.value
     const n = level.value
+    const l = language.value
+    const d = dep?.value ?? ''
     let visibleCount = 0
 
     for (const c of cards) {
@@ -150,26 +348,92 @@ for (const t of allTopics) {
         !q || (c.dataset.nume ?? '').includes(q) || (c.dataset.teme ?? '').includes(q)
       const matchesDept = !d || c.dataset.departament === d
       const matchesLevel = !n || (c.dataset.niveluri ?? '').includes(n)
-      const visible = matchesText && matchesDept && matchesLevel
+      const matchesLanguage = !l || (c.dataset.limbi ?? '').includes(l)
+      const matchesFree = !onlyFree.checked || c.dataset.liber === 'da'
+      const visible = matchesText && matchesDept && matchesLevel && matchesLanguage && matchesFree
 
       c.hidden = !visible
       if (visible) visibleCount++
 
-      // Când se filtrează pe level, temele care nu se potrivesc dispar și ele.
+      // În vederea pe coordonatori, temele care nu se potrivesc dispar și ele,
+      // ca lista din card să nu contrazică filtrul de deasupra.
       c.querySelectorAll<HTMLLIElement>('.tema').forEach((t) => {
-        t.hidden = Boolean(n) && t.dataset.level !== n
+        const okLevel = !n || t.dataset.level === n
+        const okLanguage = !l || t.dataset.limba === l
+        t.hidden = !(okLevel && okLanguage)
       })
     }
 
-    resultLabel.textContent =
-      visibleCount === 1 ? '1 cadru didactic' : `${visibleCount} cadre didactice`
+    resultLabel.textContent = isTopicView
+      ? visibleCount === 1
+        ? '1 temă propusă'
+        : `${visibleCount} teme propuse`
+      : visibleCount === 1
+        ? '1 cadru didactic'
+        : `${visibleCount} cadre didactice`
     emptyLabel.hidden = visibleCount > 0
   }
 
-  ;[search, dep, level].forEach((el) => el.addEventListener('input', filter))
+  for (const el of [search, level, language, dep, onlyFree]) {
+    el?.addEventListener('input', filter)
+  }
+
+  // Filtrele pornesc din grupa studentului, deci prima rulare nu e redundantă:
+  // ea aplică nivelul și limba deja selectate.
+  filter()
 </script>
 
 <style>
+  .vederi {
+    display: flex;
+    gap: var(--s-1);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .vedere {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--s-2);
+    padding: var(--s-3) var(--s-3);
+    font-size: var(--t-sm);
+    font-weight: 500;
+    color: var(--ink-muted);
+    text-decoration: none;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+    transition: color var(--fast) var(--ease), border-color var(--fast) var(--ease);
+  }
+  .vedere:hover {
+    color: var(--ink);
+  }
+  .vedere.is-activ {
+    color: var(--red);
+    font-weight: 600;
+    border-bottom-color: var(--red);
+  }
+  .vedere__contor {
+    padding: 1px 6px;
+    border-radius: 999px;
+    background: var(--surface-sunken);
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--ink-soft);
+  }
+  .vedere.is-activ .vedere__contor {
+    background: var(--red-tint);
+    color: var(--red);
+  }
+
+  .doar-libere {
+    display: flex;
+    align-items: center;
+    gap: var(--s-2);
+    font-size: var(--t-sm);
+    color: var(--ink-soft);
+    cursor: pointer;
+    padding-bottom: var(--s-2);
+  }
+
   .lista-coord {
     list-style: none;
     margin: 0;
@@ -189,24 +453,19 @@ for (const t of allTopics) {
     gap: var(--s-4);
   }
 
+  /* Un coordonator plin rămâne lizibil, dar nu mai concurează vizual cu cei
+     disponibili — informația e „nu aici”, nu „nu există”. */
+  .coord.is-plin,
+  .card-tema.is-plin {
+    background: var(--surface-sunken);
+    border-style: dashed;
+  }
+
   .coord__cap {
     display: flex;
     align-items: center;
     gap: var(--s-3);
-  }
-
-  .coord__avatar {
-    display: grid;
-    place-items: center;
-    width: 42px;
-    height: 42px;
-    border-radius: 50%;
-    background: var(--surface-sunken);
-    border: 1px solid var(--border);
-    font-size: var(--t-sm);
-    font-weight: 600;
-    color: var(--ink-soft);
-    flex: none;
+    flex-wrap: wrap;
   }
 
   .coord__ident {
@@ -218,6 +477,43 @@ for (const t of allTopics) {
     font-family: var(--serif);
     font-size: var(--t-md);
     font-weight: 600;
+  }
+  .coord__nume a {
+    color: inherit;
+    text-decoration: none;
+  }
+  .coord__nume a:hover {
+    color: var(--red);
+  }
+
+  .coord__interese {
+    font-size: var(--t-sm);
+    color: var(--ink-soft);
+    text-wrap: pretty;
+  }
+
+  .is-dezactivat {
+    opacity: 0.5;
+    pointer-events: none;
+  }
+
+  .coord__studenti {
+    font-size: var(--t-sm);
+  }
+  .coord__studenti summary {
+    cursor: pointer;
+    color: var(--ink-muted);
+    font-size: var(--t-xs);
+  }
+  .coord__studenti ul {
+    list-style: none;
+    margin: var(--s-3) 0 0;
+    padding: 0 0 0 var(--s-4);
+    border-left: 2px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-1);
+    font-size: var(--t-xs);
   }
 
   .teme {
@@ -243,5 +539,89 @@ for (const t of allTopics) {
     font-size: var(--t-sm);
     font-weight: 600;
     text-wrap: pretty;
+  }
+
+  .tema__alege {
+    align-self: flex-start;
+    margin-top: auto;
+    padding-top: var(--s-2);
+  }
+
+  /* --- vederea pe teme ---------------------------------------------------- */
+
+  .lista-teme {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    gap: var(--s-4);
+  }
+
+  .card-tema {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-3);
+    padding: var(--s-5);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--r-lg);
+  }
+
+  .card-tema__titlu {
+    font-family: var(--serif);
+    font-size: var(--t-md);
+    font-weight: 600;
+    text-wrap: pretty;
+  }
+
+  .card-tema__descriere {
+    font-size: var(--t-sm);
+    color: var(--ink-soft);
+    text-wrap: pretty;
+  }
+
+  .card-tema__detalii {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-2);
+    margin: 0;
+    font-size: var(--t-xs);
+  }
+  .card-tema__detalii dt {
+    color: var(--ink-muted);
+  }
+  .card-tema__detalii dd {
+    margin: 0;
+    color: var(--ink-soft);
+  }
+
+  .card-tema__pied {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--s-3);
+    flex-wrap: wrap;
+    margin-top: auto;
+    padding-top: var(--s-3);
+    border-top: 1px solid var(--border);
+  }
+
+  .card-tema__profesor {
+    display: flex;
+    align-items: center;
+    gap: var(--s-2);
+    text-decoration: none;
+    color: var(--ink);
+    min-width: 0;
+  }
+  .card-tema__profesor strong {
+    font-size: var(--t-xs);
+  }
+  .card-tema__profesor small {
+    font-size: 11px;
+  }
+  .card-tema__profesor:hover strong {
+    color: var(--red);
   }
 </style>

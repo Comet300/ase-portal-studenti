@@ -1,21 +1,27 @@
 ---
+import Avatar from '../../components/Avatar.astro'
 import ProfesorLayout from '../../layouts/ProfesorLayout.astro'
-import { initials } from '../../lib/auth'
 import { query, queryOne } from '../../lib/db'
-import { STATUS_CLASS, STATUS_LABELS, formatDate, programLabel } from '../../lib/repo'
+import { seatRequests } from '../../lib/lifecycle'
+import { STATUS_CLASS, STATUS_LABELS, formatDate, programLabel, timeAgo } from '../../lib/repo'
+import { LEVEL_LABELS, currentYear } from '../../lib/years'
 
 /**
  * Department-wide view for the head of department.
  *
  * Not per-student work: this answers coverage and bottleneck questions — who is
- * unassigned, who is over capacity, which topics nobody took.
+ * unassigned, who is over capacity, which topics nobody took — and it is where
+ * seats are handed out, because that authority belongs to this role and nowhere
+ * else in the portal.
  */
 
-const u = Astro.locals.user!
+const sectiune = Astro.url.searchParams.get('sectiune') ?? 'situatie'
 
 const teacherFilter = Astro.url.searchParams.get('coordonator') ?? ''
 const programFilter = Astro.url.searchParams.get('program') ?? ''
 const statusFilter = Astro.url.searchParams.get('status') ?? ''
+
+const year = await currentYear()
 
 interface Row {
   id: string
@@ -38,12 +44,13 @@ const rows = await query<Row>(
      FROM requests r
      JOIN users s ON s.id = r.student_id
      JOIN users t ON t.id = r.teacher_id
-    WHERE ($1::uuid IS NULL OR r.teacher_id = $1)
+    WHERE r.academic_year_id = $4
+      AND ($1::uuid IS NULL OR r.teacher_id = $1)
       AND ($2::text IS NULL OR s.program = $2)
       AND ($3::text IS NULL OR r.status = $3)
     ORDER BY r.submitted_at DESC
     LIMIT 300`,
-  [teacherFilter || null, programFilter || null, statusFilter || null],
+  [teacherFilter || null, programFilter || null, statusFilter || null, year?.id],
 )
 
 const totals = await queryOne<{
@@ -52,222 +59,516 @@ const totals = await queryOne<{
   approved: number
   pending: number
   rejected: number
+  expired: number
 }>(
   `SELECT
      (SELECT count(*)::int FROM users WHERE role = 'student') AS students,
-     (SELECT count(DISTINCT student_id)::int FROM requests) AS with_request,
+     (SELECT count(DISTINCT student_id)::int FROM requests WHERE academic_year_id = $1) AS with_request,
      count(*) FILTER (WHERE status = 'approved')::int AS approved,
      count(*) FILTER (WHERE status = 'pending')::int  AS pending,
-     count(*) FILTER (WHERE status = 'rejected')::int AS rejected
-   FROM requests`,
+     count(*) FILTER (WHERE status = 'rejected')::int AS rejected,
+     count(*) FILTER (WHERE status = 'expired')::int  AS expired
+   FROM requests WHERE academic_year_id = $1`,
+  [year?.id],
 )
 
 /** Load per coordinator, so an overloaded or idle one is visible at a glance. */
 const load = await query<{
   id: string
   name: string
-  capacity: number
-  approved: number
+  avatar_path: string | null
+  bachelor_seats: number
+  master_seats: number
+  bachelor_taken: number
+  master_taken: number
   pending: number
   free_topics: number
 }>(
-  `SELECT t.id, t.name,
-          (t.bachelor_capacity + t.master_capacity) AS capacity,
-          (SELECT count(*)::int FROM requests r WHERE r.teacher_id = t.id AND r.status = 'approved') AS approved,
-          (SELECT count(*)::int FROM requests r WHERE r.teacher_id = t.id AND r.status = 'pending')  AS pending,
+  `SELECT t.id, t.name, t.avatar_path,
+          COALESCE(a.bachelor_seats, 0) AS bachelor_seats,
+          COALESCE(a.master_seats, 0)   AS master_seats,
+          (SELECT count(*)::int FROM requests r JOIN users s ON s.id = r.student_id
+            WHERE r.teacher_id = t.id AND r.status = 'approved'
+              AND r.academic_year_id = $1 AND s.program = 'bachelor') AS bachelor_taken,
+          (SELECT count(*)::int FROM requests r JOIN users s ON s.id = r.student_id
+            WHERE r.teacher_id = t.id AND r.status = 'approved'
+              AND r.academic_year_id = $1 AND s.program = 'master')   AS master_taken,
+          (SELECT count(*)::int FROM requests r WHERE r.teacher_id = t.id
+            AND r.status = 'pending' AND r.academic_year_id = $1)     AS pending,
           (SELECT count(*)::int FROM topics tp WHERE tp.teacher_id = t.id AND tp.is_active
+             AND tp.academic_year_id = $1
              AND NOT EXISTS (SELECT 1 FROM requests r2 WHERE r2.topic_id = tp.id AND r2.status = 'approved')) AS free_topics
      FROM users t
+     LEFT JOIN seat_allocations a ON a.teacher_id = t.id AND a.academic_year_id = $1
     WHERE t.role IN ('teacher', 'head')
     ORDER BY t.name`,
+  [year?.id],
 )
 
+const cereriLocuri = await seatRequests()
+const locuriInAsteptare = cereriLocuri.filter((r) => r.status === 'pending')
+
 const unassigned = (totals?.students ?? 0) - (totals?.with_request ?? 0)
-const overloaded = load.filter((t) => t.capacity > 0 && t.approved > t.capacity)
-const teachers = load.map((t) => ({ id: t.id, name: t.name }))
+const withSeats = load.map((t) => ({
+  ...t,
+  seats: t.bachelor_seats + t.master_seats,
+  taken: t.bachelor_taken + t.master_taken,
+}))
+const overloaded = withSeats.filter((t) => t.seats > 0 && t.taken > t.seats)
+const fullyBooked = withSeats.filter((t) => t.seats > 0 && t.taken >= t.seats)
+const withoutSeats = withSeats.filter((t) => t.seats === 0)
 
 const exportUrl = `/profesor/departament/export.csv?${new URLSearchParams({
   ...(teacherFilter ? { coordonator: teacherFilter } : {}),
   ...(programFilter ? { program: programFilter } : {}),
   ...(statusFilter ? { status: statusFilter } : {}),
 }).toString()}`
+
+const sectiuni = [
+  { cheie: 'situatie', text: 'Situația sesiunii', contor: null },
+  { cheie: 'locuri', text: 'Locuri', contor: locuriInAsteptare.length },
+]
 ---
 
 <ProfesorLayout
   title="Departament"
-  lede="Situația întregii sesiuni: acoperire, încărcare pe coordonatori și blocaje."
+  lede={`Situația întregii sesiuni ${year?.label ?? ''}: acoperire, încărcare pe coordonatori și alocarea locurilor.`}
   active="departament"
 >
-  <a slot="actiuni" class="btn btn--secondary btn--sm" href={exportUrl}>Export CSV</a>
+  <div slot="actiuni" class="row" style="gap:var(--s-2)">
+    <a class="btn btn--secondary btn--sm" href="/profesor/coordonari.csv">Export coordonări</a>
+    <a class="btn btn--ghost btn--sm" href={exportUrl}>Export cereri</a>
+  </div>
 
-  <div class="stack stack--loose">
-    <section class="stack">
-      <h2 class="section-title">Acoperire</h2>
-      <div class="grid-auto">
-        <div class="metric">
-          <span class="metric__value numeric">{totals?.students ?? 0}</span>
-          <span class="metric__label">studenți în sesiune</span>
-        </div>
-        <div class="metric" class:list={['metric', { 'metric--alert': unassigned > 0 }]}>
-          <span class="metric__value numeric">{unassigned}</span>
-          <span class="metric__label">fără cerere depusă</span>
-          <span class="metric__note">
-            {unassigned > 0 ? 'Nu au început procedura' : 'Toți studenții au depus'}
-          </span>
-        </div>
-        <div class="metric">
-          <span class="metric__value numeric">{totals?.pending ?? 0}</span>
-          <span class="metric__label">cereri în așteptare</span>
-          <span class="metric__note">la {load.filter((t) => t.pending > 0).length} coordonatori</span>
-        </div>
-        <div class="metric">
-          <span class="metric__value numeric">{totals?.approved ?? 0}</span>
-          <span class="metric__label">coordonări confirmate</span>
-        </div>
-      </div>
-    </section>
-
+  <nav class="taburi" aria-label="Secțiuni">
     {
-      overloaded.length > 0 && (
-        <p class="alert">
-          <strong>Peste capacitate:</strong>{' '}
-          {overloaded.map((t) => `${t.name} (${t.approved}/${t.capacity})`).join(' · ')}
-        </p>
-      )
+      sectiuni.map((s) => (
+        <a
+          href={`/profesor/departament?sectiune=${s.cheie}`}
+          class:list={['tab', { 'is-activ': sectiune === s.cheie }]}
+          aria-current={sectiune === s.cheie ? 'page' : undefined}
+        >
+          {s.text}
+          {s.contor !== null && s.contor > 0 && <span class="tab__contor numeric">{s.contor}</span>}
+        </a>
+      ))
     }
+  </nav>
 
-    <section class="panel">
-      <div class="panel__header">
-        <h2 class="section-title">Încărcare pe coordonatori</h2>
-      </div>
-      <div class="table-wrap">
-        <table class="table">
-          <thead>
-            <tr>
-              <th>Coordonator</th>
-              <th>Confirmați</th>
-              <th>În așteptare</th>
-              <th>Capacitate</th>
-              <th>Teme nepreluate</th>
-            </tr>
-          </thead>
-          <tbody>
-            {
-              load.map((t) => (
-                <tr>
-                  <td>
-                    <div class="row" style="gap:var(--s-3)">
-                      <span class="avatar" aria-hidden="true">{initials(t.name)}</span>
-                      {t.name}
-                    </div>
-                  </td>
-                  <td class="numeric">{t.approved}</td>
-                  <td class="numeric">
-                    {t.pending > 0 ? (
-                      <span class="badge badge--asteptare">{t.pending}</span>
-                    ) : (
-                      <span class="muted">—</span>
-                    )}
-                  </td>
-                  <td class="numeric">
-                    <span class:list={{ 'over-capacity': t.capacity > 0 && t.approved > t.capacity }}>
-                      {t.approved} / {t.capacity}
-                    </span>
-                  </td>
-                  <td class="numeric muted">{t.free_topics}</td>
-                </tr>
-              ))
-            }
-          </tbody>
-        </table>
-      </div>
-    </section>
-
-    <section class="panel">
-      <div class="panel__header">
-        <h2 class="section-title">Cereri</h2>
-        <span class="muted" style="font-size:var(--t-sm)">{rows.length} afișate</span>
-      </div>
-
-      <form method="GET" class="panel__body row row--wrap" style="gap:var(--s-3);align-items:flex-end">
-        <div class="field" style="flex:2;min-width:220px">
-          <label class="label" for="coordonator">Coordonator</label>
-          <select class="select" id="coordonator" name="coordonator">
-            <option value="">Toți coordonatorii</option>
-            {teachers.map((t) => <option value={t.id} selected={t.id === teacherFilter}>{t.name}</option>)}
-          </select>
-        </div>
-        <div class="field" style="flex:1;min-width:150px">
-          <label class="label" for="program">Program</label>
-          <select class="select" id="program" name="program">
-            <option value="">Licență și master</option>
-            <option value="bachelor" selected={programFilter === 'bachelor'}>Licență</option>
-            <option value="master" selected={programFilter === 'master'}>Master</option>
-          </select>
-        </div>
-        <div class="field" style="flex:1;min-width:150px">
-          <label class="label" for="status">Stare</label>
-          <select class="select" id="status" name="status">
-            <option value="">Toate stările</option>
-            {
-              Object.entries(STATUS_LABELS).map(([v, l]) => (
-                <option value={v} selected={statusFilter === v}>{l}</option>
-              ))
-            }
-          </select>
-        </div>
-        <button class="btn btn--secondary" type="submit">Filtrează</button>
-      </form>
-
-      {
-        rows.length === 0 ? (
-          <div class="empty">
-            <p class="empty__title">Nicio cerere pentru filtrele alese</p>
-            <p class="empty__text">Schimbă coordonatorul, programul sau starea.</p>
+  {/* ---------------------------------------------------------- situație */}
+  {
+    sectiune === 'situatie' && (
+      <div class="stack stack--loose">
+        <section class="stack">
+          <h2 class="section-title">Acoperire</h2>
+          <div class="grid-auto">
+            <div class="metric">
+              <span class="metric__value numeric">{totals?.students ?? 0}</span>
+              <span class="metric__label">studenți în sesiune</span>
+            </div>
+            <div class:list={['metric', { 'metric--alert': unassigned > 0 }]}>
+              <span class="metric__value numeric">{unassigned}</span>
+              <span class="metric__label">fără cerere depusă</span>
+              <span class="metric__note">
+                {unassigned > 0 ? 'Nu au început procedura' : 'Toți studenții au depus'}
+              </span>
+            </div>
+            <div class="metric">
+              <span class="metric__value numeric">{totals?.pending ?? 0}</span>
+              <span class="metric__label">cereri în așteptare</span>
+              <span class="metric__note">
+                la {load.filter((t) => t.pending > 0).length} coordonatori
+              </span>
+            </div>
+            <div class="metric">
+              <span class="metric__value numeric">{totals?.approved ?? 0}</span>
+              <span class="metric__label">coordonări confirmate</span>
+              <span class="metric__note">
+                {totals?.expired ? `${totals.expired} cereri au expirat fără răspuns` : ''}
+              </span>
+            </div>
           </div>
-        ) : (
+        </section>
+
+        {overloaded.length > 0 && (
+          <p class="alert">
+            <strong>Peste capacitate:</strong>{' '}
+            {overloaded.map((t) => `${t.name} (${t.taken}/${t.seats})`).join(' · ')}
+          </p>
+        )}
+
+        {withoutSeats.length > 0 && (
+          <p class="alert">
+            <strong>Fără locuri alocate:</strong>{' '}
+            {withoutSeats.map((t) => t.name).join(' · ')}. Studenții nu le pot depune cereri.{' '}
+            <a href="/profesor/departament?sectiune=locuri">Alocă locuri</a>
+          </p>
+        )}
+
+        <section class="panel">
+          <div class="panel__header">
+            <h2 class="section-title">Încărcare pe coordonatori</h2>
+            <span class="muted" style="font-size:var(--t-sm)">
+              {fullyBooked.length} din {load.length} au locurile ocupate
+            </span>
+          </div>
           <div class="table-wrap">
             <table class="table">
               <thead>
                 <tr>
-                  <th>Student</th>
-                  <th>Program</th>
                   <th>Coordonator</th>
-                  <th>Titlul lucrării</th>
-                  <th>Stare</th>
-                  <th>Depusă</th>
+                  <th>Licență</th>
+                  <th>Master</th>
+                  <th>Total</th>
+                  <th>În așteptare</th>
+                  <th>Teme nepreluate</th>
                 </tr>
               </thead>
               <tbody>
-                {rows.map((r) => (
+                {withSeats.map((t) => (
                   <tr>
                     <td>
-                      <div class="stack stack--tight" style="gap:0">
-                        <strong>{r.student_name}</strong>
-                        <span class="muted" style="font-size:var(--t-xs)">{r.student_number}</span>
+                      <div class="row" style="gap:var(--s-3)">
+                        <Avatar name={t.name} src={t.avatar_path} size="xs" href={`/profil/${t.id}`} />
+                        {t.name}
                       </div>
                     </td>
-                    <td>
-                      <span class="muted">{programLabel(r.program)}</span>
+                    <td class="numeric">{t.bachelor_taken} / {t.bachelor_seats}</td>
+                    <td class="numeric">{t.master_taken} / {t.master_seats}</td>
+                    <td class="numeric">
+                      <span class:list={{ 'over-capacity': t.seats > 0 && t.taken >= t.seats }}>
+                        {t.taken} / {t.seats}
+                      </span>
                     </td>
-                    <td>{r.teacher_name}</td>
-                    <td class="cell-title">{r.title_ro}</td>
-                    <td>
-                      <span class:list={['badge', STATUS_CLASS[r.status]]}>{STATUS_LABELS[r.status]}</span>
+                    <td class="numeric">
+                      {t.pending > 0 ? (
+                        <span class="badge badge--asteptare">{t.pending}</span>
+                      ) : (
+                        <span class="muted">—</span>
+                      )}
                     </td>
-                    <td class="muted">{formatDate(r.submitted_at)}</td>
+                    <td class="numeric muted">{t.free_topics}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
-        )
-      }
-    </section>
-  </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel__header">
+            <h2 class="section-title">Cereri</h2>
+            <span class="muted" style="font-size:var(--t-sm)">{rows.length} afișate</span>
+          </div>
+
+          <form method="GET" class="panel__body row row--wrap" style="gap:var(--s-3);align-items:flex-end">
+            <input type="hidden" name="sectiune" value="situatie" />
+            <div class="field" style="flex:2;min-width:220px">
+              <label class="label" for="coordonator">Coordonator</label>
+              <select class="select" id="coordonator" name="coordonator">
+                <option value="">Toți coordonatorii</option>
+                {load.map((t) => (
+                  <option value={t.id} selected={t.id === teacherFilter}>
+                    {t.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div class="field" style="flex:1;min-width:150px">
+              <label class="label" for="program">Program</label>
+              <select class="select" id="program" name="program">
+                <option value="">Licență și master</option>
+                <option value="bachelor" selected={programFilter === 'bachelor'}>Licență</option>
+                <option value="master" selected={programFilter === 'master'}>Master</option>
+              </select>
+            </div>
+            <div class="field" style="flex:1;min-width:150px">
+              <label class="label" for="status">Stare</label>
+              <select class="select" id="status" name="status">
+                <option value="">Toate stările</option>
+                {Object.entries(STATUS_LABELS).map(([v, l]) => (
+                  <option value={v} selected={statusFilter === v}>
+                    {l}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <button class="btn btn--secondary" type="submit">Filtrează</button>
+          </form>
+
+          {rows.length === 0 ? (
+            <div class="empty">
+              <p class="empty__title">Nicio cerere pentru filtrele alese</p>
+              <p class="empty__text">Schimbă coordonatorul, programul sau starea.</p>
+            </div>
+          ) : (
+            <div class="table-wrap">
+              <table class="table">
+                <thead>
+                  <tr>
+                    <th>Student</th>
+                    <th>Program</th>
+                    <th>Coordonator</th>
+                    <th>Titlul lucrării</th>
+                    <th>Stare</th>
+                    <th>Depusă</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map((r) => (
+                    <tr>
+                      <td>
+                        <div class="stack stack--tight" style="gap:0">
+                          <strong>{r.student_name}</strong>
+                          <span class="muted" style="font-size:var(--t-xs)">{r.student_number}</span>
+                        </div>
+                      </td>
+                      <td>
+                        <span class="muted">{programLabel(r.program)}</span>
+                      </td>
+                      <td>{r.teacher_name}</td>
+                      <td class="cell-title">{r.title_ro}</td>
+                      <td>
+                        <span class:list={['badge', STATUS_CLASS[r.status]]}>{STATUS_LABELS[r.status]}</span>
+                      </td>
+                      <td class="muted">{formatDate(r.submitted_at)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+      </div>
+    )
+  }
+
+  {/* ------------------------------------------------------------- locuri */}
+  {
+    sectiune === 'locuri' && (
+      <div class="stack stack--loose">
+        <section class="panel">
+          <div class="panel__header">
+            <h2 class="section-title">Cereri de locuri suplimentare</h2>
+            <span class="muted" style="font-size:var(--t-sm)">
+              {locuriInAsteptare.length} în așteptare
+            </span>
+          </div>
+
+          {locuriInAsteptare.length === 0 ? (
+            <div class="empty">
+              <p class="empty__title">Nicio cerere în așteptare</p>
+              <p class="empty__text">
+                Când un coordonator rămâne fără locuri, îți poate cere altele de aici, cu o
+                motivare scrisă.
+              </p>
+            </div>
+          ) : (
+            <ul class="cereri-locuri">
+              {locuriInAsteptare.map((r) => (
+                <li>
+                  <div class="row row--between row--wrap" style="gap:var(--s-2)">
+                    <strong>{r.teacher_name}</strong>
+                    <span class="muted" style="font-size:var(--t-xs)">
+                      cerută {timeAgo(r.created_at)}
+                    </span>
+                  </div>
+                  <p style="font-size:var(--t-sm)">
+                    Solicită <strong>{r.extra_seats}</strong> locuri la{' '}
+                    {LEVEL_LABELS[r.level].toLowerCase()}.
+                  </p>
+                  <p class="motivare">{r.reason}</p>
+
+                  <form method="POST" action="/api/locuri" class="stack stack--tight">
+                    <input type="hidden" name="actiune" value="decide" />
+                    <input type="hidden" name="cerere_id" value={r.id} />
+                    <div class="field">
+                      <label class="label" for={`nota-${r.id}`}>Notă pentru coordonator (opțional)</label>
+                      <input class="input" id={`nota-${r.id}`} name="nota" placeholder="Ex: aprobat până la finalul sesiunii curente." />
+                    </div>
+                    <div class="row" style="gap:var(--s-2)">
+                      <button class="btn btn--primary btn--sm" type="submit" name="decizie" value="approved">
+                        Alocă {r.extra_seats} locuri
+                      </button>
+                      <button class="btn btn--danger btn--sm" type="submit" name="decizie" value="rejected">
+                        Respinge
+                      </button>
+                    </div>
+                  </form>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+
+        <section class="panel">
+          <div class="panel__header">
+            <h2 class="section-title">Alocarea locurilor</h2>
+            <span class="muted" style="font-size:var(--t-sm)">{year?.label}</span>
+          </div>
+
+          <p class="panel__body hint">
+            Locurile se resetează la fiecare an universitar. Un coordonator cu toate locurile
+            ocupate apare în catalogul studenților ca indisponibil, dar rămâne vizibil împreună cu
+            studenții pe care îi coordonează.
+          </p>
+
+          <div class="table-wrap">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>Coordonator</th>
+                  <th>Ocupate</th>
+                  <th>Locuri licență</th>
+                  <th>Locuri master</th>
+                  <th><span class="visually-hidden">Salvează</span></th>
+                </tr>
+              </thead>
+              <tbody>
+                {withSeats.map((t) => (
+                  <tr>
+                    <td>
+                      <div class="row" style="gap:var(--s-3)">
+                        <Avatar name={t.name} src={t.avatar_path} size="xs" />
+                        {t.name}
+                      </div>
+                    </td>
+                    <td class="numeric">
+                      <span class:list={{ 'over-capacity': t.seats > 0 && t.taken >= t.seats }}>
+                        {t.taken} / {t.seats}
+                      </span>
+                    </td>
+                    <td colspan="3">
+                      <form method="POST" action="/api/locuri" class="row" style="gap:var(--s-2);justify-content:flex-end">
+                        <input type="hidden" name="actiune" value="aloca" />
+                        <input type="hidden" name="profesor_id" value={t.id} />
+                        <label class="visually-hidden" for={`lic-${t.id}`}>
+                          Locuri licență pentru {t.name}
+                        </label>
+                        <input
+                          class="input input--num"
+                          id={`lic-${t.id}`}
+                          name="locuri_licenta"
+                          type="number"
+                          min={t.bachelor_taken}
+                          max="40"
+                          value={t.bachelor_seats}
+                        />
+                        <label class="visually-hidden" for={`mas-${t.id}`}>
+                          Locuri master pentru {t.name}
+                        </label>
+                        <input
+                          class="input input--num"
+                          id={`mas-${t.id}`}
+                          name="locuri_master"
+                          type="number"
+                          min={t.master_taken}
+                          max="40"
+                          value={t.master_seats}
+                        />
+                        <button class="btn btn--secondary btn--sm" type="submit">Salvează</button>
+                      </form>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        {cereriLocuri.filter((r) => r.status !== 'pending').length > 0 && (
+          <section class="panel">
+            <div class="panel__header">
+              <h2 class="section-title">Decizii anterioare</h2>
+            </div>
+            <div class="table-wrap">
+              <table class="table">
+                <thead>
+                  <tr>
+                    <th>Coordonator</th>
+                    <th>Cerea</th>
+                    <th>Decizie</th>
+                    <th>Data</th>
+                    <th>Notă</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {cereriLocuri
+                    .filter((r) => r.status !== 'pending')
+                    .map((r) => (
+                      <tr>
+                        <td>{r.teacher_name}</td>
+                        <td class="numeric">
+                          {r.extra_seats} · {LEVEL_LABELS[r.level].toLowerCase()}
+                        </td>
+                        <td>
+                          <span
+                            class:list={[
+                              'badge',
+                              r.status === 'approved' ? 'badge--aprobata' : 'badge--respinsa',
+                            ]}
+                          >
+                            {r.status === 'approved' ? 'Aprobată' : 'Respinsă'}
+                          </span>
+                        </td>
+                        <td class="muted">{formatDate(r.decided_at)}</td>
+                        <td class="muted cell-title">{r.decision_note ?? '—'}</td>
+                      </tr>
+                    ))}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        )}
+      </div>
+    )
+  }
 </ProfesorLayout>
 
 <style>
+  .taburi {
+    display: flex;
+    gap: var(--s-1);
+    flex-wrap: wrap;
+    margin-bottom: var(--s-5);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .tab {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--s-2);
+    padding: var(--s-3);
+    font-size: var(--t-sm);
+    font-weight: 500;
+    color: var(--ink-muted);
+    text-decoration: none;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+    transition: color var(--fast) var(--ease), border-color var(--fast) var(--ease);
+  }
+  .tab:hover {
+    color: var(--ink);
+  }
+  .tab.is-activ {
+    color: var(--red);
+    font-weight: 600;
+    border-bottom-color: var(--red);
+  }
+
+  .tab__contor {
+    padding: 1px 6px;
+    border-radius: 999px;
+    background: var(--surface-sunken);
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--ink-soft);
+  }
+  .tab.is-activ .tab__contor {
+    background: var(--red-tint);
+    color: var(--red);
+  }
+
   .metric {
     display: flex;
     flex-direction: column;
@@ -301,19 +602,8 @@ const exportUrl = `/profesor/departament/export.csv?${new URLSearchParams({
     border-radius: var(--r-md);
     font-size: var(--t-sm);
   }
-
-  .avatar {
-    display: grid;
-    place-items: center;
-    width: 30px;
-    height: 30px;
-    border-radius: 50%;
-    background: var(--surface-sunken);
-    border: 1px solid var(--border);
-    font-size: 11px;
-    font-weight: 600;
-    color: var(--ink-soft);
-    flex: none;
+  .alert a {
+    color: inherit;
   }
 
   .over-capacity {
@@ -326,5 +616,38 @@ const exportUrl = `/profesor/departament/export.csv?${new URLSearchParams({
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+
+  .cereri-locuri {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+  .cereri-locuri li {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-3);
+    padding: var(--s-4) var(--s-5);
+    border-bottom: 1px solid var(--border);
+  }
+  .cereri-locuri li:last-child {
+    border-bottom: 0;
+  }
+
+  .motivare {
+    padding: var(--s-3) var(--s-4);
+    background: var(--surface-sunken);
+    border-left: 2px solid var(--border-strong);
+    border-radius: 0 var(--r-md) var(--r-md) 0;
+    font-size: var(--t-sm);
+    color: var(--ink-soft);
+    text-wrap: pretty;
+    max-width: 78ch;
+  }
+
+  .input--num {
+    width: 78px;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
   }
 </style>
