@@ -1,0 +1,45 @@
+---
+import Chat from '../components/Chat.astro'
+import StudentLayout from '../layouts/StudentLayout.astro'
+import {
+  conversationMessages,
+  ensureSupervisorConversation,
+  markRead,
+  myConversation,
+  myConversations,
+} from '../lib/chat'
+
+const u = Astro.locals.user!
+
+if (u.role !== 'student') return Astro.redirect('/profesor/mesaje', 302)
+
+// The thread with the supervisor opens on first visit, once a request is approved.
+await ensureSupervisorConversation(u.id)
+
+const conversations = await myConversations(u.id, true)
+const requested = Astro.url.searchParams.get('conversatie')
+const active = requested ? await myConversation(u.id, requested) : (conversations[0] ?? null)
+
+if (active) await markRead(u.id, active.id)
+const messages = active ? await conversationMessages(u.id, active.id) : []
+---
+
+<StudentLayout title="Mesaje" active="mesaje">
+  <div class="container stack">
+    <header class="stack stack--tight">
+      <h1 class="page-title">Mesaje</h1>
+      <p class="page-lede">
+        Discuția cu coordonatorul tău. Poți atașa fișiere — capitole, chestionare, date.
+      </p>
+    </header>
+
+    <Chat
+      conversations={conversations}
+      active={active}
+      messages={messages}
+      userId={u.id}
+      base="/mesaje"
+      emptyText="Firul de discuție se deschide după ce un coordonator îți aprobă cererea."
+    />
+  </div>
+</StudentLayout>
