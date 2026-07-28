@@ -20,7 +20,7 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
 
   if (action === 'anuleaza') {
     const cancelledRow = await queryOne<{ id: string }>(
-      `UPDATE booked SET status = 'cancelled'
+      `UPDATE bookings SET status = 'cancelled'
         WHERE slot_id = $2 AND student_id = $1 AND status = 'booked'
         RETURNING id`,
       [u.id, slotId],
@@ -31,13 +31,13 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
   // Slotul trebuie să fie liber, viitor și neanulat; condițiile stau în INSERT,
   // deci două requests simultane nu pot ocupa amândouă ultimul loc.
   const booking = await queryOne<{ id: string }>(
-    `INSERT INTO booked (slot_id, student_id, subject)
+    `INSERT INTO bookings (slot_id, student_id, subject)
      SELECT s.id, $1, NULLIF($3, '')
        FROM consultation_slots s
       WHERE s.id = $2
         AND s.is_cancelled = false
         AND s.starts_at > now()
-        AND (SELECT count(*) FROM booked r WHERE r.slot_id = s.id AND r.status = 'booked') < s.capacity
+        AND (SELECT count(*) FROM bookings r WHERE r.slot_id = s.id AND r.status = 'booked') < s.capacity
      ON CONFLICT (slot_id, student_id) DO UPDATE SET status = 'booked'
      RETURNING id`,
     [u.id, slotId, subject],

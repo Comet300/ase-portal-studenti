@@ -67,7 +67,7 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
     // Anularea marchează și rezervările, ca studentul să nu rămână cu o
     // booking la un interval care nu mai există.
     const cancelledBookings = await query<{ student_id: string }>(
-      `UPDATE booked r SET status = 'cancelled'
+      `UPDATE bookings r SET status = 'cancelled'
         WHERE r.slot_id = $2
           AND r.status = 'booked'
           AND EXISTS (SELECT 1 FROM consultation_slots s WHERE s.id = r.slot_id AND s.teacher_id = $1)
