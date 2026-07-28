@@ -1,6 +1,7 @@
 import type { APIRoute } from 'astro'
 import { createMagicLink, findUserByEmail } from '../../lib/auth'
 import { template, sendEmail } from '../../lib/mail'
+import { redirect } from '../../lib/http'
 
 /**
  * Cere un magic link.
@@ -14,7 +15,7 @@ export const POST: APIRoute = async ({ request, url }) => {
   const redirect = String(date.get('redirect') ?? '')
 
   if (!email || !email.includes('@')) {
-    return Response.redirect(new URL('/autentificare?eroare=Adresă+de+email+invalidă.', url), 303)
+    return redirect(new URL('/autentificare?eroare=Adresă+de+email+invalidă.', url), 303)
   }
 
   const utilizator = await findUserByEmail(email)
@@ -39,5 +40,5 @@ export const POST: APIRoute = async ({ request, url }) => {
     })
   }
 
-  return Response.redirect(new URL('/autentificare?trimis=1', url), 303)
+  return redirect(new URL('/autentificare?trimis=1', url), 303)
 }

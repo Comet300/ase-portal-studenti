@@ -1,6 +1,7 @@
 import type { APIRoute } from 'astro'
 import { isTeacher } from '../../lib/auth'
 import { execute, query } from '../../lib/db'
+import { redirect } from '../../lib/http'
 
 /**
  * Intervalele de consultație.
@@ -17,7 +18,7 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
   const redirect = '/profesor/studenti?sectiune=consultatii'
 
   const inapoi = (mesaj: string, eroare = false) =>
-    Response.redirect(
+    redirect(
       new URL(`${redirect}&notificare=${encodeURIComponent(mesaj)}${error ? '&kind=error' : ''}`, url),
       303,
     )

@@ -2,6 +2,7 @@ import type { APIRoute } from 'astro'
 import { isTeacher } from '../../../lib/auth'
 import { queryOne, transaction } from '../../../lib/db'
 import { template, sendEmail } from '../../../lib/mail'
+import { redirect } from '../../../lib/http'
 
 /** Jaloanele implicite, create odată cu acceptarea, ca studentul să nu pornească din gol. */
 const JALOANE_IMPLICITE = [
@@ -27,7 +28,7 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
   }
 
   if (decizie === 'rejected' && motiv.length < 10) {
-    return Response.redirect(
+    return redirect(
       new URL(
         `${redirect}?notificare=${encodeURIComponent('Motivul respingerii este obligatoriu (minimum 10 caractere).')}&tip=error`,
         url,
@@ -73,7 +74,7 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
   })
 
   if (!cerere) {
-    return Response.redirect(
+    return redirect(
       new URL(`${redirect}?notificare=${encodeURIComponent('Cererea nu mai poate fi modificată.')}&tip=error`, url),
       303,
     )
@@ -107,7 +108,7 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
     })
   }
 
-  return Response.redirect(
+  return redirect(
     new URL(
       `${redirect}?notificare=${encodeURIComponent(
         decizie === 'approved' ? 'Cerere aprobată. Studentul a fost notificat.' : 'Cerere respinsă. Studentul a fost notificat.',
