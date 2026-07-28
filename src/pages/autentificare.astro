@@ -1,6 +1,6 @@
 ---
 import BaseLayout from '../layouts/BaseLayout.astro'
-import { demoAccounts, DEMO_MODE, initials } from '../lib/auth'
+import { demoAccounts, DEMO_MODE, initials, ROLE_LABELS } from '../lib/auth'
 
 const redirect = Astro.url.searchParams.get('redirect') ?? ''
 const trimis = Astro.url.searchParams.get('trimis') === '1'
@@ -12,11 +12,6 @@ if (Astro.locals.user && !trimis) {
   return Astro.redirect(u.role === 'student' ? '/cererile-mele' : '/profesor', 302)
 }
 
-const eticheteRol: Record<string, string> = {
-  student: 'Student',
-  profesor: 'Cadru didactic',
-  director: 'Director de departament',
-}
 ---
 
 <BaseLayout title="Autentificare" description="Acces cu contul instituțional ASE">
@@ -77,7 +72,7 @@ const eticheteRol: Record<string, string> = {
           <section class="demo">
             <h2 class="demo__titlu">Conturi demonstrative</h2>
             <p class="demo__text">
-              Modul demonstrativ este active: poți intra direct, fără email. Datele sunt fictive.
+              Modul demonstrativ este activ: poți intra direct, fără email. Datele sunt fictive.
             </p>
             <ul class="demo__lista">
               {conturi.map((c) => (
@@ -89,7 +84,7 @@ const eticheteRol: Record<string, string> = {
                       <span class="demo__avatar">{initials(c.name)}</span>
                       <span class="demo__meta">
                         <strong>{c.name}</strong>
-                        <small>{eticheteRol[c.role]}</small>
+                        <small>{ROLE_LABELS[c.role]}</small>
                       </span>
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
                         <path d="M5 12h14M13 6l6 6-6 6" />

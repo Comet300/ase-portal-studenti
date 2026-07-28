@@ -125,7 +125,7 @@ export function isDepartmentHead(u: User | null): boolean {
 /** Initials for avatars; Romanian academic titles are stripped first. */
 export function initials(name: string): string {
   return name
-    .replace(/^(Prof\.|Conf\.|Lect\.|Asist\.|univ\.|dr\.|drd\.)\s*/gi, '')
+    .replace(/^(?:(?:Prof|Conf|Lect|Asist|univ|dr|drd)\.\s*)+/i, '')
     .trim()
     .split(/\s+/)
     .slice(0, 2)
