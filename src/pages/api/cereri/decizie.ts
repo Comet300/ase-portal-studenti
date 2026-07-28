@@ -2,7 +2,7 @@ import type { APIRoute } from 'astro'
 import { isTeacher } from '../../../lib/auth'
 import { postEvent } from '../../../lib/chat'
 import { queryOne, transaction } from '../../../lib/db'
-import { template, sendEmail } from '../../../lib/mail'
+import { html, quote, sendEmail, template } from '../../../lib/mail'
 import { redirectWithNotice } from '../../../lib/http'
 import { DEFAULT_MILESTONES, teacherSeats } from '../../../lib/repo'
 import { id as formId } from '../../../lib/ids'
@@ -47,7 +47,12 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
   // The ownership condition sits in the same statement as the write: another
   // coordinator's request does not match, so nothing changes.
   const cerere = await transaction(async (client) => {
-    const { rows } = await client.query(
+    const { rows } = await client.query<{
+      id: string
+      student_id: string
+      title_ro: string
+      number: string
+    }>(
       `UPDATE requests
           SET status = $3,
               rejection_reason = CASE WHEN $3 = 'rejected' THEN NULLIF($4, '') ELSE rejection_reason END,
@@ -109,9 +114,7 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
 
   if (student) {
     const baza = process.env.APP_BASE_URL ?? url.origin
-    const noteBlock = note
-      ? `<p style="padding:12px 16px;background:#f8f9fa;border-radius:4px;white-space:pre-wrap">${note}</p>`
-      : ''
+    const noteBlock = note ? quote(note) : ''
 
     await sendEmail({
       to: student.email,
@@ -121,13 +124,13 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
       html: template(
         approved ? 'Cererea ta a fost aprobată' : 'Cererea ta a fost respinsă',
         approved
-          ? `<p>Bună, ${student.name.split(' ')[0]}! Cererea <strong>${cerere.number}</strong> pentru lucrarea
+          ? html`<p>Bună, ${student.name.split(' ')[0]}! Cererea <strong>${cerere.number}</strong> pentru lucrarea
              „${cerere.title_ro}” a fost aprobată de ${u!.name}.</p>
-             ${note ? `<p><strong>Mesaj de la coordonator:</strong></p>${noteBlock}` : ''}
+             ${note ? html`<p><strong>Mesaj de la coordonator:</strong></p>${noteBlock}` : ''}
              <p>În portal găsești acum jaloanele lucrării și poți programa consultații.</p>
              <p>Cererea de coordonare, completată cu datele tale, se descarcă și se tipărește de aici:
              <a href="${baza}/documente/cerere/${cerere.id}">cerere-coordonare-${cerere.number}</a>.</p>`
-          : `<p>Bună, ${student.name.split(' ')[0]}. Cererea <strong>${cerere.number}</strong> pentru lucrarea
+          : html`<p>Bună, ${student.name.split(' ')[0]}. Cererea <strong>${cerere.number}</strong> pentru lucrarea
              „${cerere.title_ro}” a fost respinsă de ${u!.name}.</p>
              <p><strong>Motiv:</strong></p>${noteBlock}
              <p>Poți depune o cerere nouă, către același coordonator sau către altul.</p>`,

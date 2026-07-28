@@ -1,7 +1,7 @@
 import type { APIRoute } from 'astro'
 import { postEvent } from '../../../lib/chat'
 import { queryOne } from '../../../lib/db'
-import { template, sendEmail } from '../../../lib/mail'
+import { template, sendEmail, html } from '../../../lib/mail'
 import { redirectWithNotice } from '../../../lib/http'
 import { DECISION_WINDOW_DAYS } from '../../../lib/lifecycle'
 import { seedMilestones, teacherSeats } from '../../../lib/repo'
@@ -109,7 +109,7 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
         subject: `Cererea ${number} a fost aprobată`,
         html: template(
           'Coordonarea este confirmată',
-          `<p>Bună, ${u.name.split(' ')[0]}! Cererea <strong>${number}</strong> pentru lucrarea
+          html`<p>Bună, ${u.name.split(' ')[0]}! Cererea <strong>${number}</strong> pentru lucrarea
            „${titleRo}” a fost aprobată automat, pentru că ai acceptat propunerea lui ${teacher.name}.</p>
            <p>În portal găsești acum jaloanele lucrării și poți programa consultații.</p>`,
           { text: 'Deschide portalul', url: `${base}/cererile-mele` },
@@ -120,7 +120,7 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
         subject: `${u.name} a depus cererea — aprobată automat`,
         html: template(
           'Coordonare confirmată',
-          `<p><strong>${u.name}</strong> a depus cererea <strong>${number}</strong> pe baza propunerii
+          html`<p><strong>${u.name}</strong> a depus cererea <strong>${number}</strong> pe baza propunerii
            tale, iar portalul a aprobat-o automat.</p>
            <p style="padding:12px 16px;background:#f8f9fa;border-radius:4px"><strong>${titleRo}</strong></p>`,
           { text: 'Vezi studentul', url: `${base}/profesor/studenti?sectiune=studenti` },
@@ -135,7 +135,7 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
       subject: `Cerere nouă de coordonare — ${u.name}`,
       html: template(
         'Ai primit o cerere de coordonare',
-        `<p><strong>${u.name}</strong> (${u.student_number ?? '—'},
+        html`<p><strong>${u.name}</strong> (${u.student_number ?? '—'},
          ${u.program === 'master' ? 'master' : 'licență'}) îți propune lucrarea:</p>
          <p style="padding:12px 16px;background:#f8f9fa;border-radius:4px"><strong>${titleRo}</strong></p>
          <p style="color:#5b6169;font-size:13px">${objectives.slice(0, 400)}${objectives.length > 400 ? '…' : ''}</p>

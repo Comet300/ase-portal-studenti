@@ -1,8 +1,5 @@
-import { createReadStream } from 'node:fs'
-import { stat } from 'node:fs/promises'
-import { Readable } from 'node:stream'
 import type { APIRoute } from 'astro'
-import { filePath } from '../../lib/files'
+import { openFile } from '../../lib/files'
 
 /**
  * Profile pictures.
@@ -32,23 +29,19 @@ export const GET: APIRoute = async ({ params, locals }) => {
     return new Response('Imaginea nu a fost găsită', { status: 404 })
   }
 
-  const path = filePath(folder, name)
-  if (!path) return new Response('Imaginea nu a fost găsită', { status: 404 })
+  const stored = await openFile(folder, name)
+  if (!stored) return new Response('Imaginea nu a fost găsită', { status: 404 })
 
-  try {
-    const info = await stat(path)
-    const extension = name.split('.').pop()!.toLowerCase()
+  const extension = name.split('.').pop()!.toLowerCase()
 
-    return new Response(Readable.toWeb(createReadStream(path)) as ReadableStream, {
-      headers: {
-        'content-type': TYPES[extension] ?? 'application/octet-stream',
-        'content-length': String(info.size),
-        // The stored name contains a fresh uuid on every upload, so the URL
-        // changes when the picture does and this can be cached hard.
-        'cache-control': 'private, max-age=604800, immutable',
-      },
-    })
-  } catch {
-    return new Response('Imaginea nu a fost găsită', { status: 404 })
-  }
+  return new Response(stored.stream, {
+    headers: {
+      'content-type': TYPES[extension] ?? 'application/octet-stream',
+      'content-length': String(stored.size),
+      // The stored name contains a fresh uuid on every upload, so the URL
+      // changes when the picture does and this can be cached hard — privately,
+      // never at a shared cache.
+      'cache-control': 'private, max-age=604800, immutable',
+    },
+  })
 }

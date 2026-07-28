@@ -1,6 +1,6 @@
 import type { APIRoute } from 'astro'
 import { createMagicLink, findUserByEmail } from '../../lib/auth'
-import { template, sendEmail } from '../../lib/mail'
+import { template, sendEmail, html } from '../../lib/mail'
 import { redirect } from '../../lib/http'
 
 /**
@@ -30,7 +30,7 @@ export const POST: APIRoute = async ({ request, url }) => {
       subject: 'Link de autentificare — Portal Studenți',
       html: template(
         `Bine ai revenit, ${utilizator.name.split(' ')[0]}`,
-        `<p>Apasă butonul de mai jos pentru a intra în portal. Linkul este valabil
+        html`<p>Apasă butonul de mai jos pentru a intra în portal. Linkul este valabil
          <strong>20 de minute</strong> și poate fi folosit o singură dată.</p>
          <p style="color:#5b6169;font-size:13px">Dacă nu ai cerut tu acest link, ignoră mesajul —
          nimeni nu poate intra în contul tău fără el.</p>`,
