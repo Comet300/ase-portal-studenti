@@ -1,5 +1,6 @@
 ---
 import '../styles/app.css'
+import { currentYearLabel } from '../lib/years'
 
 interface Props {
   title: string
@@ -7,7 +8,12 @@ interface Props {
 }
 
 const { title, description } = Astro.props
-const fullTitle = `${title} · Portal Studenți — Sesiunea de Finalizare a Studiilor 2026`
+
+// Sesiunea se numește după anul din baza de date, nu după unul scris în cod:
+// altfel, în dimineața în care directorul deschide un an nou, fiecare titlu de
+// pagină îl contrazice.
+const sesiune = await currentYearLabel()
+const fullTitle = `${title} · Portal Studenți — Sesiunea de Finalizare a Studiilor ${sesiune}`
 ---
 
 <!doctype html>

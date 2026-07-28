@@ -53,7 +53,7 @@ export function buildIcs(ev: CalendarEvent): string {
   const lines = [
     'BEGIN:VCALENDAR',
     'VERSION:2.0',
-    'PRODID:-//Portal Studenti ASE//Sesiunea 2026//RO',
+    'PRODID:-//Portal Studenti ASE//Portal Studenti//RO',
     'CALSCALE:GREGORIAN',
     `METHOD:${ev.cancelled ? 'CANCEL' : 'REQUEST'}`,
     'BEGIN:VEVENT',
@@ -81,15 +81,18 @@ export function buildIcs(ev: CalendarEvent): string {
 }
 
 /** Calendarul sesiunii, ca fișier descărcabil — etapele ca evenimente de zi întreagă. */
-export function stagesIcs(stages: { title: string; description: string | null; starts_on: string | null; ends_on: string | null }[]): string {
+export function stagesIcs(
+  stages: { title: string; description: string | null; starts_on: string | null; ends_on: string | null }[],
+  sessionLabel = '',
+): string {
   const dayStamp = (d: string) => d.slice(0, 10).replace(/-/g, '')
   const lines = [
     'BEGIN:VCALENDAR',
     'VERSION:2.0',
-    'PRODID:-//Portal Studenti ASE//Calendar sesiune 2026//RO',
+    'PRODID:-//Portal Studenti ASE//Calendar sesiune//RO',
     'CALSCALE:GREGORIAN',
     'METHOD:PUBLISH',
-    'X-WR-CALNAME:Sesiunea de Finalizare a Studiilor 2026',
+    `X-WR-CALNAME:Sesiunea de Finalizare a Studiilor ${sessionLabel}`.trim(),
   ]
 
   for (const [i, e] of stages.entries()) {

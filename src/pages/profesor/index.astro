@@ -14,6 +14,7 @@ import {
   supervisedStudents,
 } from '../../lib/repo'
 import { teacherInvitations } from '../../lib/lifecycle'
+import { currentYearLabel } from '../../lib/years'
 
 const u = Astro.locals.user!
 const [stat, cereri, studenti, sloturi, stageList, etapa, locuri, invitatii] = await Promise.all([
@@ -27,6 +28,7 @@ const [stat, cereri, studenti, sloturi, stageList, etapa, locuri, invitatii] = a
   teacherInvitations(u.id),
 ])
 
+const sesiune = await currentYearLabel()
 const azi = new Date().toDateString()
 const sloturiAzi = sloturi.filter((s) => new Date(s.starts_at).toDateString() === azi && !s.is_cancelled)
 const urmatoareleSloturi = sloturi.filter((s) => new Date(s.starts_at) > new Date() && !s.is_cancelled).slice(0, 4)
@@ -44,7 +46,7 @@ const necitite = studenti.reduce((s, x) => s + x.unread, 0)
   title={`Bine ai revenit, ${prenume}`}
   lede={etapa
     ? `Etapa curentă: ${etapa.title} · ${etapa.interval_label}`
-    : 'Sesiunea de Finalizare a Studiilor 2026'}
+    : `Sesiunea de Finalizare a Studiilor ${sesiune}`}
   active="dashboard"
 >
   <div slot="actiuni" class="row">

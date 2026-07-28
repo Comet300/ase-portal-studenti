@@ -21,6 +21,24 @@ export function currentYear(): Promise<AcademicYear | null> {
   return queryOne<AcademicYear>(`SELECT * FROM academic_years WHERE is_current LIMIT 1`)
 }
 
+/**
+ * The running year's label, for page chrome.
+ *
+ * Every layout, title and footer names the session, so this is read on almost
+ * every render — and it changes once a year. Memoised for a few minutes so the
+ * header does not cost a query per page, and short enough that the change is
+ * visible without a restart on the day the director opens a new year.
+ */
+let cachedLabel: { value: string; at: number } | null = null
+
+export async function currentYearLabel(): Promise<string> {
+  if (cachedLabel && Date.now() - cachedLabel.at < 5 * 60 * 1000) return cachedLabel.value
+  const year = await currentYear().catch(() => null)
+  const value = year?.label ?? ''
+  cachedLabel = { value, at: Date.now() }
+  return value
+}
+
 export function allYears(): Promise<AcademicYear[]> {
   return query<AcademicYear>(`SELECT * FROM academic_years ORDER BY starts_on DESC`)
 }

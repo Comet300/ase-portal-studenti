@@ -2,6 +2,7 @@ import type { APIRoute } from 'astro'
 import { query } from '../../lib/db'
 import { renderDoc } from '../../lib/doc'
 import { stagesIcs } from '../../lib/ics'
+import { currentYearLabel } from '../../lib/years'
 import { escapeHtml } from '../../lib/mail'
 
 /**
@@ -32,7 +33,7 @@ export const GET: APIRoute = async ({ params, locals }) => {
         ORDER BY position`,
     )
 
-    return new Response(stagesIcs(stages), {
+    return new Response(stagesIcs(stages, await currentYearLabel()), {
       headers: {
         'content-type': 'text/calendar; charset=utf-8',
         'content-disposition': 'attachment; filename="calendar-sesiune.ics"',
