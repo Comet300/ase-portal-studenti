@@ -17,6 +17,9 @@ if (!connectionString) {
 
 const client = new pg.Client({ connectionString })
 await client.connect()
+// Aceleași ore ca la runtime: datele demonstrative sunt construite cu `now()`
+// și `date + '14 hours'`, deci fusul sesiunii decide ce instant înseamnă 14:00.
+await client.query(`SET TIME ZONE '${process.env.TZ ?? 'Europe/Bucharest'}'`)
 
 const q = (sql, params = []) => client.query(sql, params)
 const one = async (sql, params = []) => (await q(sql, params)).rows[0]
