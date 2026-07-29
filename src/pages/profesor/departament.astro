@@ -63,7 +63,14 @@ const totals = await queryOne<{
 }>(
   `SELECT
      (SELECT count(*)::int FROM users WHERE role = 'student') AS students,
-     (SELECT count(DISTINCT student_id)::int FROM requests WHERE academic_year_id = $1) AS with_request,
+     /* „A depus” însemna orice cerere din an, inclusiv una respinsă, expirată
+        sau retrasă — deci un student rămas fără coordonator era numărat printre
+        cei rezolvați, iar acest ecran anunța „Toți studenții au depus” în timp
+        ce celălalt ecran al aceluiași director arăta patru fără cerere. Se
+        numără doar cererile vii. */
+     (SELECT count(DISTINCT student_id)::int
+        FROM requests
+       WHERE academic_year_id = $1 AND status IN ('approved', 'pending')) AS with_request,
      count(*) FILTER (WHERE status = 'approved')::int AS approved,
      count(*) FILTER (WHERE status = 'pending')::int  AS pending,
      count(*) FILTER (WHERE status = 'rejected')::int AS rejected,
@@ -168,9 +175,26 @@ const sectiuni = [
             </div>
             <div class:list={['metric', { 'metric--alert': unassigned > 0 }]}>
               <span class="metric__value numeric">{unassigned}</span>
-              <span class="metric__label">fără cerere depusă</span>
+              <span class="metric__label">fără cerere activă</span>
               <span class="metric__note">
-                {unassigned > 0 ? 'Nu au început procedura' : 'Toți studenții au depus'}
+                {(totals?.students ?? 0) === 0
+                  ? 'Niciun student înscris în sesiune'
+                  : unassigned > 0
+                    ? 'Fie nu au depus, fie cererea a fost respinsă'
+                    : 'Toți au o cerere în lucru sau aprobată'}
+              </span>
+            </div>
+            {/* Respinsele și expirările nu mai dispar în „a depus”: sunt exact
+                studenții pe care directorul trebuie să îi caute. */}
+            <div class="metric">
+              <span class="metric__value numeric">
+                {(totals?.rejected ?? 0) + (totals?.expired ?? 0)}
+              </span>
+              <span class="metric__label">cereri respinse sau expirate</span>
+              <span class="metric__note">
+                {(totals?.expired ?? 0) > 0
+                  ? `${totals?.expired} expirate fără răspuns`
+                  : 'toate cu motivul comunicat'}
               </span>
             </div>
             <div class="metric">

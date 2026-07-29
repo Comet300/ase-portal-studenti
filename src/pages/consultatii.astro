@@ -371,4 +371,22 @@ for (const s of free) {
     gap: var(--s-4);
     padding: var(--s-5);
   }
+
+  /* Pe telefon, rândul rămânea orizontal: butoanele își păstrau lățimea, iar
+     coloana cu text se strângea la câțiva pixeli, scriind numele coordonatorului
+     câte un cuvânt pe rând. */
+  @media (max-width: 640px) {
+    .slot {
+      flex-wrap: wrap;
+      padding-inline: var(--s-4);
+    }
+    .slot__actiuni {
+      width: 100%;
+      display: flex;
+      gap: var(--s-2);
+    }
+    .slot__actiuni > * {
+      flex: 1;
+    }
+  }
 </style>

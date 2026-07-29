@@ -199,6 +199,7 @@ const STARI = [
                 </thead>
                 <tbody>
                   {g.students.map((s) => (
+                    <>
                     <tr>
                       <td>
                         <div class="row" style="gap:var(--s-3)">
@@ -228,7 +229,27 @@ const STARI = [
                         )}
                       </td>
                       {poateAtribui && (
-                        <td>
+                        <td style="text-align:right">
+                          <button
+                            class="btn btn--secondary btn--sm"
+                            type="button"
+                            data-editeaza={s.id}
+                            aria-expanded="false"
+                            aria-controls={`editor-${s.id}`}
+                          >
+                            Grupare
+                          </button>
+                        </td>
+                      )}
+                    </tr>
+                    {/* Editorul stătea în celulă: un select de 210px plus două
+                        câmpuri plus un buton forțau tabelul la peste 1000px, iar
+                        „Salvează” rămânea tăiat la 1280px și tot documentul —
+                        nu doar tabelul — derula lateral pe telefon. Aici are un
+                        rând întreg, deschis doar când e nevoie. */}
+                    {poateAtribui && (
+                      <tr class="editor-rand" id={`editor-${s.id}`} hidden>
+                        <td colspan="6">
                           <form method="POST" action="/api/studenti" class="atribuire">
                             <input type="hidden" name="student_id" value={s.id} />
                             <label class="visually-hidden" for={`prog-${s.id}`}>
@@ -270,11 +291,12 @@ const STARI = [
                               value={s.study_group ?? ''}
                               placeholder="Grupa"
                             />
-                            <button class="btn btn--secondary btn--sm" type="submit">Salvează</button>
+                            <button class="btn btn--primary btn--sm" type="submit">Salvează</button>
                           </form>
                         </td>
-                      )}
-                    </tr>
+                      </tr>
+                    )}
+                    </>
                   ))}
                 </tbody>
               </table>
@@ -285,6 +307,28 @@ const STARI = [
     }
   </div>
 </ProfesorLayout>
+
+<script>
+  // Editorul de grupare se deschide pe rândul de sub student, unul singur odată.
+  document.querySelectorAll<HTMLButtonElement>('[data-editeaza]').forEach((b) => {
+    b.addEventListener('click', () => {
+      const rand = document.getElementById(`editor-${b.dataset.editeaza}`)
+      if (!rand) return
+
+      const deschis = !rand.hidden
+      document.querySelectorAll<HTMLElement>('.editor-rand').forEach((r) => (r.hidden = true))
+      document
+        .querySelectorAll<HTMLButtonElement>('[data-editeaza]')
+        .forEach((x) => x.setAttribute('aria-expanded', 'false'))
+
+      if (deschis) return
+
+      rand.hidden = false
+      b.setAttribute('aria-expanded', 'true')
+      rand.querySelector<HTMLSelectElement>('select')?.focus()
+    })
+  })
+</script>
 
 <style>
   .metric {
@@ -309,16 +353,21 @@ const STARI = [
     color: var(--ink-soft);
   }
 
+  .editor-rand td {
+    background: var(--surface-sunken);
+  }
+
   .atribuire {
     display: flex;
-    align-items: center;
-    gap: var(--s-2);
-    justify-content: flex-end;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: var(--s-3);
   }
   .atribuire .select--sm {
-    min-width: 210px;
-    font-size: var(--t-xs);
-    padding-block: var(--s-1);
+    /* Fără lățime minimă: în celulă împingea tabelul la peste 1000px. Pe un rând
+       întreg are loc oricum. */
+    flex: 1 1 260px;
+    font-size: var(--t-sm);
   }
   .atribuire .input--num {
     width: 72px;

@@ -1,6 +1,6 @@
 import type { APIRoute } from 'astro'
 import { isDepartmentHead } from '../../lib/auth'
-import { execute, queryOne } from '../../lib/db'
+import { execute, queryOne, transaction } from '../../lib/db'
 import { redirectWithNotice } from '../../lib/http'
 import { formAction } from '../../lib/forms'
 import { openYear } from '../../lib/years'
@@ -104,42 +104,99 @@ export const POST: APIRoute = async ({ request, locals }) => {
       .filter(Boolean)
       .map((line) => line.split(';').map((cell) => cell.trim()))
 
-    let imported = 0
-    const rejected: string[] = []
+    /* Totul se verifică înainte ca ceva să se scrie.
+     *
+     * Rândurile intrau unul câte unul, fără tranzacție, iar data trecea direct
+     * prin `::date` fără nicio validare: un „iulie 2024” într-un rând de la
+     * mijloc arunca o eroare 500 cu corp gol, după ce rândurile de dinaintea lui
+     * erau deja definitive — și rămâneau vizibile în arhiva publică. Directorul
+     * nu primea nici mesaj, nici număr, nici vreun fel de a ști ce a intrat. */
+    const bune: {
+      studentName: string
+      studentNumber: string
+      programme: string
+      level: string
+      language: string
+      teacherName: string
+      title: string
+      defended: string
+    }[] = []
+    const respinse: string[] = []
 
     for (const [index, cells] of rows.entries()) {
       const [studentName, studentNumber, programme, level, language, teacherName, title, defended] = cells
+      const nr = index + 1
 
       if (!studentName || !teacherName || !title) {
-        rejected.push(`rândul ${index + 1}`)
+        respinse.push(`rândul ${nr}: lipsește studentul, coordonatorul sau titlul`)
         continue
       }
 
-      const n = await execute(
-        `INSERT INTO archive_entries (academic_year_id, student_name, student_number, programme,
-                                      level, language, teacher_name, title_ro, defended_on, created_by)
-         SELECT $1, $2, NULLIF($3, ''), NULLIF($4, ''),
-                CASE WHEN lower($5) IN ('master', 'm') THEN 'master' ELSE 'bachelor' END,
-                NULLIF($6, ''), $7, $8, NULLIF($9, '')::date, $10
-          WHERE NOT EXISTS (
-            SELECT 1 FROM archive_entries
-             WHERE academic_year_id = $1 AND student_name = $2 AND title_ro = $8
-          )`,
-        [
-          yearId, studentName, studentNumber ?? '', programme ?? '', level ?? '', language ?? '',
-          teacherName, title, defended ?? '', u!.id,
-        ],
-      )
-      imported += n
+      const data = (defended ?? '').trim()
+      // Doar ISO: „iulie 2024” nu este o dată pentru Postgres, iar `::date`
+      // ridica excepția abia în mijlocul importului.
+      if (data && !/^\d{4}-\d{2}-\d{2}$/.test(data)) {
+        respinse.push(`rândul ${nr}: data „${data}” nu este în formatul AAAA-LL-ZZ`)
+        continue
+      }
+      if (data && Number.isNaN(new Date(data).getTime())) {
+        respinse.push(`rândul ${nr}: data „${data}” nu există în calendar`)
+        continue
+      }
+
+      bune.push({
+        studentName,
+        studentNumber: studentNumber ?? '',
+        programme: programme ?? '',
+        level: level ?? '',
+        language: language ?? '',
+        teacherName,
+        title,
+        defended: data,
+      })
     }
 
-    const skipped = rows.length - imported
+    if (bune.length === 0) {
+      return back(
+        `Niciun rând nu a putut fi importat. ${respinse.slice(0, 3).join('; ')}${respinse.length > 3 ? `; și încă ${respinse.length - 3}` : ''}.`,
+        true,
+      )
+    }
+
+    // O singură tranzacție: dacă pică ceva la ultimul rând, nu rămâne nimic pe
+    // jumătate în arhiva publică.
+    const imported = await transaction(async (client) => {
+      let n = 0
+      for (const r of bune) {
+        const { rowCount } = await client.query(
+          `INSERT INTO archive_entries (academic_year_id, student_name, student_number, programme,
+                                        level, language, teacher_name, title_ro, defended_on, created_by)
+           SELECT $1, $2, NULLIF($3, ''), NULLIF($4, ''),
+                  CASE WHEN lower($5) IN ('master', 'm') THEN 'master' ELSE 'bachelor' END,
+                  NULLIF($6, ''), $7, $8, NULLIF($9, '')::date, $10
+            WHERE NOT EXISTS (
+              SELECT 1 FROM archive_entries
+               WHERE academic_year_id = $1 AND student_name = $2 AND title_ro = $8
+            )`,
+          [
+            yearId, r.studentName, r.studentNumber, r.programme, r.level, r.language,
+            r.teacherName, r.title, r.defended, u!.id,
+          ],
+        )
+        n += rowCount ?? 0
+      }
+      return n
+    })
+
+    const duplicate = bune.length - imported
+
     return back(
       `${imported} ${imported === 1 ? 'înregistrare importată' : 'înregistrări importate'} în ${year.label}.` +
-        (skipped > 0
-          ? ` ${skipped} ${skipped === 1 ? 'rând ignorat' : 'rânduri ignorate'} (duplicate sau incomplete${rejected.length ? `: ${rejected.slice(0, 5).join(', ')}` : ''}).`
+        (duplicate > 0 ? ` ${duplicate} ${duplicate === 1 ? 'exista deja' : 'existau deja'}.` : '') +
+        (respinse.length > 0
+          ? ` ${respinse.length} ${respinse.length === 1 ? 'rând respins' : 'rânduri respinse'} — ${respinse.slice(0, 3).join('; ')}${respinse.length > 3 ? '; …' : ''}.`
           : ''),
-      imported === 0,
+      imported === 0 || respinse.length > 0,
     )
   }
 

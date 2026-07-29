@@ -24,7 +24,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
   const form = await request.formData()
   const studentId = formId(form.get('student_id'))
   const programmeId = formId(form.get('program_id'))
-  const studyYear = Number(form.get('an_studiu') ?? 0)
+  const anBrut = form.get('an_studiu')
   const studyGroup = String(form.get('grupa') ?? '').trim()
 
   const back = (message: string, isError = false) => redirectWithNotice(PAGE, message, isError)
@@ -45,7 +45,23 @@ export const POST: APIRoute = async ({ request, locals }) => {
   )
   if (!programme) return back('Alege un program de studiu din anul curent.', true)
 
-  const year = Number.isFinite(studyYear) ? Math.min(6, Math.max(1, Math.trunc(studyYear))) : null
+  /* Câmp gol înseamnă „nu schimba”, nu „anul 1”.
+   *
+   * `Number('')` este 0, `Number.isFinite(0)` este adevărat, iar limitarea la
+   * 1–6 îl ridica la 1 — deci `COALESCE` nu vedea niciodată NULL. Câmpul se
+   * randează gol pentru orice student fără an înregistrat, așa că un director
+   * care corecta doar grupa îi ștergea anul, fără ca mesajul de confirmare să
+   * pomenească nimic. */
+  const anText = anBrut === null ? '' : String(anBrut).trim()
+  let year: number | null = null
+
+  if (anText !== '') {
+    const n = Number(anText)
+    if (!Number.isFinite(n) || n < 1 || n > 6) {
+      return back('Anul de studiu trebuie să fie un număr între 1 și 6.', true)
+    }
+    year = Math.trunc(n)
+  }
 
   await execute(
     `UPDATE users
