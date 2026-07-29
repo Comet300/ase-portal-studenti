@@ -31,8 +31,8 @@ const COLUMNS = [
   'Titlul lucrării (RO)',
   'Titlul lucrării (EN)',
   'Aprobată la',
-  'Jaloane finalizate',
-  'Jaloane total',
+  'Termene finalizate',
+  'Termene total',
 ]
 
 function cell(value: unknown): string {

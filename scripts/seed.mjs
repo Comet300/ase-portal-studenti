@@ -405,7 +405,7 @@ for (const [i, studentId] of studentIds.entries()) {
     ],
   )
 
-  // Jaloane pentru cererile aprobate
+  // Termenele lucrării pentru cererile aprobate
   if (rows[0] && status === 'approved') {
     const cerereId = rows[0].id
     for (const [j, [titlu, descriere, ordine]] of MILESTONES.entries()) {
@@ -553,7 +553,7 @@ for (const { student_id, teacher_id } of approved) {
       WHERE NOT EXISTS (
         SELECT 1 FROM messages WHERE conversation_id = $1 AND kind = 'event'
       )`,
-    [conversatieId, teacher_id, 'Cererea de coordonare a fost aprobată. Jaloanele lucrării sunt disponibile în portal.'],
+    [conversatieId, teacher_id, 'Cererea de coordonare a fost aprobată. Termenele lucrării sunt disponibile în portal.'],
   )
 
   for (const [i, [role, body]] of DEMO_MESSAGES.entries()) {
@@ -614,6 +614,15 @@ for (const r of demoPair) {
 }
 
 console.log('[seed] invitație')
+/* Textul evenimentelor deja scrise în bază păstrează vocabularul vechi.
+ * „Jaloane" a fost redenumit „Termene" peste tot în interfață; un mesaj din
+ * conversație scris înainte de redenumire ar contrazice ecranul de lângă el. */
+await q(
+  `UPDATE messages
+      SET body = replace(replace(body, 'Jaloanele', 'Termenele'), 'jaloanele', 'termenele')
+    WHERE kind = 'event' AND body LIKE '%aloanele%'`,
+)
+
 /* --- o invitație în așteptare ---------------------------------------------
  * Studenta fără coordonator primește o propunere de la cadrul didactic demo.
  * Rămâne fără coordonator până răspunde, deci scenariul „niciun coordonator”
