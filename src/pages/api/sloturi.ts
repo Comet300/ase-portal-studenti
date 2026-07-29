@@ -4,7 +4,7 @@ import { postEvent } from '../../lib/chat'
 import { execute, query, queryOne } from '../../lib/db'
 import { buildIcs } from '../../lib/ics'
 import { redirectWithNotice } from '../../lib/http'
-import { sendEmail, template, html } from '../../lib/mail'
+import { html, joinHtml, sendEmail, template } from '../../lib/mail'
 import { formatDate, formatTime } from '../../lib/repo'
 import { id as formId } from '../../lib/ids'
 
@@ -47,6 +47,11 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
     const mode = String(form.get('mod') ?? 'in_person')
     const location = String(form.get('locatie') ?? '').trim()
     const meetingUrl = String(form.get('link_online') ?? '').trim()
+    // How many students may take the same hour. A consultation is often a group
+    // of three going over the same chapter; one-to-one is the default, not the
+    // only shape.
+    const requested = Number(form.get('locuri') ?? 1)
+    const places = Number.isFinite(requested) ? Math.min(30, Math.max(1, Math.trunc(requested))) : 1
 
     if (!day || !Number.isFinite(startHour) || !Number.isFinite(endHour) || endHour <= startHour) {
       return back('Alege ziua și un interval orar valid.', true)
@@ -63,30 +68,77 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
     }
 
     const hours = Math.min(endHour - startHour, 8)
-    let created = 0
+    const created: { starts_at: string; ends_at: string }[] = []
 
     for (let i = 0; i < hours; i++) {
-      const n = await execute(
-        `INSERT INTO consultation_slots (teacher_id, starts_at, ends_at, mode, location, meeting_url)
+      const slot = await queryOne<{ starts_at: string; ends_at: string }>(
+        `INSERT INTO consultation_slots
+           (teacher_id, starts_at, ends_at, mode, location, meeting_url, capacity)
          SELECT $1,
                 ($2::date + ($3 || ' hours')::interval),
                 ($2::date + ($4 || ' hours')::interval),
-                $5, NULLIF($6, ''), NULLIF($7, '')
+                $5, NULLIF($6, ''), NULLIF($7, ''), $8
           WHERE NOT EXISTS (
             SELECT 1 FROM consultation_slots s
              WHERE s.teacher_id = $1
                AND s.starts_at = ($2::date + ($3 || ' hours')::interval)
-          )`,
-        [u!.id, day, String(startHour + i), String(startHour + i + 1), mode, location, meetingUrl],
+          )
+         RETURNING starts_at, ends_at`,
+        [u!.id, day, String(startHour + i), String(startHour + i + 1), mode, location, meetingUrl, places],
       )
-      created += n
+      if (slot) created.push(slot)
     }
 
+    if (created.length === 0) return back('Intervalele existau deja.', true)
+
+    /* Published hours nobody hears about are hours nobody books.
+     *
+     * Sent whenever anything new appears — including a single interval, which is
+     * the case most likely to be missed: a coordinator freeing up one hour is
+     * exactly when the students who need it are not looking at the portal. */
+    const students = await query<{ name: string; email: string }>(
+      `SELECT s.name, s.email
+         FROM requests r JOIN users s ON s.id = r.student_id
+        WHERE r.teacher_id = $1 AND r.status = 'approved'
+          AND r.academic_year_id = (SELECT id FROM academic_years WHERE is_current)
+        ORDER BY s.name`,
+      [u!.id],
+    )
+
+    const place = whereItIs(mode, location, meetingUrl)
+    const list = joinHtml(
+      created.map(
+        (s) =>
+          html`<li><strong>${formatDate(s.starts_at)}</strong>, ${formatTime(s.starts_at)}–${formatTime(s.ends_at)}</li>`,
+      ),
+    )
+
+    await Promise.all(
+      students.map((student) =>
+        sendEmail({
+          to: student.email,
+          subject:
+            created.length === 1
+              ? `Un interval de consultație nou — ${formatDate(created[0].starts_at)}`
+              : `${created.length} intervale de consultație noi`,
+          html: template(
+            'Intervale de consultație disponibile',
+            html`<p>Bună, ${student.name.split(' ')[0]}! ${u!.name} a publicat
+             ${created.length === 1 ? 'un interval' : `${created.length} intervale`} de consultație:</p>
+             <ul>${list}</ul>
+             <p>${place}</p>
+             <p>Locurile se ocupă în ordinea rezervărilor${places > 1 ? `, câte ${places} pe interval` : ''}.</p>`,
+            { text: 'Rezervă un interval', url: `${base}/consultatii` },
+          ),
+        }),
+      ),
+    )
+
     return back(
-      created > 0
-        ? `${created} ${created === 1 ? 'interval publicat' : 'intervale publicate'}.`
-        : 'Intervalele existau deja.',
-      created === 0,
+      `${created.length} ${created.length === 1 ? 'interval publicat' : 'intervale publicate'}. ` +
+        (students.length > 0
+          ? `${students.length} ${students.length === 1 ? 'student anunțat' : 'studenți anunțați'} pe email.`
+          : 'Nu ai încă studenți coordonați de anunțat.'),
     )
   }
 

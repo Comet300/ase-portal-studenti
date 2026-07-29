@@ -167,10 +167,15 @@ const necitite = studenti.reduce((s, x) => s + x.unread, 0)
                       {formatTime(s.starts_at)}–{formatTime(s.ends_at)}
                     </span>
                     <span class="lista__meta">
-                      {s.student_name ?? 'Liber'} · {s.mode === 'online' ? 'Online' : (s.location ?? 'Cabinet')}
+                      {s.booked > 0 ? s.student_names.join(', ') : 'Liber'} ·{' '}
+                      {s.mode === 'online' ? 'Online' : (s.location ?? 'Cabinet')}
                     </span>
                   </span>
-                  {s.booked > 0 && <span class="badge badge--aprobata">Rezervat</span>}
+                  {s.booked > 0 && (
+                    <span class="badge badge--aprobata">
+                      {s.capacity > 1 ? `${s.booked}/${s.capacity}` : 'Rezervat'}
+                    </span>
+                  )}
                 </li>
               ))}
             </ul>

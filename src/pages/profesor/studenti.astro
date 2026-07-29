@@ -864,9 +864,18 @@ function deadline(expiresAt: string | null | undefined) {
                         {s.is_cancelled ? (
                           <span class="badge badge--respinsa">Anulat</span>
                         ) : s.booked > 0 ? (
-                          <span class="badge badge--aprobata">{s.student_name}</span>
+                          <div class="stack stack--tight" style="gap:2px;align-items:flex-start">
+                            <span class="badge badge--aprobata">
+                              {s.capacity > 1 ? `${s.booked} din ${s.capacity} locuri` : 'Rezervat'}
+                            </span>
+                            <span class="muted" style="font-size:var(--t-xs)">
+                              {s.student_names.join(', ')}
+                            </span>
+                          </div>
                         ) : s.invited_name ? (
                           <span class="badge badge--asteptare">rezervat pentru {s.invited_name}</span>
+                        ) : s.capacity > 1 ? (
+                          <span class="muted">{s.capacity} locuri libere</span>
                         ) : (
                           <span class="muted">Liber</span>
                         )}
@@ -903,6 +912,11 @@ function deadline(expiresAt: string | null | undefined) {
                   <label class="label" for="slot-final">Până la</label>
                   <input class="input" id="slot-final" name="ora_final" type="number" min="8" max="22" value="16" />
                 </div>
+                <div class="field" style="min-width:110px">
+                  <label class="label" for="slot-locuri">Locuri</label>
+                  <input class="input" id="slot-locuri" name="locuri" type="number" min="1" max="30" value="1" />
+                  <span class="hint">Câți studenți pot lua același interval.</span>
+                </div>
                 <div class="field" style="min-width:150px">
                   <label class="label" for="slot-mod">Unde</label>
                   <select class="select" id="slot-mod" name="mod" data-mod>
@@ -928,8 +942,9 @@ function deadline(expiresAt: string | null | undefined) {
               </div>
             </form>
             <p class="hint" style="margin-top:var(--s-2)">
-              Se creează câte un interval de o oră. Studenții coordonați îl pot rezerva și primesc
-              invitație în calendar, cu adresa și linkul completate aici.
+              Se creează câte un interval de o oră. Toți studenții coordonați primesc un email
+              imediat ce publici — inclusiv când publici un singur interval — și primesc invitație
+              în calendar la rezervare, cu adresa și linkul completate aici.
             </p>
           </div>
         </section>
