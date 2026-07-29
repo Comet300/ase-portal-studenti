@@ -50,10 +50,14 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
   // An accepted invitation is what turns this into an approved request. The
   // lookup carries the student id, so an invitation addressed to someone else
   // simply does not match.
+  // Still bounded by the invitation's own deadline: accepting does not freeze
+  // the offer, and an approval that skips the seat check must not be redeemable
+  // months later against seats the coordinator no longer has.
   const invitation = invitationId
     ? await queryOne<{ id: string }>(
         `SELECT id FROM invitations
-          WHERE id = $1 AND student_id = $2 AND teacher_id = $3 AND status = 'accepted'`,
+          WHERE id = $1 AND student_id = $2 AND teacher_id = $3
+            AND status = 'accepted' AND expires_at > now()`,
         [invitationId, u.id, teacherId],
       )
     : null

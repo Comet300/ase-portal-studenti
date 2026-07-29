@@ -29,8 +29,15 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
     return back(cancelledRow ? 'Rezervarea a fost anulată.' : 'Rezervarea nu a fost găsită.', !cancelledRow)
   }
 
-  // Slotul trebuie să fie liber, viitor și neanulat; condițiile stau în INSERT,
-  // deci două cereri simultane nu pot ocupa amândouă ultimul loc.
+  /* Slotul trebuie să fie liber, viitor, neanulat — și al coordonatorului tău.
+   *
+   * Ultimele două condiții lipseau: pagina arăta doar intervalele coordonatorului
+   * propriu, dar interfața nu este o autorizare. Cu un `slot_id` obținut oricum,
+   * oricine autentificat putea rezerva la orice cadru didactic, inclusiv un
+   * interval rezervat prin `student_id` pentru un student anume.
+   *
+   * Toate condițiile stau în INSERT, deci două cereri simultane nu pot ocupa
+   * amândouă ultimul loc. */
   const booking = await queryOne<{ id: string }>(
     `INSERT INTO bookings (slot_id, student_id, subject)
      SELECT s.id, $1, NULLIF($3, '')
@@ -38,6 +45,11 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
       WHERE s.id = $2
         AND s.is_cancelled = false
         AND s.starts_at > now()
+        AND (s.student_id IS NULL OR s.student_id = $1)
+        AND EXISTS (
+          SELECT 1 FROM requests r
+           WHERE r.student_id = $1 AND r.teacher_id = s.teacher_id AND r.status = 'approved'
+        )
         AND (SELECT count(*) FROM bookings r WHERE r.slot_id = s.id AND r.status = 'booked') < s.capacity
      ON CONFLICT (slot_id, student_id) DO UPDATE SET status = 'booked'
      RETURNING id`,

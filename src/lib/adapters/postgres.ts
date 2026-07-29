@@ -11,6 +11,9 @@ import type { Database, Transaction } from '../ports'
 
 const { Pool, types } = pg
 
+/** The faculty's timezone; the process runs in it too (see Dockerfile). */
+const TIMEZONE = process.env.TZ ?? 'Europe/Bucharest'
+
 for (const oid of [1184, 1114, 1082]) {
   types.setTypeParser(oid, (v: string) => (v === null ? null : new Date(v).toISOString()))
 }
@@ -24,6 +27,18 @@ export function createPostgresDatabase(connectionString: string): Database {
   })
 
   pool.on('error', (err) => console.error('[db] idle client error', err))
+
+  /* Every connection speaks the faculty's timezone.
+   *
+   * Consultation times are built in SQL — `date + '14 hours'` — so the session
+   * timezone decides what instant "14:00" is. With the server default (UTC) and
+   * a process running in Bucharest, a typed 14:00 was stored as 14:00 UTC and
+   * the calendar invitation arrived for 17:00 while every screen said 14:00. */
+  pool.on('connect', (client) => {
+    client.query(`SET TIME ZONE '${TIMEZONE}'`).catch((err) => {
+      console.error('[db] nu s-a putut fixa fusul orar al conexiunii', err)
+    })
+  })
 
   /** Values travel only as `$n` parameters; there is no interpolating variant. */
   async function query<T>(sql: string, params: unknown[] = []): Promise<T[]> {

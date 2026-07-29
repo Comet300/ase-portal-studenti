@@ -404,12 +404,18 @@ export function supervisors(yearId?: string): Promise<Supervisor[]> {
             t.bio, t.avatar_path, t.interests,
             (SELECT count(*)::int FROM topics tp
               WHERE tp.teacher_id = t.id AND tp.is_active
-                AND tp.academic_year_id = a.academic_year_id) AS topic_count,
+                AND tp.academic_year_id = ${thisYear(1)}) AS topic_count,
             ${seatColumns(1)},
+            -- Counted exactly as seatColumns counts it, level by level: a
+            -- supervised student whose programme was never set would otherwise
+            -- fill a seat here and none there, and the two numbers on the same
+            -- card would disagree.
             (COALESCE(a.bachelor_seats, 0) + COALESCE(a.master_seats, 0)) <= (
               SELECT count(*)::int FROM requests r
+                JOIN users s3 ON s3.id = r.student_id
                WHERE r.teacher_id = t.id AND r.status = 'approved'
                  AND r.academic_year_id = ${thisYear(1)}
+                 AND s3.program IN ('bachelor', 'master')
             ) AS is_full
        FROM users t
        LEFT JOIN seat_allocations a

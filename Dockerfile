@@ -27,11 +27,13 @@ WORKDIR /app
 ENV NODE_ENV=production \
     HOST=0.0.0.0 \
     PORT=3000 \
+    TZ=Europe/Bucharest \
     UPLOADS_DIR=/app/uploads
 
-# Coolify's health check shells curl; busybox wget resolves localhost to ::1 and
-# gets ECONNREFUSED against a v4-only listener.
-RUN apk add --no-cache curl
+# curl: Coolify's health check shells it; busybox wget resolves localhost to ::1.
+# tzdata: without it TZ is accepted and silently ignored, and the portal would go
+# on rendering UTC while telling everyone it meant Bucharest.
+RUN apk add --no-cache curl tzdata
 
 COPY --from=prod-deps --chown=node:node /app/node_modules ./node_modules
 COPY --from=build --chown=node:node /app/dist ./dist

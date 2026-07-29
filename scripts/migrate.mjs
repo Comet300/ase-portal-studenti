@@ -39,6 +39,7 @@ async function connectWithRetry(attempts = 12, delayMs = 2500) {
 }
 
 const client = await connectWithRetry()
+await client.query(`SET TIME ZONE '${process.env.TZ ?? 'Europe/Bucharest'}'`)
 
 try {
   await client.query('SELECT pg_advisory_lock($1)', [LOCK])
