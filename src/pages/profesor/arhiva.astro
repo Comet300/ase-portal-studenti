@@ -298,7 +298,7 @@ const openSeatRequest = mySeatRequests.find((r) => r.status === 'pending')
                   <tr>
                     <td class="numeric muted">{r.number}</td>
                     <td>{r.student_name}</td>
-                    <td class="cell-title">{r.title_ro}</td>
+                    <td class="cell-title" title={r.title_ro}>{r.title_ro}</td>
                     <td>
                       <span class:list={['badge', STATUS_CLASS[r.status]]}>{STATUS_LABELS[r.status]}</span>
                     </td>

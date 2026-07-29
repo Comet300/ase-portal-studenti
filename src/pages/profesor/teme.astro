@@ -1,0 +1,146 @@
+---
+import ProfesorLayout from '../../layouts/ProfesorLayout.astro'
+import { teacherTopics } from '../../lib/repo'
+import { LANGUAGE_LABELS, languageLabel } from '../../lib/years'
+
+/**
+ * Temele propuse de un cadru didactic.
+ *
+ * Ecran propriu, nu un tab: catalogul de teme se editează la începutul sesiunii
+ * și apoi rar, dar este ceea ce văd toți studenții care caută un coordonator —
+ * îngropat sub „Studenți & Cereri" era greu de găsit tocmai când conta.
+ */
+
+const u = Astro.locals.user!
+const teme = await teacherTopics(u.id)
+---
+
+<ProfesorLayout
+  title="Teme propuse"
+  lede="Direcțiile de cercetare pe care le publici în catalogul studenților."
+  active="teme"
+>
+    <section class="panel">
+      <div class="panel__header">
+        <h2 class="section-title">Teme propuse</h2>
+      </div>
+
+      {teme.length === 0 ? (
+        <div class="empty">
+          <p class="empty__title">Nicio temă propusă</p>
+          <p class="empty__text">
+            Temele propuse apar în catalogul public de coordonatori, iar studenții pot depune cereri
+            direct pe ele.
+          </p>
+        </div>
+      ) : (
+        <ul class="teme">
+          {teme.map((t) => (
+            <li class:list={['tema', { 'is-inactiva': !t.is_active }]}>
+              <div class="tema__cap">
+                <span class="badge badge--info">
+                  {t.level === 'master' ? 'Master' : 'Licență'}
+                  {t.language !== 'ro' ? ` · ${languageLabel(t.language)}` : ''}
+                </span>
+                <span class="muted numeric" style="font-size:var(--t-xs)">
+                  {t.taken}/{t.seats} locuri
+                </span>
+              </div>
+              <h3 class="tema__titlu">{t.title}</h3>
+              {t.methods && <p class="muted" style="font-size:var(--t-sm)">Metode: {t.methods}</p>}
+              {t.prerequisites && t.prerequisites !== '—' && (
+                <p class="muted" style="font-size:var(--t-xs)">Prerechizite: {t.prerequisites}</p>
+              )}
+              <form method="POST" action="/api/teme" style="margin-top:auto">
+                <input type="hidden" name="actiune" value="comuta" />
+                <input type="hidden" name="tema_id" value={t.id} />
+                <button class="btn btn--ghost btn--sm" type="submit">
+                  {t.is_active ? 'Retrage din catalog' : 'Publică din nou'}
+                </button>
+              </form>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      <div class="panel__footer">
+        <form method="POST" action="/api/teme" class="row row--wrap" style="gap:var(--s-3);align-items:flex-end">
+          <input type="hidden" name="actiune" value="adauga" />
+          <div class="field" style="flex:3;min-width:240px">
+            <label class="label" for="tema-titlu">Temă nouă</label>
+            <input class="input" id="tema-titlu" name="titlu" required
+              placeholder="Ex: Adopția plăților contactless în mediul rural" />
+          </div>
+          <div class="field" style="flex:1;min-width:130px">
+            <label class="label" for="tema-nivel">Nivel</label>
+            <select class="select" id="tema-nivel" name="nivel">
+              <option value="bachelor">Licență</option>
+              <option value="master">Master</option>
+            </select>
+          </div>
+          <div class="field" style="flex:1;min-width:140px">
+            <label class="label" for="tema-limba">Limba lucrării</label>
+            <select class="select" id="tema-limba" name="limba">
+              {Object.entries(LANGUAGE_LABELS).map(([cod, text]) => (
+                <option value={cod}>{text}</option>
+              ))}
+            </select>
+            <span class="hint">Tema apare doar studenților din programele cu această limbă.</span>
+          </div>
+          <div class="field" style="flex:1;min-width:100px">
+            <label class="label" for="tema-locuri">Locuri</label>
+            <input class="input" id="tema-locuri" name="locuri" type="number" min="1" max="20" value="2" />
+          </div>
+          <div class="field" style="flex:2;min-width:200px">
+            <label class="label" for="tema-metode">Metode</label>
+            <input class="input" id="tema-metode" name="metode" placeholder="Ex: sondaj, analiză factorială" />
+          </div>
+          <div class="field" style="flex:2;min-width:200px">
+            <label class="label" for="tema-prerechizite">Prerechizite</label>
+            <input class="input" id="tema-prerechizite" name="prerechizite" placeholder="Ex: Statistică aplicată" />
+          </div>
+          <button class="btn btn--primary" type="submit">Publică tema</button>
+        </form>
+      </div>
+    </section>
+  )
+}
+
+{/* -------------------------------------------------------- consultații */}
+</ProfesorLayout>
+
+<style>
+  .teme {
+    list-style: none;
+    margin: 0;
+    padding: var(--s-5);
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: var(--s-4);
+  }
+
+  .tema {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-2);
+    padding: var(--s-4);
+    border: 1px solid var(--border);
+    border-radius: var(--r-md);
+  }
+  .tema.is-inactiva {
+    opacity: 0.55;
+  }
+
+  .tema__cap {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--s-2);
+  }
+
+  .tema__titlu {
+    font-size: var(--t-sm);
+    font-weight: 600;
+    text-wrap: pretty;
+  }
+</style>

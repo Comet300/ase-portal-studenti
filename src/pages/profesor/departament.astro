@@ -327,7 +327,7 @@ const sectiuni = [
                         <span class="muted">{programLabel(r.program)}</span>
                       </td>
                       <td>{r.teacher_name}</td>
-                      <td class="cell-title">{r.title_ro}</td>
+                      <td class="cell-title" title={r.title_ro}>{r.title_ro}</td>
                       <td>
                         <span class:list={['badge', STATUS_CLASS[r.status]]}>{STATUS_LABELS[r.status]}</span>
                       </td>

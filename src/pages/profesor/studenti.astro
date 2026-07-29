@@ -14,7 +14,6 @@ import {
   formatTime,
   studentDirectory,
   teacherSeats,
-  teacherSlots,
   supervisedStudents,
   teacherTopics,
 } from '../../lib/repo'
@@ -24,16 +23,14 @@ const u = Astro.locals.user!
 const sectiune = Astro.url.searchParams.get('sectiune') ?? 'cereri'
 const studentDeschis = Astro.url.searchParams.get('student')
 
-const [toateCererile, studenti, teme, sloturi, locuri, invitatii, directorStudenti] =
-  await Promise.all([
-    teacherRequests(u.id),
-    supervisedStudents(u.id),
-    teacherTopics(u.id),
-    teacherSlots(u.id),
-    teacherSeats(u.id),
-    teacherInvitations(u.id),
-    studentDirectory(),
-  ])
+const [toateCererile, studenti, teme, locuri, invitatii, directorStudenti] = await Promise.all([
+  teacherRequests(u.id),
+  supervisedStudents(u.id),
+  teacherTopics(u.id),
+  teacherSeats(u.id),
+  teacherInvitations(u.id),
+  studentDirectory(),
+])
 
 const inAsteptare = toateCererile.filter((c) => c.status === 'pending')
 const decise = toateCererile.filter((c) => c.status !== 'pending')
@@ -52,10 +49,8 @@ const milestones = timelineRequest ? await requestMilestones(u.id, timelineReque
 const sectiuni = [
   { cheie: 'cereri', text: 'Cereri', contor: inAsteptare.length },
   { cheie: 'studenti', text: 'Studenți coordonați', contor: studenti.length },
-  { cheie: 'cronologie', text: 'Cronologie', contor: null },
+  { cheie: 'progres', text: 'Progresul lucrărilor', contor: null },
   { cheie: 'invitatii', text: 'Propuneri trimise', contor: invitatiiDeschise.length },
-  { cheie: 'teme', text: 'Teme propuse', contor: teme.filter((t) => t.is_active).length },
-  { cheie: 'consultatii', text: 'Consultații', contor: sloturi.filter((s) => !s.is_cancelled).length },
 ]
 
 const caleCurenta = `/profesor/studenti?sectiune=${sectiune}`
@@ -202,7 +197,7 @@ function deadline(expiresAt: string | null | undefined) {
                     <tr>
                       <td class="numeric muted">{c.number}</td>
                       <td>{c.student_name}</td>
-                      <td class="celula-title">{c.title_ro}</td>
+                      <td class="celula-title" title={c.title_ro}>{c.title_ro}</td>
                       <td>
                         <span class:list={['badge', STATUS_CLASS[c.status]]}>
                           {STATUS_LABELS[c.status]}
@@ -278,7 +273,7 @@ function deadline(expiresAt: string | null | undefined) {
                           </div>
                         </div>
                       </td>
-                      <td class="celula-title">{s.title_ro}</td>
+                      <td class="celula-title" title={s.title_ro}>{s.title_ro}</td>
                       <td>
                         <div class="progres">
                           <div class="bara" role="img" aria-label={`Progres ${procent}%`}>
@@ -300,18 +295,18 @@ function deadline(expiresAt: string | null | undefined) {
                         <div class="row" style="gap:var(--s-2);justify-content:flex-end">
                           <a
                             class="btn btn--secondary btn--sm"
-                            href={`/profesor/studenti?sectiune=cronologie&student=${s.id}`}
+                            href={`/profesor/studenti?sectiune=progres&student=${s.id}`}
                           >
-                            Cronologie
+                            Termene
                           </a>
                           <a class="btn btn--ghost btn--sm" href={`/profesor/mesaje?student=${s.student_id}`}>
                             Mesaje
                           </a>
                           <a
                             class="btn btn--ghost btn--sm"
-                            href={`/profesor/studenti?sectiune=consultatii&cu=${s.student_id}`}
+                            href={`/profesor/consultatii?cu=${s.student_id}`}
                           >
-                            Programează
+                            Programează consultație
                           </a>
                         </div>
                       </td>
@@ -326,16 +321,16 @@ function deadline(expiresAt: string | null | undefined) {
     )
   }
 
-  {/* ------------------------------------------------------------ cronologie */}
+  {/* -------------------------------------------------------------- progres */}
   {
-    sectiune === 'cronologie' && (
+    sectiune === 'progres' && (
       <div class="stack">
         {studenti.length === 0 ? (
           <section class="panel">
             <div class="empty">
               <p class="empty__title">Nicio lucrare de urmărit</p>
               <p class="empty__text">
-                Cronologia devine disponibilă după ce accepți prima cerere de coordonare.
+                Termenele devin disponibile după ce accepți prima cerere de coordonare.
               </p>
             </div>
           </section>
@@ -347,7 +342,7 @@ function deadline(expiresAt: string | null | undefined) {
               </div>
               <div class="panel__body">
                 <form method="GET" class="row row--wrap" style="gap:var(--s-3)">
-                  <input type="hidden" name="sectiune" value="cronologie" />
+                  <input type="hidden" name="sectiune" value="progres" />
                   <div class="field" style="flex:1;min-width:280px">
                     <label class="label" for="student">Student</label>
                     <select class="select" id="student" name="student" onchange="this.form.submit()">
@@ -367,18 +362,18 @@ function deadline(expiresAt: string | null | undefined) {
               </div>
             </section>
 
-            {/* Aceeași cronologie pe care o vede studentul, dar editabilă. */}
+            {/* Aceleași termene pe care le vede studentul, dar editabile. */}
             <section class="panel">
               <div class="panel__header">
-                <h2 class="section-title">Cronologia lucrării</h2>
+                <h2 class="section-title">Termenele lucrării</h2>
                 <span class="muted" style="font-size:var(--t-sm)">
                   {milestones.filter((j) => j.status === 'done').length} din {milestones.length} finalizate
                 </span>
               </div>
 
-              <ol class="cronologie">
+              <ol class="termene">
                 {milestones.map((j) => (
-                  <li class:list={['jalon', `jalon--${j.status}`]}>
+                  <li class:list={['termen', `termen--${j.status}`]}>
                     <span class="jalon__punct" aria-hidden="true" />
                     <details class="jalon__corp">
                       <summary>
@@ -406,7 +401,7 @@ function deadline(expiresAt: string | null | undefined) {
                         <input
                           type="hidden"
                           name="redirect"
-                          value={`/profesor/studenti?sectiune=cronologie&student=${timelineRequest?.id}`}
+                          value={`/profesor/studenti?sectiune=progres&student=${timelineRequest?.id}`}
                         />
 
                         <div class="field">
@@ -455,7 +450,7 @@ function deadline(expiresAt: string | null | undefined) {
                             name="actiune"
                             value="sterge"
                           >
-                            Șterge jalonul
+                            Șterge termenul
                           </button>
                         </div>
                       </form>
@@ -471,21 +466,21 @@ function deadline(expiresAt: string | null | undefined) {
                   <input
                     type="hidden"
                     name="redirect"
-                    value={`/profesor/studenti?sectiune=cronologie&student=${timelineRequest?.id}`}
+                    value={`/profesor/studenti?sectiune=progres&student=${timelineRequest?.id}`}
                   />
                   <div class="field" style="flex:2;min-width:220px">
-                    <label class="label" for="jalon-nou">Jalon nou</label>
+                    <label class="label" for="termen-nou">Termen nou</label>
                     <input
                       class="input"
-                      id="jalon-nou"
+                      id="termen-nou"
                       name="title"
                       placeholder="Ex: Predarea capitolului empiric"
                       required
                     />
                   </div>
                   <div class="field" style="flex:1;min-width:160px">
-                    <label class="label" for="jalon-termen">Termen</label>
-                    <input class="input" id="jalon-termen" name="termen" type="date" />
+                    <label class="label" for="termen-data">Termen</label>
+                    <input class="input" id="termen-data" name="termen" type="date" />
                   </div>
                   <button class="btn btn--secondary" type="submit">Adaugă</button>
                 </form>
@@ -630,323 +625,6 @@ function deadline(expiresAt: string | null | undefined) {
               ))}
             </ul>
           )}
-        </section>
-      </div>
-    )
-  }
-
-  {/* -------------------------------------------------------------- teme */}
-  {
-    sectiune === 'teme' && (
-      <section class="panel">
-        <div class="panel__header">
-          <h2 class="section-title">Teme propuse</h2>
-        </div>
-
-        {teme.length === 0 ? (
-          <div class="empty">
-            <p class="empty__title">Nicio temă propusă</p>
-            <p class="empty__text">
-              Temele propuse apar în catalogul public de coordonatori, iar studenții pot depune cereri
-              direct pe ele.
-            </p>
-          </div>
-        ) : (
-          <ul class="teme">
-            {teme.map((t) => (
-              <li class:list={['tema', { 'is-inactiva': !t.is_active }]}>
-                <div class="tema__cap">
-                  <span class="badge badge--info">
-                    {t.level === 'master' ? 'Master' : 'Licență'}
-                    {t.language !== 'ro' ? ` · ${languageLabel(t.language)}` : ''}
-                  </span>
-                  <span class="muted numeric" style="font-size:var(--t-xs)">
-                    {t.taken}/{t.seats} locuri
-                  </span>
-                </div>
-                <h3 class="tema__titlu">{t.title}</h3>
-                {t.methods && <p class="muted" style="font-size:var(--t-sm)">Metode: {t.methods}</p>}
-                {t.prerequisites && t.prerequisites !== '—' && (
-                  <p class="muted" style="font-size:var(--t-xs)">Prerechizite: {t.prerequisites}</p>
-                )}
-                <form method="POST" action="/api/teme" style="margin-top:auto">
-                  <input type="hidden" name="actiune" value="comuta" />
-                  <input type="hidden" name="tema_id" value={t.id} />
-                  <button class="btn btn--ghost btn--sm" type="submit">
-                    {t.is_active ? 'Retrage din catalog' : 'Publică din nou'}
-                  </button>
-                </form>
-              </li>
-            ))}
-          </ul>
-        )}
-
-        <div class="panel__footer">
-          <form method="POST" action="/api/teme" class="row row--wrap" style="gap:var(--s-3);align-items:flex-end">
-            <input type="hidden" name="actiune" value="adauga" />
-            <div class="field" style="flex:3;min-width:240px">
-              <label class="label" for="tema-titlu">Temă nouă</label>
-              <input class="input" id="tema-titlu" name="titlu" required
-                placeholder="Ex: Adopția plăților contactless în mediul rural" />
-            </div>
-            <div class="field" style="flex:1;min-width:130px">
-              <label class="label" for="tema-nivel">Nivel</label>
-              <select class="select" id="tema-nivel" name="nivel">
-                <option value="bachelor">Licență</option>
-                <option value="master">Master</option>
-              </select>
-            </div>
-            <div class="field" style="flex:1;min-width:140px">
-              <label class="label" for="tema-limba">Limba lucrării</label>
-              <select class="select" id="tema-limba" name="limba">
-                {Object.entries(LANGUAGE_LABELS).map(([cod, text]) => (
-                  <option value={cod}>{text}</option>
-                ))}
-              </select>
-              <span class="hint">Tema apare doar studenților din programele cu această limbă.</span>
-            </div>
-            <div class="field" style="flex:1;min-width:100px">
-              <label class="label" for="tema-locuri">Locuri</label>
-              <input class="input" id="tema-locuri" name="locuri" type="number" min="1" max="20" value="2" />
-            </div>
-            <div class="field" style="flex:2;min-width:200px">
-              <label class="label" for="tema-metode">Metode</label>
-              <input class="input" id="tema-metode" name="metode" placeholder="Ex: sondaj, analiză factorială" />
-            </div>
-            <div class="field" style="flex:2;min-width:200px">
-              <label class="label" for="tema-prerechizite">Prerechizite</label>
-              <input class="input" id="tema-prerechizite" name="prerechizite" placeholder="Ex: Statistică aplicată" />
-            </div>
-            <button class="btn btn--primary" type="submit">Publică tema</button>
-          </form>
-        </div>
-      </section>
-    )
-  }
-
-  {/* -------------------------------------------------------- consultații */}
-  {
-    sectiune === 'consultatii' && (
-      <div class="stack" id="consultatii">
-        {/* Programarea cu un student anume vine prima: e acțiunea cerută cel mai
-            des, iar orele deschise sunt fondul pe care se așază. */}
-        <section class="panel">
-          <div class="panel__header">
-            <h2 class="section-title">Programează o consultație</h2>
-          </div>
-
-          {studenti.length === 0 ? (
-            <div class="empty">
-              <p class="empty__title">Niciun student coordonat</p>
-              <p class="empty__text">
-                Poți programa o consultație doar cu studenții pe care îi coordonezi. Acceptă o
-                cerere și opțiunea devine disponibilă.
-              </p>
-            </div>
-          ) : (
-            <form method="POST" action="/api/sloturi" class="panel__body stack" id="form-programare">
-              <input type="hidden" name="actiune" value="programeaza" />
-
-              <div class="row row--wrap" style="gap:var(--s-3)">
-                <div class="field" style="flex:2;min-width:260px">
-                  <label class="label" for="prog-student">Cu cine</label>
-                  <select class="select" id="prog-student" name="student_id" required>
-                    <option value="">Alege un student coordonat…</option>
-                    {studenti.map((s) => (
-                      <option value={s.student_id} selected={s.student_id === cuStudent}>
-                        {s.student_name} — {s.title_ro}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div class="field" style="min-width:160px">
-                  <label class="label" for="prog-zi">Ziua</label>
-                  <input class="input" id="prog-zi" name="zi" type="date" min={azi} required />
-                </div>
-                <div class="field" style="min-width:100px">
-                  <label class="label" for="prog-ora">Ora</label>
-                  <input class="input" id="prog-ora" name="ora_start" type="number" min="7" max="21" value="14" />
-                </div>
-                <div class="field" style="min-width:110px">
-                  <label class="label" for="prog-durata">Durata</label>
-                  <select class="select" id="prog-durata" name="durata">
-                    <option value="1">1 oră</option>
-                    <option value="2">2 ore</option>
-                    <option value="3">3 ore</option>
-                  </select>
-                </div>
-              </div>
-
-              <div class="row row--wrap" style="gap:var(--s-3)">
-                <div class="field" style="min-width:150px">
-                  <label class="label" for="prog-mod">Unde</label>
-                  <select class="select" id="prog-mod" name="mod" data-mod>
-                    <option value="in_person">La facultate</option>
-                    <option value="online">Online</option>
-                  </select>
-                </div>
-                <div class="field" style="flex:2;min-width:260px" data-camp-locatie>
-                  <label class="label" for="prog-locatie">Clădirea, etajul și sala</label>
-                  <input class="input" id="prog-locatie" name="locatie" value={u.office ?? ''}
-                    placeholder="Clădirea Ion Angelescu, Piața Romană 6, etaj 2, sala 2203" />
-                </div>
-                <div class="field" style="flex:2;min-width:240px">
-                  <label class="label" for="prog-link">
-                    Link întâlnire <span class="muted" data-link-optional>(opțional)</span>
-                  </label>
-                  <input class="input" id="prog-link" name="link_online" type="url" placeholder="https://meet…" />
-                  <span class="hint">Se trimite în invitația de calendar, alături de adresă.</span>
-                </div>
-              </div>
-
-              <div class="field">
-                <label class="label" for="prog-subiect">Subiectul consultației <span class="muted">(opțional)</span></label>
-                <input class="input" id="prog-subiect" name="subiect"
-                  placeholder="Ex: discutăm metodologia și eșantionul" />
-              </div>
-
-              <div class="row" style="justify-content:flex-end">
-                <button class="btn btn--primary" type="submit">Programează și trimite invitația</button>
-              </div>
-            </form>
-          )}
-        </section>
-
-        <section class="panel">
-          <div class="panel__header">
-            <h2 class="section-title">Program de consultații</h2>
-            <span class="muted" style="font-size:var(--t-sm)">
-              {sloturi.filter((s) => !s.is_cancelled).length} intervale
-            </span>
-          </div>
-
-          {sloturi.length === 0 ? (
-            <div class="empty">
-              <p class="empty__title">Niciun interval publicat</p>
-              <p class="empty__text">
-                Publică intervale, iar studenții coordonați își pot rezerva singuri un loc. Primesc
-                automat invitație în calendar.
-              </p>
-            </div>
-          ) : (
-            <div class="table-wrap">
-              <table class="table">
-                <thead>
-                  <tr>
-                    <th>Data</th>
-                    <th>Interval</th>
-                    <th>Unde</th>
-                    <th>Rezervare</th>
-                    <th><span class="visually-hidden">Acțiuni</span></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {sloturi.map((s) => (
-                    <tr>
-                      <td>{formatDate(s.starts_at)}</td>
-                      <td class="numeric">
-                        {formatTime(s.starts_at)}–{formatTime(s.ends_at)}
-                      </td>
-                      <td>
-                        <div class="stack stack--tight" style="gap:0">
-                          <span>{s.mode === 'online' ? 'Online' : (s.location ?? 'Cabinet')}</span>
-                          {s.meeting_url && (
-                            <a href={s.meeting_url} class="muted" style="font-size:var(--t-xs)" target="_blank" rel="noopener">
-                              link întâlnire
-                            </a>
-                          )}
-                          {s.note && (
-                            <span class="muted" style="font-size:var(--t-xs)">{s.note}</span>
-                          )}
-                        </div>
-                      </td>
-                      <td>
-                        {s.is_cancelled ? (
-                          <span class="badge badge--respinsa">Anulat</span>
-                        ) : s.booked > 0 ? (
-                          <div class="stack stack--tight" style="gap:2px;align-items:flex-start">
-                            <span class="badge badge--aprobata">
-                              {s.capacity > 1 ? `${s.booked} din ${s.capacity} locuri` : 'Rezervat'}
-                            </span>
-                            <span class="muted" style="font-size:var(--t-xs)">
-                              {s.student_names.join(', ')}
-                            </span>
-                          </div>
-                        ) : s.invited_name ? (
-                          <span class="badge badge--asteptare">rezervat pentru {s.invited_name}</span>
-                        ) : s.capacity > 1 ? (
-                          <span class="muted">{s.capacity} locuri libere</span>
-                        ) : (
-                          <span class="muted">Liber</span>
-                        )}
-                      </td>
-                      <td style="text-align:right">
-                        {!s.is_cancelled && (
-                          <form method="POST" action="/api/sloturi">
-                            <input type="hidden" name="actiune" value="anuleaza" />
-                            <input type="hidden" name="slot_id" value={s.id} />
-                            <button class="btn btn--ghost btn--sm" type="submit">Anulează</button>
-                          </form>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-
-          <div class="panel__footer">
-            <form method="POST" action="/api/sloturi" class="stack">
-              <input type="hidden" name="actiune" value="publica" />
-              <div class="row row--wrap" style="gap:var(--s-3);align-items:flex-end">
-                <div class="field" style="flex:1;min-width:160px">
-                  <label class="label" for="slot-zi">Ore deschise în ziua</label>
-                  <input class="input" id="slot-zi" name="zi" type="date" min={azi} required />
-                </div>
-                <div class="field" style="min-width:96px">
-                  <label class="label" for="slot-start">De la</label>
-                  <input class="input" id="slot-start" name="ora_start" type="number" min="7" max="21" value="14" />
-                </div>
-                <div class="field" style="min-width:96px">
-                  <label class="label" for="slot-final">Până la</label>
-                  <input class="input" id="slot-final" name="ora_final" type="number" min="8" max="22" value="16" />
-                </div>
-                <div class="field" style="min-width:110px">
-                  <label class="label" for="slot-locuri">Locuri</label>
-                  <input class="input" id="slot-locuri" name="locuri" type="number" min="1" max="30" value="1" />
-                  <span class="hint">Câți studenți pot lua același interval.</span>
-                </div>
-                <div class="field" style="min-width:150px">
-                  <label class="label" for="slot-mod">Unde</label>
-                  <select class="select" id="slot-mod" name="mod" data-mod>
-                    <option value="in_person">La facultate</option>
-                    <option value="online">Online</option>
-                  </select>
-                </div>
-              </div>
-
-              <div class="row row--wrap" style="gap:var(--s-3);align-items:flex-end">
-                <div class="field" style="flex:2;min-width:260px" data-camp-locatie>
-                  <label class="label" for="slot-locatie">Clădirea, etajul și sala</label>
-                  <input class="input" id="slot-locatie" name="locatie" value={u.office ?? ''}
-                    placeholder="Clădirea Ion Angelescu, Piața Romană 6, etaj 2, sala 2203" />
-                </div>
-                <div class="field" style="flex:2;min-width:240px">
-                  <label class="label" for="slot-link">
-                    Link întâlnire <span class="muted" data-link-optional>(opțional)</span>
-                  </label>
-                  <input class="input" id="slot-link" name="link_online" type="url" placeholder="https://meet…" />
-                </div>
-                <button class="btn btn--primary" type="submit">Publică intervalele</button>
-              </div>
-            </form>
-            <p class="hint" style="margin-top:var(--s-2)">
-              Se creează câte un interval de o oră. Toți studenții coordonați primesc un email
-              imediat ce publici — inclusiv când publici un singur interval — și primesc invitație
-              în calendar la rezervare, cu adresa și linkul completate aici.
-            </p>
-          </div>
         </section>
       </div>
     )
@@ -1216,21 +894,21 @@ function deadline(expiresAt: string | null | undefined) {
   }
 
   /* Cronologia repetă forma din portalul studentului, ca profesorul să vadă
-     exact ce vede studentul — doar că fiecare jalon se deschide pentru editare. */
-  .cronologie {
+     exact ce vede studentul — doar că fiecare termen se deschide pentru editare. */
+  .termene {
     list-style: none;
     margin: 0;
     padding: var(--s-4) var(--s-5);
   }
 
-  .jalon {
+  .termen {
     display: flex;
     gap: var(--s-4);
     padding-block: var(--s-2);
     position: relative;
   }
 
-  .jalon:not(:last-child)::before {
+  .termen:not(:last-child)::before {
     content: '';
     position: absolute;
     left: 5px;
@@ -1251,11 +929,11 @@ function deadline(expiresAt: string | null | undefined) {
     z-index: 1;
   }
 
-  .jalon--done .jalon__punct {
+  .termen--done .jalon__punct {
     background: var(--ok);
     border-color: var(--ok);
   }
-  .jalon--in_progress .jalon__punct {
+  .termen--in_progress .jalon__punct {
     background: var(--red);
     border-color: var(--red);
   }
@@ -1287,7 +965,7 @@ function deadline(expiresAt: string | null | undefined) {
     font-size: var(--t-sm);
     font-weight: 600;
   }
-  .jalon--done .jalon__titlu {
+  .termen--done .jalon__titlu {
     color: var(--ink-muted);
   }
 
