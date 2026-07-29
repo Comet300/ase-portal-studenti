@@ -17,20 +17,22 @@ import {
   supervisedStudents,
   teacherTopics,
 } from '../../lib/repo'
-import { LANGUAGE_LABELS, groupLabel, languageLabel } from '../../lib/years'
+import { allYears, groupLabel } from '../../lib/years'
 
 const u = Astro.locals.user!
 const sectiune = Astro.url.searchParams.get('sectiune') ?? 'cereri'
 const studentDeschis = Astro.url.searchParams.get('student')
 
-const [toateCererile, studenti, teme, locuri, invitatii, directorStudenti] = await Promise.all([
-  teacherRequests(u.id),
-  supervisedStudents(u.id),
-  teacherTopics(u.id),
-  teacherSeats(u.id),
-  teacherInvitations(u.id),
-  studentDirectory(),
-])
+const [toateCererile, studenti, teme, locuri, invitatii, directorStudenti, ani] =
+  await Promise.all([
+    teacherRequests(u.id),
+    supervisedStudents(u.id),
+    teacherTopics(u.id),
+    teacherSeats(u.id),
+    teacherInvitations(u.id),
+    studentDirectory(),
+    allYears(),
+  ])
 
 const inAsteptare = toateCererile.filter((c) => c.status === 'pending')
 const decise = toateCererile.filter((c) => c.status !== 'pending')
@@ -251,6 +253,7 @@ function deadline(expiresAt: string | null | undefined) {
                   <th>Student</th>
                   <th>Titlul lucrării</th>
                   <th>Progres</th>
+                  <th>Susținere</th>
                   <th>Mesaje</th>
                   <th><span class="visually-hidden">Acțiuni</span></th>
                 </tr>
@@ -283,6 +286,35 @@ function deadline(expiresAt: string | null | undefined) {
                             {s.milestones_done}/{s.milestones_total}
                           </span>
                         </div>
+                      </td>
+                      {/* Sesiunea susținerii nu este neapărat cea în care a
+                          început coordonarea, iar arhiva o folosește pe prima. */}
+                      <td>
+                        <form method="POST" action="/api/sustinere" class="row" style="gap:var(--s-2)">
+                          <input type="hidden" name="cerere_id" value={s.id} />
+                          <label class="visually-hidden" for={`sus-${s.id}`}>
+                            Sesiunea susținerii pentru {s.student_name}
+                          </label>
+                          <select
+                            class="select select--compact"
+                            id={`sus-${s.id}`}
+                            name="an_id"
+                            onchange="this.form.requestSubmit()"
+                          >
+                            {ani.map((a) => (
+                              <option
+                                value={a.id}
+                                selected={(s.graduation_year_id ?? '') === a.id ||
+                                  (!s.graduation_year_id && a.is_current)}
+                              >
+                                {a.label}
+                              </option>
+                            ))}
+                          </select>
+                          <noscript>
+                            <button class="btn btn--ghost btn--sm" type="submit">Salvează</button>
+                          </noscript>
+                        </form>
                       </td>
                       <td>
                         {s.unread > 0 ? (
@@ -860,6 +892,13 @@ function deadline(expiresAt: string | null | undefined) {
     font-weight: 600;
     color: var(--ink-soft);
     flex: none;
+  }
+
+  .select--compact {
+    min-height: 30px;
+    padding-block: 0;
+    font-size: var(--t-xs);
+    min-width: 116px;
   }
 
   .celula-title {

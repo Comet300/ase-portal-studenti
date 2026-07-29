@@ -1,4 +1,5 @@
 ---
+import AlegeAn from '../../components/AlegeAn.astro'
 import Avatar from '../../components/Avatar.astro'
 import ProfesorLayout from '../../layouts/ProfesorLayout.astro'
 import { ROLE_LABELS } from '../../lib/auth'
@@ -82,20 +83,7 @@ const openSeatRequest = mySeatRequests.find((r) => r.status === 'pending')
   lede="Istoricul cererilor pe ani universitari, locurile alocate și datele profilului tău."
   active="arhiva"
 >
-  <form slot="actiuni" method="GET" class="row" style="gap:var(--s-2);align-items:center">
-    <label class="visually-hidden" for="an">An universitar</label>
-    <select class="select" id="an" name="an" onchange="this.form.submit()">
-      {
-        years.map((y) => (
-          <option value={y.id} selected={y.id === year?.id}>
-            {y.label}
-            {y.is_current ? ' · în curs' : ''}
-          </option>
-        ))
-      }
-    </select>
-    <noscript><button class="btn btn--secondary btn--sm" type="submit">Afișează</button></noscript>
-  </form>
+  <AlegeAn slot="actiuni" years={years} selected={year?.id ?? ''} base="/profesor/arhiva" />
 
   <div class="stack stack--loose">
     <section class="stack">

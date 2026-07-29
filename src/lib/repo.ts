@@ -210,6 +210,7 @@ export async function teacherSeats(teacherId: string, yearId?: string): Promise<
 }
 
 export interface SupervisedStudent extends RequestRow {
+  graduation_year_id: string | null
   milestones_total: number
   milestones_done: number
   conversation_id: string | null
@@ -218,7 +219,7 @@ export interface SupervisedStudent extends RequestRow {
 
 export function supervisedStudents(teacherId: string, yearId?: string) {
   return query<SupervisedStudent>(
-    `SELECT ${REQUEST_FIELDS},
+    `SELECT ${REQUEST_FIELDS}, r.graduation_year_id,
             (SELECT count(*)::int FROM milestones m WHERE m.request_id = r.id) AS milestones_total,
             (SELECT count(*)::int FROM milestones m WHERE m.request_id = r.id AND m.status = 'done') AS milestones_done,
             c.id AS conversation_id,
@@ -565,6 +566,11 @@ export interface ArchiveRow {
 /**
  * A session's finished pairings, portal-native and imported side by side.
  *
+ * Filed under the session the thesis is defended in, not the one the
+ * coordination started in — a student may choose a coordinator in the second
+ * year and defend at the end of the third. `graduation_year_id` records the
+ * difference when there is one; null means the two are the same.
+ *
  * Years before the portal existed have no requests, only rows typed in by the
  * director; the archive has to read the same either way, so both are unioned
  * into one shape rather than shown as two lists.
@@ -577,7 +583,8 @@ export function archiveRows(yearId: string): Promise<ArchiveRow[]> {
        FROM requests r
        JOIN users s ON s.id = r.student_id
        JOIN users t ON t.id = r.teacher_id
-      WHERE r.status = 'approved' AND r.academic_year_id = $1
+      WHERE r.status = 'approved'
+        AND COALESCE(r.graduation_year_id, r.academic_year_id) = $1
       UNION ALL
      SELECT 'import'::text, a.student_name, a.student_number, a.programme, a.level, a.language,
             a.teacher_name, a.title_ro, a.defended_on::text

@@ -1,0 +1,157 @@
+---
+import type { AcademicYear } from '../lib/years'
+
+interface Props {
+  years: AcademicYear[]
+  selected: string
+  /** Where to go when a year is chosen; the year id is appended as `an`. */
+  base: string
+  label?: string
+  /** Extra query parameters to carry across, e.g. an active search. */
+  keep?: Record<string, string>
+}
+
+const { years, selected, base, label = 'An universitar', keep = {} } = Astro.props
+
+/**
+ * The academic-year picker.
+ *
+ * A native `<select>` renders as the operating system's own control — a grey
+ * list in a font nobody chose, in the middle of a page that is otherwise all
+ * one design. This is the same choice expressed in the portal's own vocabulary,
+ * built on `<details>` so it opens, closes and dismisses without any JavaScript,
+ * and remains a list of real links: each option is a URL somebody can share.
+ */
+const href = (id: string) =>
+  `${base}?${new URLSearchParams({ ...keep, an: id }).toString()}`
+
+const current = years.find((y) => y.id === selected) ?? years[0]
+---
+
+<details class="an" name="alege-an">
+  <summary class="an__buton" aria-label={label}>
+    <span class="an__eticheta">{label}</span>
+    <span class="an__valoare">
+      {current?.label}
+      {current?.is_current && <span class="an__acum">în curs</span>}
+    </span>
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+      <path d="M6 9l6 6 6-6" />
+    </svg>
+  </summary>
+
+  <ul class="an__lista">
+    {
+      years.map((y) => (
+        <li>
+          <a href={href(y.id)} class:list={['an__optiune', { 'is-aleasa': y.id === current?.id }]}>
+            <span>{y.label}</span>
+            {y.is_current && <span class="an__acum">în curs</span>}
+          </a>
+        </li>
+      ))
+    }
+  </ul>
+</details>
+
+<style>
+  .an {
+    position: relative;
+    display: inline-block;
+  }
+
+  .an__buton {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--s-3);
+    min-height: 38px;
+    padding: 0 var(--s-3);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--r-md);
+    background: var(--surface);
+    cursor: pointer;
+    list-style: none;
+    white-space: nowrap;
+    transition: border-color var(--fast) var(--ease);
+  }
+  .an__buton::-webkit-details-marker {
+    display: none;
+  }
+  .an__buton:hover {
+    border-color: var(--ink-muted);
+  }
+  .an[open] .an__buton {
+    border-color: var(--red);
+  }
+
+  .an__eticheta {
+    font-size: var(--t-xs);
+    color: var(--ink-muted);
+  }
+
+  .an__valoare {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--s-2);
+    font-size: var(--t-sm);
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .an__buton svg {
+    width: 15px;
+    height: 15px;
+    color: var(--ink-muted);
+    transition: transform var(--fast) var(--ease);
+  }
+  .an[open] .an__buton svg {
+    transform: rotate(180deg);
+  }
+
+  .an__acum {
+    padding: 1px 6px;
+    border-radius: 999px;
+    background: var(--ok-tint);
+    color: var(--ok);
+    font-size: 11px;
+    font-weight: 600;
+  }
+
+  .an__lista {
+    position: absolute;
+    right: 0;
+    top: calc(100% + 4px);
+    z-index: var(--z-drawer);
+    min-width: 100%;
+    list-style: none;
+    margin: 0;
+    padding: var(--s-1);
+    background: var(--surface);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--r-md);
+    box-shadow: var(--shadow-raised);
+  }
+
+  .an__optiune {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--s-4);
+    padding: var(--s-2) var(--s-3);
+    border-radius: var(--r-sm);
+    text-decoration: none;
+    color: var(--ink);
+    font-size: var(--t-sm);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  .an__optiune:hover {
+    background: var(--surface-sunken);
+    color: var(--ink);
+  }
+  .an__optiune.is-aleasa {
+    background: var(--red-tint);
+    color: var(--red);
+    font-weight: 600;
+  }
+</style>
