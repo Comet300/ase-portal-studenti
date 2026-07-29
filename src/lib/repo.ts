@@ -325,7 +325,8 @@ export interface Slot {
   capacity: number
   is_cancelled: boolean
   booked: number
-  student_name: string | null
+  /** Everyone who has taken a place, not just the first — a slot may hold several. */
+  student_names: string[]
   /** Set when the interval was scheduled with one named student. */
   student_id: string | null
   invited_name: string | null
@@ -335,8 +336,9 @@ export function teacherSlots(teacherId: string) {
   return query<Slot>(
     `SELECT s.*,
             (SELECT count(*)::int FROM bookings b WHERE b.slot_id = s.id AND b.status = 'booked') AS booked,
-            (SELECT u.name FROM bookings b JOIN users u ON u.id = b.student_id
-              WHERE b.slot_id = s.id AND b.status = 'booked' LIMIT 1) AS student_name,
+            COALESCE((SELECT array_agg(u.name ORDER BY u.name)
+                        FROM bookings b JOIN users u ON u.id = b.student_id
+                       WHERE b.slot_id = s.id AND b.status = 'booked'), '{}') AS student_names,
             (SELECT u.name FROM users u WHERE u.id = s.student_id) AS invited_name
        FROM consultation_slots s
       WHERE s.teacher_id = $1 AND s.starts_at > now() - interval '1 day'

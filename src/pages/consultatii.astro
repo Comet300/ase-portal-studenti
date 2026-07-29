@@ -80,7 +80,8 @@ for (const s of free) {
     <header class="stack stack--tight">
       <h1 class="page-title">Consultații</h1>
       <p class="page-lede">
-        Rezervă un interval la coordonatorul tău. Primești invitația în calendar pe email.
+        Rezervă un interval la coordonatorul tău. Primești un email de fiecare dată când publică
+        intervale noi, și invitația în calendar după ce rezervi.
       </p>
     </header>
 
@@ -127,6 +128,12 @@ for (const s of free) {
 
                   {(s.note ?? s.subject) && (
                     <span class="muted">Subiect: {s.note ?? s.subject}</span>
+                  )}
+
+                  {s.capacity > 1 && (
+                    <span class="muted">
+                      Consultație de grup · {s.taken} din {s.capacity} locuri ocupate
+                    </span>
                   )}
                 </div>
                 <form method="POST" action="/api/rezervari">
@@ -182,6 +189,13 @@ for (const s of free) {
                         <span class="muted">
                           {s.mode === 'online' ? 'Online' : (s.location ?? 'Cabinet')} · {s.teacher_name}
                         </span>
+                        {/* Un interval de grup nu arată ca unul individual: câte
+                            locuri au mai rămas schimbă decizia de a rezerva. */}
+                        {s.capacity > 1 && (
+                          <span class="muted">
+                            {s.capacity - s.taken} din {s.capacity} locuri libere
+                          </span>
+                        )}
                         {/* Linkul apare abia după rezervare — până atunci nu ești
                             invitat la nimic. */}
                       </div>
