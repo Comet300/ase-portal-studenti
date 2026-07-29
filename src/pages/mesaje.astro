@@ -43,3 +43,10 @@ const messages = active ? await conversationMessages(u.id, active.id) : []
     />
   </div>
 </StudentLayout>
+
+<style>
+  /* The chat fills its own box now, so the page has to give it one. */
+  .chat-wrap :global(.chat) {
+    height: min(72vh, 760px);
+  }
+</style>

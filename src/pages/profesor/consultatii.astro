@@ -1,0 +1,270 @@
+---
+import ProfesorLayout from '../../layouts/ProfesorLayout.astro'
+import { formatDate, formatTime, supervisedStudents, teacherSlots } from '../../lib/repo'
+
+/**
+ * Programul de consultații.
+ *
+ * Ecran propriu, nu un tab: este singurul lucru din portal cu o oră fixă, iar
+ * un coordonator care vrea să deschidă două ore mâine nu ar trebui să treacă
+ * prin triajul cererilor ca să ajungă la el.
+ */
+
+const u = Astro.locals.user!
+const [sloturi, studenti] = await Promise.all([teacherSlots(u.id), supervisedStudents(u.id)])
+
+const azi = new Date().toISOString().slice(0, 10)
+const cuStudent = Astro.url.searchParams.get('cu') ?? ''
+---
+
+<ProfesorLayout
+  title="Consultații"
+  lede="Programează o întâlnire cu un student sau publică ore deschise pe care le poate rezerva oricine coordonezi."
+  active="consultatii"
+>
+<div class="stack" id="consultatii">
+  {/* Programarea cu un student anume vine prima: e acțiunea cerută cel mai
+      des, iar orele deschise sunt fondul pe care se așază. */}
+  <section class="panel">
+    <div class="panel__header">
+      <h2 class="section-title">Programează o consultație</h2>
+    </div>
+
+    {studenti.length === 0 ? (
+      <div class="empty">
+        <p class="empty__title">Niciun student coordonat</p>
+        <p class="empty__text">
+          Poți programa o consultație doar cu studenții pe care îi coordonezi. Acceptă o
+          cerere și opțiunea devine disponibilă.
+        </p>
+      </div>
+    ) : (
+      <form method="POST" action="/api/sloturi" class="panel__body stack" id="form-programare">
+        <input type="hidden" name="actiune" value="programeaza" />
+
+        <div class="row row--wrap" style="gap:var(--s-3)">
+          <div class="field" style="flex:2;min-width:260px">
+            <label class="label" for="prog-student">Cu cine</label>
+            <select class="select" id="prog-student" name="student_id" required>
+              <option value="">Alege un student coordonat…</option>
+              {studenti.map((s) => (
+                <option value={s.student_id} selected={s.student_id === cuStudent}>
+                  {s.student_name} — {s.title_ro}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div class="field" style="min-width:160px">
+            <label class="label" for="prog-zi">Ziua</label>
+            <input class="input" id="prog-zi" name="zi" type="date" min={azi} required />
+          </div>
+          <div class="field" style="min-width:100px">
+            <label class="label" for="prog-ora">Ora</label>
+            <input class="input" id="prog-ora" name="ora_start" type="number" min="7" max="21" value="14" />
+          </div>
+          <div class="field" style="min-width:110px">
+            <label class="label" for="prog-durata">Durata</label>
+            <select class="select" id="prog-durata" name="durata">
+              <option value="1">1 oră</option>
+              <option value="2">2 ore</option>
+              <option value="3">3 ore</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="row row--wrap" style="gap:var(--s-3)">
+          <div class="field" style="min-width:150px">
+            <label class="label" for="prog-mod">Unde</label>
+            <select class="select" id="prog-mod" name="mod" data-mod>
+              <option value="in_person">La facultate</option>
+              <option value="online">Online</option>
+            </select>
+          </div>
+          <div class="field" style="flex:2;min-width:260px" data-camp-locatie>
+            <label class="label" for="prog-locatie">Clădirea, etajul și sala</label>
+            <input class="input" id="prog-locatie" name="locatie" value={u.office ?? ''}
+              placeholder="Clădirea Ion Angelescu, Piața Romană 6, etaj 2, sala 2203" />
+          </div>
+          <div class="field" style="flex:2;min-width:240px">
+            <label class="label" for="prog-link">
+              Link întâlnire <span class="muted" data-link-optional>(opțional)</span>
+            </label>
+            <input class="input" id="prog-link" name="link_online" type="url" placeholder="https://meet…" />
+            <span class="hint">Se trimite în invitația de calendar, alături de adresă.</span>
+          </div>
+        </div>
+
+        <div class="field">
+          <label class="label" for="prog-subiect">Subiectul consultației <span class="muted">(opțional)</span></label>
+          <input class="input" id="prog-subiect" name="subiect"
+            placeholder="Ex: discutăm metodologia și eșantionul" />
+        </div>
+
+        <div class="row" style="justify-content:flex-end">
+          <button class="btn btn--primary" type="submit">Programează și trimite invitația</button>
+        </div>
+      </form>
+    )}
+  </section>
+
+  <section class="panel">
+    <div class="panel__header">
+      <h2 class="section-title">Program de consultații</h2>
+      <span class="muted" style="font-size:var(--t-sm)">
+        {sloturi.filter((s) => !s.is_cancelled).length} intervale
+      </span>
+    </div>
+
+    {sloturi.length === 0 ? (
+      <div class="empty">
+        <p class="empty__title">Niciun interval publicat</p>
+        <p class="empty__text">
+          Publică intervale, iar studenții coordonați își pot rezerva singuri un loc. Primesc
+          automat invitație în calendar.
+        </p>
+      </div>
+    ) : (
+      <div class="table-wrap">
+        <table class="table">
+          <thead>
+            <tr>
+              <th>Data</th>
+              <th>Interval</th>
+              <th>Unde</th>
+              <th>Rezervare</th>
+              <th><span class="visually-hidden">Acțiuni</span></th>
+            </tr>
+          </thead>
+          <tbody>
+            {sloturi.map((s) => (
+              <tr>
+                <td>{formatDate(s.starts_at)}</td>
+                <td class="numeric">
+                  {formatTime(s.starts_at)}–{formatTime(s.ends_at)}
+                </td>
+                <td>
+                  <div class="stack stack--tight" style="gap:0">
+                    <span>{s.mode === 'online' ? 'Online' : (s.location ?? 'Cabinet')}</span>
+                    {s.meeting_url && (
+                      <a href={s.meeting_url} class="muted" style="font-size:var(--t-xs)" target="_blank" rel="noopener">
+                        link întâlnire
+                      </a>
+                    )}
+                    {s.note && (
+                      <span class="muted" style="font-size:var(--t-xs)">{s.note}</span>
+                    )}
+                  </div>
+                </td>
+                <td>
+                  {s.is_cancelled ? (
+                    <span class="badge badge--respinsa">Anulat</span>
+                  ) : s.booked > 0 ? (
+                    <div class="stack stack--tight" style="gap:2px;align-items:flex-start">
+                      <span class="badge badge--aprobata">
+                        {s.capacity > 1 ? `${s.booked} din ${s.capacity} locuri` : 'Rezervat'}
+                      </span>
+                      <span class="muted" style="font-size:var(--t-xs)">
+                        {s.student_names.join(', ')}
+                      </span>
+                    </div>
+                  ) : s.invited_name ? (
+                    <span class="badge badge--asteptare">rezervat pentru {s.invited_name}</span>
+                  ) : s.capacity > 1 ? (
+                    <span class="muted">{s.capacity} locuri libere</span>
+                  ) : (
+                    <span class="muted">Liber</span>
+                  )}
+                </td>
+                <td style="text-align:right">
+                  {!s.is_cancelled && (
+                    <form method="POST" action="/api/sloturi">
+                      <input type="hidden" name="actiune" value="anuleaza" />
+                      <input type="hidden" name="slot_id" value={s.id} />
+                      <button class="btn btn--ghost btn--sm" type="submit">Anulează</button>
+                    </form>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    )}
+
+    <div class="panel__footer">
+      <form method="POST" action="/api/sloturi" class="stack">
+        <input type="hidden" name="actiune" value="publica" />
+        <div class="row row--wrap" style="gap:var(--s-3);align-items:flex-end">
+          <div class="field" style="flex:1;min-width:160px">
+            <label class="label" for="slot-zi">Ore deschise în ziua</label>
+            <input class="input" id="slot-zi" name="zi" type="date" min={azi} required />
+          </div>
+          <div class="field" style="min-width:96px">
+            <label class="label" for="slot-start">De la</label>
+            <input class="input" id="slot-start" name="ora_start" type="number" min="7" max="21" value="14" />
+          </div>
+          <div class="field" style="min-width:96px">
+            <label class="label" for="slot-final">Până la</label>
+            <input class="input" id="slot-final" name="ora_final" type="number" min="8" max="22" value="16" />
+          </div>
+          <div class="field" style="min-width:110px">
+            <label class="label" for="slot-locuri">Locuri</label>
+            <input class="input" id="slot-locuri" name="locuri" type="number" min="1" max="30" value="1" />
+            <span class="hint">Câți studenți pot lua același interval.</span>
+          </div>
+          <div class="field" style="min-width:150px">
+            <label class="label" for="slot-mod">Unde</label>
+            <select class="select" id="slot-mod" name="mod" data-mod>
+              <option value="in_person">La facultate</option>
+              <option value="online">Online</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="row row--wrap" style="gap:var(--s-3);align-items:flex-end">
+          <div class="field" style="flex:2;min-width:260px" data-camp-locatie>
+            <label class="label" for="slot-locatie">Clădirea, etajul și sala</label>
+            <input class="input" id="slot-locatie" name="locatie" value={u.office ?? ''}
+              placeholder="Clădirea Ion Angelescu, Piața Romană 6, etaj 2, sala 2203" />
+          </div>
+          <div class="field" style="flex:2;min-width:240px">
+            <label class="label" for="slot-link">
+              Link întâlnire <span class="muted" data-link-optional>(opțional)</span>
+            </label>
+            <input class="input" id="slot-link" name="link_online" type="url" placeholder="https://meet…" />
+          </div>
+          <button class="btn btn--primary" type="submit">Publică intervalele</button>
+        </div>
+      </form>
+      <p class="hint" style="margin-top:var(--s-2)">
+        Se creează câte un interval de o oră. Toți studenții coordonați primesc un email
+        imediat ce publici — inclusiv când publici un singur interval — și primesc invitație
+        în calendar la rezervare, cu adresa și linkul completate aici.
+      </p>
+    </div>
+  </section>
+</div>
+</ProfesorLayout>
+
+<script>
+  // Un interval online are nevoie de link, unul la facultate de adresă. Câmpul
+  // irelevant dispare în loc să rămână gol și obligatoriu.
+  document.querySelectorAll<HTMLFormElement>('form').forEach((form) => {
+    const mod = form.querySelector<HTMLSelectElement>('[data-mod]')
+    if (!mod) return
+
+    const campLocatie = form.querySelector<HTMLElement>('[data-camp-locatie]')
+    const link = form.querySelector<HTMLInputElement>('input[name="link_online"]')
+    const optional = form.querySelector<HTMLElement>('[data-link-optional]')
+
+    const sync = () => {
+      const online = mod.value === 'online'
+      if (campLocatie) campLocatie.hidden = online
+      if (link) link.required = online
+      if (optional) optional.hidden = online
+    }
+
+    mod.addEventListener('change', sync)
+    sync()
+  })
+</script>

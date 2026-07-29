@@ -7,7 +7,9 @@ import {
   myConversation,
   myConversations,
 } from '../../lib/chat'
-import { queryOne } from '../../lib/db'
+import { query, queryOne } from '../../lib/db'
+import { MILESTONE_LABELS, formatDate, timeAgo } from '../../lib/repo'
+import { groupLabel } from '../../lib/years'
 
 const u = Astro.locals.user!
 
@@ -37,12 +39,82 @@ const active = requested ? await myConversation(u.id, requested) : (conversation
 
 if (active) await markRead(u.id, active.id)
 const messages = active ? await conversationMessages(u.id, active.id) : []
+
+/**
+ * The context column.
+ *
+ * A consultation thread is read against the work it is about: who the student
+ * is, where the thesis has got to, and which files have changed hands. Without
+ * it a coordinator answering ten students has to leave the conversation to find
+ * out which one this is.
+ */
+const student = active
+  ? await queryOne<{
+      id: string
+      name: string
+      student_number: string | null
+      email: string
+      program: string | null
+      specialization: string | null
+      study_language: string
+      study_year: number | null
+      title_ro: string
+      number: string
+      decided_at: string | null
+      request_id: string
+    }>(
+      `SELECT s.id, s.name, s.student_number, s.email, s.program, s.specialization,
+              s.study_language, s.study_year,
+              r.title_ro, r.number, r.decided_at, r.id AS request_id
+         FROM users s
+         JOIN requests r ON r.student_id = s.id
+        WHERE s.id = $2 AND r.teacher_id = $1 AND r.status = 'approved'
+        LIMIT 1`,
+      [u.id, active.peer_id],
+    )
+  : null
+
+const milestones = student
+  ? await query<{ id: string; title: string; due_on: string | null; status: string }>(
+      `SELECT m.id, m.title, m.due_on, m.status
+         FROM milestones m
+        WHERE m.request_id = $1
+        ORDER BY m.position, m.due_on NULLS LAST`,
+      [student.request_id],
+    )
+  : []
+
+/** Everything exchanged in this thread, newest first — the Resources panel. */
+const files = active
+  ? await query<{
+      id: string
+      original_name: string
+      size_bytes: string | null
+      created_at: string
+      uploaded_by: string
+    }>(
+      `SELECT f.id, f.original_name, f.size_bytes, f.created_at, f.uploaded_by
+         FROM files f
+        WHERE f.conversation_id = $1
+        ORDER BY f.created_at DESC`,
+      [active.id],
+    )
+  : []
+
+function fileSize(bytes: string | null): string {
+  const n = Number(bytes ?? 0)
+  if (!n) return ''
+  if (n < 1024) return `${n} B`
+  if (n < 1024 * 1024) return `${Math.round(n / 1024)} KB`
+  return `${(n / (1024 * 1024)).toFixed(1)} MB`
+}
 ---
 
 <ProfesorLayout
   title="Mesaje"
   lede="Discuțiile cu studenții coordonați, într-un singur loc."
   active="mesaje"
+  fill
 >
   <Chat
     conversations={conversations}
@@ -51,5 +123,294 @@ const messages = active ? await conversationMessages(u.id, active.id) : []
     userId={u.id}
     base="/profesor/mesaje"
     emptyText="Firele de discuție apar pe măsură ce accepți cereri de coordonare."
-  />
+    hasContext
+  >
+    <div slot="context" class="context">
+      {
+        student ? (
+          <>
+            <section class="context__bloc">
+              <h2 class="context__titlu">{student.name}</h2>
+              <dl class="context__date">
+                <div>
+                  <dt>Număr matricol</dt>
+                  <dd class="numeric">{student.student_number ?? '—'}</dd>
+                </div>
+                <div>
+                  <dt>Program</dt>
+                  <dd>{groupLabel(student)}</dd>
+                </div>
+                <div>
+                  <dt>Email</dt>
+                  <dd class="context__email">
+                    <a href={`mailto:${student.email}`}>{student.email}</a>
+                  </dd>
+                </div>
+                <div>
+                  <dt>Cerere</dt>
+                  <dd class="numeric">{student.number}</dd>
+                </div>
+              </dl>
+              <p class="context__lucrare">{student.title_ro}</p>
+              <div class="row row--wrap" style="gap:var(--s-2)">
+                <a class="btn btn--secondary btn--sm" href={`/profil/${student.id}`}>Profil</a>
+                <a
+                  class="btn btn--ghost btn--sm"
+                  href={`/profesor/studenti?sectiune=progres&student=${student.request_id}`}
+                >
+                  Termene
+                </a>
+              </div>
+            </section>
+
+            <section class="context__bloc">
+              <h3 class="context__subtitlu">
+                Termenele lucrării
+                <span class="muted">
+                  {milestones.filter((m) => m.status === 'done').length}/{milestones.length}
+                </span>
+              </h3>
+              {milestones.length === 0 ? (
+                <p class="context__gol">Niciun termen stabilit încă.</p>
+              ) : (
+                <ol class="context__termene">
+                  {milestones.map((m) => (
+                    <li class:list={['ctx-termen', `ctx-termen--${m.status}`]}>
+                      <span class="ctx-termen__punct" aria-hidden="true" />
+                      <span class="ctx-termen__corp">
+                        <strong>{m.title}</strong>
+                        <small class="muted">
+                          {MILESTONE_LABELS[m.status]}
+                          {m.due_on ? ` · ${formatDate(m.due_on)}` : ''}
+                        </small>
+                      </span>
+                    </li>
+                  ))}
+                </ol>
+              )}
+            </section>
+          </>
+        ) : (
+          <section class="context__bloc">
+            <p class="context__gol">
+              Conversație fără o coordonare activă în sesiunea curentă.
+            </p>
+          </section>
+        )
+      }
+
+      <section class="context__bloc">
+        <h3 class="context__subtitlu">
+          Fișiere schimbate
+          <span class="muted">{files.length}</span>
+        </h3>
+        {
+          files.length === 0 ? (
+            <p class="context__gol">
+              Niciun fișier încă. Se atașează din conversație, cu agrafa de lângă câmpul de mesaj.
+            </p>
+          ) : (
+            <ul class="fisiere">
+              {files.map((f) => (
+                <li>
+                  <a class="fisiere__link" href={`/fisiere/${f.id}`}>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
+                      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6" />
+                    </svg>
+                    <span class="fisiere__corp">
+                      <strong>{f.original_name}</strong>
+                      <small class="muted">
+                        {[fileSize(f.size_bytes), timeAgo(f.created_at)].filter(Boolean).join(' · ')}
+                        {f.uploaded_by === u.id ? ' · trimis de tine' : ''}
+                      </small>
+                    </span>
+                  </a>
+                </li>
+              ))}
+            </ul>
+          )
+        }
+      </section>
+    </div>
+  </Chat>
 </ProfesorLayout>
+
+<style>
+  .context {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .context__bloc {
+    padding: var(--s-4);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-3);
+  }
+  .context__bloc:last-child {
+    border-bottom: 0;
+  }
+
+  .context__titlu {
+    font-family: var(--serif);
+    font-size: var(--t-md);
+    font-weight: 600;
+  }
+
+  .context__subtitlu {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--s-2);
+    font-size: var(--t-xs);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--ink-muted);
+  }
+
+  .context__date {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-2);
+    margin: 0;
+    font-size: var(--t-xs);
+  }
+  .context__date div {
+    display: flex;
+    justify-content: space-between;
+    gap: var(--s-3);
+  }
+  .context__date dt {
+    color: var(--ink-muted);
+    flex: none;
+  }
+  .context__date dd {
+    margin: 0;
+    text-align: right;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .context__email {
+    max-width: 170px;
+  }
+
+  .context__lucrare {
+    font-size: var(--t-sm);
+    text-wrap: pretty;
+    padding: var(--s-3);
+    background: var(--surface-sunken);
+    border-radius: var(--r-md);
+  }
+
+  .context__gol {
+    font-size: var(--t-xs);
+    color: var(--ink-muted);
+    text-wrap: pretty;
+  }
+
+  .context__termene {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .ctx-termen {
+    display: flex;
+    gap: var(--s-3);
+    padding-block: var(--s-2);
+    position: relative;
+  }
+  .ctx-termen:not(:last-child)::before {
+    content: '';
+    position: absolute;
+    left: 4px;
+    top: 20px;
+    bottom: -2px;
+    width: 1px;
+    background: var(--border-strong);
+  }
+
+  .ctx-termen__punct {
+    width: 9px;
+    height: 9px;
+    margin-top: 6px;
+    border-radius: 50%;
+    border: 2px solid var(--border-strong);
+    background: var(--surface);
+    flex: none;
+    z-index: 1;
+  }
+  .ctx-termen--done .ctx-termen__punct {
+    background: var(--ok);
+    border-color: var(--ok);
+  }
+  .ctx-termen--in_progress .ctx-termen__punct {
+    background: var(--red);
+    border-color: var(--red);
+  }
+
+  .ctx-termen__corp {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+  .ctx-termen__corp strong {
+    font-size: var(--t-xs);
+    font-weight: 600;
+  }
+  .ctx-termen--done .ctx-termen__corp strong {
+    color: var(--ink-muted);
+  }
+  .ctx-termen__corp small {
+    font-size: 11px;
+  }
+
+  .fisiere {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-1);
+  }
+
+  .fisiere__link {
+    display: flex;
+    align-items: center;
+    gap: var(--s-3);
+    padding: var(--s-2);
+    border-radius: var(--r-md);
+    text-decoration: none;
+    color: var(--ink);
+  }
+  .fisiere__link:hover {
+    background: var(--surface-sunken);
+    color: var(--ink);
+  }
+  .fisiere__link svg {
+    width: 16px;
+    height: 16px;
+    flex: none;
+    color: var(--ink-muted);
+  }
+
+  .fisiere__corp {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+  .fisiere__corp strong {
+    font-size: var(--t-xs);
+    font-weight: 500;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .fisiere__corp small {
+    font-size: 11px;
+  }
+</style>

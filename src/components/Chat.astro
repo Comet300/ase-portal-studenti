@@ -36,9 +36,11 @@ interface Props {
   userId: string
   base: string
   emptyText: string
+  /** Renders a third column when the caller provides `slot="context"`. */
+  hasContext?: boolean
 }
 
-const { conversations, active, messages, userId, base, emptyText } = Astro.props
+const { conversations, active, messages, userId, base, emptyText, hasContext = false } = Astro.props
 
 /** Messages are grouped by day, the way a messaging app does it. */
 const days: { label: string; items: Message[] }[] = []
@@ -56,7 +58,7 @@ for (const m of messages) {
 }
 ---
 
-<div class="chat" data-has-thread={active ? '' : undefined}>
+<div class:list={['chat', { 'chat--cu-context': hasContext }]} data-has-thread={active ? '' : undefined}>
   <aside class="chat__list" aria-label="Conversații">
     {
       conversations.length === 0 ? (
@@ -167,6 +169,8 @@ for (const m of messages) {
       )
     }
   </section>
+
+  {hasContext && <aside class="chat__context"><slot name="context" /></aside>}
 </div>
 
 <script>
@@ -201,8 +205,10 @@ for (const m of messages) {
   .chat {
     display: grid;
     grid-template-columns: minmax(240px, 320px) minmax(0, 1fr);
-    height: calc(100vh - 210px);
-    min-height: 480px;
+    /* Fills whatever the page gives it. The old `calc(100vh - 210px)` guessed
+       at the chrome above and overflowed the professor layout. */
+    height: 100%;
+    min-height: 0;
     background: var(--surface);
     border: 1px solid var(--border);
     border-radius: var(--r-lg);
@@ -290,6 +296,17 @@ for (const m of messages) {
     font-size: 11px;
     font-weight: 600;
     flex: none;
+  }
+
+  .chat--cu-context {
+    grid-template-columns: minmax(220px, 280px) minmax(0, 1fr) minmax(260px, 320px);
+  }
+
+  .chat__context {
+    border-left: 1px solid var(--border);
+    overflow-y: auto;
+    background: var(--surface);
+    min-width: 0;
   }
 
   .chat__thread {
@@ -496,10 +513,21 @@ for (const m of messages) {
     height: 17px;
   }
 
+  @media (max-width: 1200px) {
+    .chat--cu-context {
+      grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);
+    }
+    .chat__context {
+      display: none;
+    }
+  }
+
   @media (max-width: 820px) {
-    .chat {
+    .chat,
+    .chat--cu-context {
       grid-template-columns: minmax(0, 1fr);
       height: auto;
+      min-height: 70vh;
     }
     /* On a phone: either the list or the thread, never both squeezed together. */
     .chat[data-has-thread] .chat__list {

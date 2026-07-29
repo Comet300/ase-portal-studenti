@@ -92,7 +92,7 @@ const STARI = [
   { value: '', text: 'Toate stările' },
   { value: 'coordonat', text: 'Cu coordonator' },
   { value: 'asteptare', text: 'Cerere în așteptare' },
-  { value: 'neinceput', text: 'Fără cerere depusă' },
+  { value: 'neinceput', text: 'Nu a depus cerere' },
 ]
 ---
 
@@ -224,7 +224,7 @@ const STARI = [
                         ) : s.request_status === 'pending' ? (
                           <span class="badge badge--asteptare">Cerere depusă</span>
                         ) : (
-                          <span class="badge badge--ciorna">Fără cerere</span>
+                          <span class="badge badge--ciorna">Nu a depus cerere</span>
                         )}
                       </td>
                       {poateAtribui && (

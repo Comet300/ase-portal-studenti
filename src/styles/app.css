@@ -595,6 +595,10 @@ h4 {
 /* --- dialog -------------------------------------------------------------- */
 
 dialog {
+  /* The reset above sets `margin: 0` on everything, which overrides the UA's
+     `margin: auto` on a modal dialog — so every popup rendered at the top-left
+     corner of the viewport instead of the middle. */
+  margin: auto;
   border: none;
   padding: 0;
   border-radius: var(--r-lg);

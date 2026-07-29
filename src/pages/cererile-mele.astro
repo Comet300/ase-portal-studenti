@@ -236,9 +236,9 @@ const shouldOpenForm = Boolean(openWith.teacher) && !hasActiveRequest
               {milestones.filter((j) => j.status === 'done').length} din {milestones.length} finalizate
             </span>
           </div>
-          <ol class="cronologie">
+          <ol class="termene">
             {milestones.map((j) => (
-              <li class:list={['jalon', `jalon--${j.status}`]}>
+              <li class:list={['termen', `termen--${j.status}`]}>
                 <span class="jalon__punct" aria-hidden="true" />
                 <div class="jalon__corp">
                   <div class="row row--between row--wrap" style="gap:var(--s-2)">
@@ -657,23 +657,23 @@ const shouldOpenForm = Boolean(openWith.teacher) && !hasActiveRequest
     text-wrap: pretty;
   }
 
-  .cronologie {
+  .termene {
     list-style: none;
     margin: 0;
     padding: var(--s-5);
   }
 
-  .jalon {
+  .termen {
     display: flex;
     gap: var(--s-4);
     padding-bottom: var(--s-5);
     position: relative;
   }
-  .jalon:last-child {
+  .termen:last-child {
     padding-bottom: 0;
   }
 
-  .jalon:not(:last-child)::before {
+  .termen:not(:last-child)::before {
     content: '';
     position: absolute;
     left: 5px;
@@ -693,11 +693,11 @@ const shouldOpenForm = Boolean(openWith.teacher) && !hasActiveRequest
     flex: none;
     z-index: 1;
   }
-  .jalon--done .jalon__punct {
+  .termen--done .jalon__punct {
     background: var(--ok);
     border-color: var(--ok);
   }
-  .jalon--in_progress .jalon__punct {
+  .termen--in_progress .jalon__punct {
     background: var(--red);
     border-color: var(--red);
   }
