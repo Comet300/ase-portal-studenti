@@ -22,7 +22,13 @@ const teme = await teacherTopics(u.id)
 >
     <section class="panel">
       <div class="panel__header">
-        <h2 class="section-title">Teme propuse</h2>
+        {/* Titlul paginii spune deja „Teme propuse”; antetul panoului repeta
+            cuvânt cu cuvânt și nu adăuga nimic. Aici e util numărul. */}
+        <h2 class="section-title">În catalog</h2>
+        <span class="muted" style="font-size:var(--t-sm)">
+          {teme.filter((t) => t.is_active).length} din {teme.length}
+          {teme.length === 1 ? ' temă' : ' teme'} publicate
+        </span>
       </div>
 
       {teme.length === 0 ? (
@@ -54,7 +60,9 @@ const teme = await teacherTopics(u.id)
               <form method="POST" action="/api/teme" style="margin-top:auto">
                 <input type="hidden" name="actiune" value="comuta" />
                 <input type="hidden" name="tema_id" value={t.id} />
-                <button class="btn btn--ghost btn--sm" type="submit">
+                {/* Ghost pe fundal alb nu are contur, deci arăta ca un link, nu
+                    ca un buton — exact reproșul primit de două ori până acum. */}
+                <button class="btn btn--secondary btn--sm" type="submit">
                   {t.is_active ? 'Retrage din catalog' : 'Publică din nou'}
                 </button>
               </form>

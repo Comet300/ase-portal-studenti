@@ -72,53 +72,64 @@ const cuStudent = Astro.url.searchParams.get('cu') ?? ''
               <p class="hint" id="numar-alesi" aria-live="polite" />
             </fieldset>
           </div>
-          <div class="field programare__zi">
-            <label class="label" for="prog-zi">Ziua</label>
-            <input class="input" id="prog-zi" name="zi" type="date" min={azi} required />
-          </div>
-          {/* Era un câmp numeric cu ore întregi, iar SQL-ul concatena „hours”:
-              o consultație la 14:30 pur și simplu nu se putea exprima. */}
-          <div class="field programare__ora">
-            <label class="label" for="prog-ora">Ora</label>
-            <input class="input" id="prog-ora" name="ora_start" type="time" value="14:00" step="900" required />
-          </div>
-          <div class="field programare__durata">
-            <label class="label" for="prog-durata">Durata</label>
-            <select class="select" id="prog-durata" name="durata">
-              <option value="0.5">30 de minute</option>
-              <option value="1" selected>1 oră</option>
-              <option value="1.5">1 oră și jumătate</option>
-              <option value="2">2 ore</option>
-              <option value="3">3 ore</option>
-            </select>
-          </div>
+          {/* Coloana din dreapta este propriul ei teanc, nu celule în aceeași
+              grilă cu lista de studenți: altfel rândurile se întind ca să umple
+              înălțimea listei și apar goluri între „Ziua” și „Durata”. */}
+          <div class="programare__detalii">
+            <div class="programare__pereche">
+              <div class="field">
+                <label class="label" for="prog-zi">Ziua</label>
+                <input class="input" id="prog-zi" name="zi" type="date" min={azi} required />
+              </div>
+              {/* Era un câmp numeric cu ore întregi, iar SQL-ul concatena „hours”:
+                  o consultație la 14:30 pur și simplu nu se putea exprima. */}
+              <div class="field">
+                <label class="label" for="prog-ora">Ora</label>
+                <input class="input" id="prog-ora" name="ora_start" type="time" value="14:00" step="900" required />
+              </div>
+            </div>
 
-          <div class="field programare__unde">
-            <label class="label" for="prog-mod">Unde</label>
-            <select class="select" id="prog-mod" name="mod" data-mod>
-              <option value="in_person">La facultate</option>
-              <option value="online">Online</option>
-            </select>
-          </div>
-          <div class="field programare__sala" data-camp-locatie>
-            <label class="label" for="prog-locatie">Clădirea, etajul și sala</label>
-            <input class="input" id="prog-locatie" name="locatie" value={u.office ?? ''}
-              placeholder="Clădirea Ion Angelescu, Piața Romană 6, etaj 2, sala 2203" />
-          </div>
-          <div class="field programare__link">
-            <label class="label" for="prog-link">
-              Link întâlnire <span class="muted" data-link-optional>(opțional)</span>
-            </label>
-            <input class="input" id="prog-link" name="link_online" type="url"
-              placeholder="https://meet…" aria-describedby="ajutor-link" />
-            <span class="hint" id="ajutor-link">Se trimite în invitația de calendar, alături de adresă.</span>
-          </div>
+            <div class="programare__pereche">
+              <div class="field">
+                <label class="label" for="prog-durata">Durata</label>
+                <select class="select" id="prog-durata" name="durata">
+                  <option value="0.5">30 de minute</option>
+                  <option value="1" selected>1 oră</option>
+                  <option value="1.5">1 oră și jumătate</option>
+                  <option value="2">2 ore</option>
+                  <option value="3">3 ore</option>
+                </select>
+              </div>
+              <div class="field">
+                <label class="label" for="prog-mod">Unde</label>
+                <select class="select" id="prog-mod" name="mod" data-mod>
+                  <option value="in_person">La facultate</option>
+                  <option value="online">Online</option>
+                </select>
+              </div>
+            </div>
 
-          <div class="field programare__subiect">
-            <label class="label" for="prog-subiect">Subiectul consultației <span class="muted">(opțional)</span></label>
-            <input class="input" id="prog-subiect" name="subiect"
-              placeholder="Ex: discutăm metodologia și eșantionul" />
+            <div class="field" data-camp-locatie>
+              <label class="label" for="prog-locatie">Clădirea, etajul și sala</label>
+              <input class="input" id="prog-locatie" name="locatie" value={u.office ?? ''}
+                placeholder="Clădirea Ion Angelescu, Piața Romană 6, etaj 2, sala 2203" />
+            </div>
+
+            <div class="field">
+              <label class="label" for="prog-link">
+                Link întâlnire <span class="muted" data-link-optional>(opțional)</span>
+              </label>
+              <input class="input" id="prog-link" name="link_online" type="url"
+                placeholder="https://meet…" aria-describedby="ajutor-link" />
+              <span class="hint" id="ajutor-link">Se trimite în invitația de calendar, alături de adresă.</span>
+            </div>
           </div>
+        </div>
+
+        <div class="field">
+          <label class="label" for="prog-subiect">Subiectul consultației <span class="muted">(opțional)</span></label>
+          <input class="input" id="prog-subiect" name="subiect"
+            placeholder="Ex: discutăm metodologia și eșantionul" />
         </div>
 
         <div class="row" style="justify-content:flex-end">
@@ -276,50 +287,50 @@ const cuStudent = Astro.url.searchParams.get('cu') ?? ''
      jumătatea unui gol, fără nicio linie comună. */
   .programare {
     display: grid;
-    grid-template-columns: repeat(12, minmax(0, 1fr));
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
     gap: var(--s-4);
     align-items: start;
   }
   .programare .field {
     min-width: 0;
   }
-
   .programare__cine {
-    grid-column: span 6;
-    grid-row: span 2;
+    display: flex;
+    flex-direction: column;
   }
-  .programare__zi {
-    grid-column: span 3;
+
+  .programare__detalii {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-4);
+    min-width: 0;
   }
-  .programare__ora {
-    grid-column: span 3;
+
+  .programare__pereche {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: var(--s-4);
+    align-items: start;
   }
-  .programare__durata {
-    grid-column: span 3;
+
+  /* Lista de studenți se oprește la înălțimea coloanei din dreapta, ca cele două
+     coloane să se termine pe aceeași linie. */
+  .programare__cine .alege-studenti {
+    flex: 1;
+    min-height: 0;
   }
-  .programare__unde {
-    grid-column: span 3;
-  }
-  .programare__sala {
-    grid-column: span 6;
-  }
-  .programare__link {
-    grid-column: span 6;
-  }
-  .programare__subiect {
-    grid-column: span 12;
+  .programare__cine .alege-studenti__lista {
+    flex: 1;
+    max-height: none;
   }
 
   @media (max-width: 860px) {
-    .programare__cine,
-    .programare__zi,
-    .programare__ora,
-    .programare__durata,
-    .programare__unde,
-    .programare__sala,
-    .programare__link {
-      grid-column: span 12;
-      grid-row: auto;
+    .programare,
+    .programare__pereche {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .programare__cine .alege-studenti__lista {
+      max-height: 15rem;
     }
   }
 
