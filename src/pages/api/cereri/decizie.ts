@@ -100,7 +100,7 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
     eventType: approved ? 'request_approved' : 'request_rejected',
     body:
       (approved
-        ? `Cererea ${cerere.number} a fost aprobată. Jaloanele lucrării sunt disponibile în portal.`
+        ? `Cererea ${cerere.number} a fost aprobată. Termenele lucrării sunt disponibile în portal.`
         : `Cererea ${cerere.number} a fost respinsă.`) + (note ? `\n\n${note}` : ''),
     // A rejection may be the pair's only exchange; the thread is created so the
     // reason has somewhere to live.
@@ -127,7 +127,7 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
           ? html`<p>Bună, ${student.name.split(' ')[0]}! Cererea <strong>${cerere.number}</strong> pentru lucrarea
              „${cerere.title_ro}” a fost aprobată de ${u!.name}.</p>
              ${note ? html`<p><strong>Mesaj de la coordonator:</strong></p>${noteBlock}` : ''}
-             <p>În portal găsești acum jaloanele lucrării și poți programa consultații.</p>
+             <p>În portal găsești acum termenele lucrării și poți programa consultații.</p>
              <p>Cererea de coordonare, completată cu datele tale, se descarcă și se tipărește de aici:
              <a href="${baza}/documente/cerere/${cerere.id}">cerere-coordonare-${cerere.number}</a>.</p>`
           : html`<p>Bună, ${student.name.split(' ')[0]}. Cererea <strong>${cerere.number}</strong> pentru lucrarea

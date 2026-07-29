@@ -122,7 +122,7 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
         teacherId,
         senderId: teacherId,
         eventType: 'request_approved',
-        body: `Cererea ${number} a fost aprobată automat, pe baza propunerii de coordonare acceptate. Jaloanele lucrării sunt disponibile în portal.`,
+        body: `Cererea ${number} a fost aprobată automat, pe baza propunerii de coordonare acceptate. Termenele lucrării sunt disponibile în portal.`,
         createConversation: true,
       })
 
@@ -133,7 +133,7 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
           'Coordonarea este confirmată',
           html`<p>Bună, ${u.name.split(' ')[0]}! Cererea <strong>${number}</strong> pentru lucrarea
            „${titleRo}” a fost aprobată automat, pentru că ai acceptat propunerea lui ${teacher.name}.</p>
-           <p>În portal găsești acum jaloanele lucrării și poți programa consultații.</p>`,
+           <p>În portal găsești acum termenele lucrării și poți programa consultații.</p>`,
           { text: 'Deschide portalul', url: `${base}/cererile-mele` },
         ),
       })
