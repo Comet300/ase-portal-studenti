@@ -38,7 +38,7 @@ const teme = await teacherTopics(u.id)
           {teme.map((t) => (
             <li class:list={['tema', { 'is-inactiva': !t.is_active }]}>
               <div class="tema__cap">
-                <span class="badge badge--info">
+                <span class="badge badge--taxon">
                   {t.level === 'master' ? 'Master' : 'Licență'}
                   {t.language !== 'ro' ? ` · ${languageLabel(t.language)}` : ''}
                 </span>

@@ -25,8 +25,17 @@
   --bg: #f8f9fa;
   --surface: #ffffff;
   --surface-sunken: #f1f3f5;
-  --border: #e9ecef;
-  --border-strong: #d3d8de;
+
+  /* Două borduri cu două meserii.
+   *
+   * `--border` desparte: rânduri de tabel, secțiuni, carduri. Poate rămâne
+   * discretă, pentru că nu ea spune unde e un control.
+   *
+   * `--border-strong` desenează marginea unui control — câmp, buton, casetă —
+   * și intră sub WCAG 1.4.11, care cere 3:1. Era #d3d8de, adică 1.43:1 pe alb:
+   * câmpurile nu aveau practic contur, iar ecranele arătau spălăcite. */
+  --border: #e6e9ed;
+  --border-strong: #868d94; /* 3.36:1 pe alb, 3.02:1 pe suprafața adâncită */
 
   /* cerneală — verificat pentru contrast pe --bg */
   --ink: #1a1e23; /* 15.2:1 */
@@ -43,12 +52,20 @@
   --info: #1c5d99;
   --info-tint: #eaf2fa;
 
-  /* tipografie — scală fixă, raport 1.125; interfața nu se scalează fluid */
+  /* tipografie — scală fixă, raport 1.125; interfața nu se scalează fluid
+   *
+   * Scala avea opt trepte și se folosea de fapt din două: 207 din 237 de
+   * declarații explicite erau 12px sau 13px, iar `--t-base` — mărimea declarată
+   * a textului — apărea o singură dată în tot portalul. Obiectivele unei
+   * lucrări, mesajul unei invitații și regulamentul erau toate scrise cu corpul
+   * unei note de subsol. Podeaua urcă la 16px, iar `--t-body` spune explicit ce
+   * treaptă folosește un text care chiar se citește. */
   --sans: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
   --serif: 'Source Serif 4', Georgia, 'Times New Roman', serif;
   --t-xs: 0.75rem;
-  --t-sm: 0.8125rem;
-  --t-base: 0.9375rem;
+  --t-sm: 0.875rem;
+  --t-base: 1rem;
+  --t-body: var(--t-base);
   --t-md: 1.0625rem;
   --t-lg: 1.1875rem;
   --t-xl: 1.375rem;
@@ -78,10 +95,32 @@
   --sidebar-w: 260px;
   --topbar-h: 64px;
 
-  /* mișcare — 150–250ms, ease-out; transmite stare, nu decor */
+  /* mișcare — transmite stare, nu decor
+   *
+   * Regula, ca să nu se mai inventeze de fiecare dată:
+   *   culoare (hover, focus)      → --fast  cu --ease
+   *   ceva care apare             → --base  cu --ease
+   *   ceva care pleacă            → --exit  cu --ease-in
+   *   ceva care se mută pe ecran  → --base  cu --ease-inout
+   *   o confirmare                → --base  cu --ease-spring
+   *
+   * Înainte exista o singură curbă și nicio durată de ieșire, așa că nimic nu
+   * pleca — dialogurile și notificările dispăreau dintr-un cadru în altul. */
   --ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-in: cubic-bezier(0.4, 0, 1, 1);
+  --ease-inout: cubic-bezier(0.65, 0, 0.35, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
   --fast: 140ms;
-  --base: 200ms;
+  --base: 220ms;
+  --slow: 380ms;
+  --exit: 150ms;
+
+  /* Inelul de focus este un token separat de roșu, ca suprafețele închise să îl
+   * poată schimba: pe bara laterală bleumarin, #990000 dă 1.88:1. */
+  --focus: var(--red);
+
+  /* Ținta minimă de atingere. Niciun control din portal nu ajungea la ea. */
+  --tap: 44px;
 
   /* scară z semantică */
   --z-sticky: 100;
@@ -162,11 +201,26 @@ a.link {
   text-decoration: none;
 }
 
-/* Un singur inel de focus pentru toată aplicația. */
+/* Un singur inel de focus pentru toată aplicația — dar culoarea lui se moștenește,
+ * ca o suprafață închisă să o poată schimba fără să rescrie regula. */
 :where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
-  outline: 2px solid var(--red);
+  outline: 2px solid var(--focus);
   outline-offset: 2px;
   border-radius: var(--r-sm);
+}
+
+/* Roșul portalului pe bleumarin dă 1.88:1 — sub pragul de 3:1. Pe fundal închis
+ * inelul devine alb (16.75:1). */
+.sidebar,
+.bubble--mine,
+.toast {
+  --focus: #fff;
+}
+
+/* Atingerea nu lasă dreptunghiul albastru al browserului: avem stare proprie
+ * de apăsare, iar cele două suprapuse arată ca un defect. */
+html {
+  -webkit-tap-highlight-color: transparent;
 }
 
 ::placeholder {
@@ -252,7 +306,7 @@ h4 {
   align-items: center;
   justify-content: center;
   gap: var(--s-2);
-  min-height: 38px;
+  min-height: var(--tap);
   padding: 0 var(--s-4);
   border: 1px solid transparent;
   border-radius: var(--r-md);
@@ -265,7 +319,15 @@ h4 {
   transition:
     background var(--fast) var(--ease),
     border-color var(--fast) var(--ease),
-    color var(--fast) var(--ease);
+    color var(--fast) var(--ease),
+    transform 90ms var(--ease-in);
+}
+
+/* Un clic nu confirma nimic până când nu se reîncărca pagina, iar pe telefon nu
+ * există hover — deci apăsarea pe „Rezervă” sau „Aprobă” nu producea absolut
+ * niciun semn. Este cea mai ieftină reparație din tot auditul. */
+.btn:active:not(:disabled):not([data-loading]):not([aria-disabled='true']) {
+  transform: scale(0.97);
 }
 
 .btn svg {
@@ -312,10 +374,58 @@ h4 {
   color: var(--danger);
 }
 
+/* Varianta mică rămâne mică la privit, dar zona de atins rămâne întreagă: un
+ * pseudo-element o întinde la 44px fără să miște aliniamentul rândului. */
 .btn--sm {
-  min-height: 30px;
+  position: relative;
+  min-height: 32px;
   padding: 0 var(--s-3);
   font-size: var(--t-xs);
+}
+
+.btn--sm::before {
+  content: '';
+  position: absolute;
+  inset: 50% 0 auto 0;
+  height: var(--tap);
+  transform: translateY(-50%);
+}
+
+@media (hover: none) {
+  .btn:active:not(:disabled):not([data-loading]):not([aria-disabled='true']) {
+    filter: brightness(0.94);
+  }
+}
+
+/* Rândurile pe care se apasă răspund la fel ca butoanele.
+ *
+ * Clasele sunt definite în stiluri de pagină, care sunt scoped — dar numele lor
+ * există în DOM, deci regula de apăsare se scrie o singură dată, aici, în loc
+ * de treisprezece ori. */
+.nav__link,
+.thread,
+.tab,
+.vedere,
+.an__optiune,
+.metric--link,
+.resursa,
+.coord__echipa,
+.student-optiune,
+.meniu-mobil__link {
+  transition: transform 90ms var(--ease-in);
+}
+
+.nav__link:active,
+.thread:active,
+.tab:active,
+.vedere:active,
+.an__optiune:active,
+.metric--link:active,
+.resursa:active,
+.coord__echipa:active,
+.student-optiune:active,
+.meniu-mobil__link:active {
+  transform: scale(0.985);
 }
 
 .btn:disabled,
@@ -388,11 +498,13 @@ h4 {
 .select,
 .textarea {
   width: 100%;
-  min-height: 38px;
+  min-height: var(--tap);
   padding: var(--s-2) var(--s-3);
   background: var(--surface);
   border: 1px solid var(--border-strong);
   border-radius: var(--r-md);
+  /* 16px, nu mai puțin: sub acest prag Safari pe iPhone mărește pagina la
+   * fiecare atingere într-un câmp, iar utilizatorul rămâne cu ea mărită. */
   font-size: var(--t-base);
   transition:
     border-color var(--fast) var(--ease),
@@ -419,12 +531,21 @@ h4 {
   border-color: var(--ink-muted);
 }
 
+/* `outline: none` de aici avea specificitate (0,2,0), iar inelul comun, scris cu
+ * `:where(...)`, are (0,1,0) — deci câmpurile, cele mai folosite controale din
+ * portal, rămâneau singurele fără indicator de tastatură. Nu a fost o decizie,
+ * a fost un accident de cascadă. Conturul se scoate doar la focus de mouse. */
 .input:focus,
 .select:focus,
 .textarea:focus {
-  outline: none;
   border-color: var(--red);
   box-shadow: 0 0 0 3px var(--red-tint);
+}
+
+.input:focus:not(:focus-visible),
+.select:focus:not(:focus-visible),
+.textarea:focus:not(:focus-visible) {
+  outline: none;
 }
 
 .input:disabled,
@@ -520,15 +641,39 @@ h4 {
   background: var(--surface-sunken);
   color: var(--ink-muted);
 }
+
+/* Nivel, limbă, program — clasificare, nu stare. Purta numele `--info`, ceea ce
+ * lăsa culoarea informativă fără nicio folosință proprie. */
+.badge--taxon {
+  background: var(--surface-sunken);
+  color: var(--ink-soft);
+}
+
 .badge--info {
+  background: var(--info-tint);
+  color: var(--info);
+}
+
+/* În lucru: albastru, ca cronologia să citească gri → albastru → verde. Era
+ * roșu, adică sigiliul instituției pe o stare neutră, chiar lângă verdele
+ * semantic de „gata”. */
+.badge--in-lucru {
   background: var(--info-tint);
   color: var(--info);
 }
 
 /* --- tabele -------------------------------------------------------------- */
 
+/* Un container cu derulare fără niciun descendent focusabil nu poate primi
+ * focus, deci săgețile nu îl mișcă niciodată — iar la 200% zoom sau pe telefon
+ * el este singurul drum către ultimele coloane. `tabindex="0"` se pune pe
+ * fiecare tabel, împreună cu `role` și eticheta. */
 .table-wrap {
   overflow-x: auto;
+}
+
+.table-wrap:focus:not(:focus-visible) {
+  outline: none;
 }
 
 .table {
@@ -581,17 +726,25 @@ h4 {
   font-weight: 600;
 }
 
+/* Text de citit, nu metadate: rămâne pe treapta de corp. */
 .empty__text {
   color: var(--ink-muted);
-  max-width: 46ch;
-  font-size: var(--t-sm);
+  max-width: 52ch;
+  font-size: var(--t-body);
   text-wrap: pretty;
 }
 
+.prose p,
+.prose li {
+  font-size: var(--t-body);
+}
+
+/* `ease` face o pauză vizibilă la fiecare reluare a buclei; o licărire continuă
+ * trebuie să fie liniară. */
 .skeleton {
   background: linear-gradient(90deg, var(--surface-sunken) 25%, #e7eaee 37%, var(--surface-sunken) 63%);
   background-size: 400% 100%;
-  animation: shimmer 1.4s ease infinite;
+  animation: shimmer 1.4s linear infinite;
   border-radius: var(--r-sm);
 }
 
@@ -777,14 +930,57 @@ dialog::backdrop {
   background: rgba(26, 30, 35, 0.45);
 }
 
-dialog[open] {
-  animation: dialog-in var(--base) var(--ease);
+/* Intrarea era animată, ieșirea nu: fereastra și perdeaua neagră de 45% se
+ * stingeau dintr-un cadru în altul, iar perdeaua apărea la fel de brusc. Un
+ * dialog care intră moale și pleacă tăiat este unul dintre cele mai clare semne
+ * de aplicație neterminată. `@starting-style` face și deschiderea, și
+ * închiderea, fără JavaScript; motoarele vechi rămân la comportamentul de azi. */
+dialog {
+  opacity: 0;
+  transform: translateY(6px) scale(0.99);
+  transition:
+    opacity var(--exit) var(--ease-in),
+    transform var(--exit) var(--ease-in),
+    overlay var(--exit) allow-discrete,
+    display var(--exit) allow-discrete;
 }
 
-@keyframes dialog-in {
-  from {
+dialog[open] {
+  opacity: 1;
+  transform: none;
+  transition:
+    opacity var(--base) var(--ease),
+    transform var(--base) var(--ease),
+    overlay var(--base) allow-discrete,
+    display var(--base) allow-discrete;
+}
+
+@starting-style {
+  dialog[open] {
     opacity: 0;
     transform: translateY(6px) scale(0.99);
+  }
+}
+
+dialog::backdrop {
+  opacity: 0;
+  transition:
+    opacity var(--exit) var(--ease-in),
+    overlay var(--exit) allow-discrete,
+    display var(--exit) allow-discrete;
+}
+
+dialog[open]::backdrop {
+  opacity: 1;
+  transition:
+    opacity var(--base) var(--ease),
+    overlay var(--base) allow-discrete,
+    display var(--base) allow-discrete;
+}
+
+@starting-style {
+  dialog[open]::backdrop {
+    opacity: 0;
   }
 }
 
@@ -827,6 +1023,45 @@ dialog[open] {
   padding-inline: var(--s-5);
 }
 
+/* --- tranziții între pagini ---------------------------------------------- */
+
+/* Fiecare legătură și fiecare redirect după POST este o încărcare completă de
+ * document: bara de sus și bara laterală se redesenau de la zero, iar între
+ * pagini ecranul clipea alb. Regula de mai jos e pur CSS — niciun script de
+ * pagină nu trebuie reinițializat, spre deosebire de un router pe client. */
+@view-transition {
+  navigation: auto;
+}
+
+::view-transition-old(root) {
+  animation: iesire-pagina 90ms var(--ease-in) both;
+}
+
+::view-transition-new(root) {
+  animation: intrare-pagina var(--base) var(--ease) both;
+}
+
+@keyframes iesire-pagina {
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes intrare-pagina {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+/* Mobilierul stă pe loc cât se schimbă doar conținutul. */
+.topbar {
+  view-transition-name: topbar;
+}
+.sidebar {
+  view-transition-name: sidebar;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -835,5 +1070,31 @@ dialog[open] {
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
+  }
+
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) {
+    animation: none !important;
+  }
+
+  /* Mișcare redusă înseamnă fără deplasare și fără paralaxă — nu fără stare.
+   * Regula generală de mai sus oprea și rotița butonului care încarcă, lăsând
+   * un arc înghețat exact în momentul în care omul are nevoie să știe că se
+   * întâmplă ceva. */
+  .btn[data-loading]::after {
+    animation: spin 700ms linear infinite !important;
+  }
+
+  .skeleton {
+    animation: none !important;
+    background: var(--surface-sunken);
+    opacity: 0.7;
+  }
+
+  .toast,
+  dialog,
+  dialog::backdrop {
+    transition-duration: 80ms !important;
   }
 }

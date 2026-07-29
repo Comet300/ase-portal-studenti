@@ -24,6 +24,30 @@ import { id as formId } from '../../lib/ids'
 
 const PAGE = '/profesor/consultatii'
 
+/**
+ * „14:30” în ore de la miezul nopții.
+ *
+ * Ora era un câmp numeric cu ore întregi, iar intervalul se construia
+ * concatenând `' hours'` — deci o consultație la și jumătate nu se putea
+ * exprima deloc. Se acceptă și un număr simplu, pentru formularele mai vechi
+ * și pentru cererile care nu vin din browser.
+ */
+function parseClock(value: FormDataEntryValue | null): number | null {
+  const raw = String(value ?? '').trim()
+  if (!raw) return null
+
+  const clock = /^(\d{1,2}):(\d{2})$/.exec(raw)
+  if (clock) {
+    const h = Number(clock[1])
+    const m = Number(clock[2])
+    if (h < 0 || h > 23 || m < 0 || m > 59) return null
+    return h + m / 60
+  }
+
+  const plain = Number(raw)
+  return Number.isFinite(plain) && plain >= 0 && plain <= 23 ? plain : null
+}
+
 function whereItIs(mode: string, location: string | null, meetingUrl: string | null): string {
   if (mode === 'online') return meetingUrl || 'Online'
   return [location, meetingUrl].filter(Boolean).join(' · ') || 'Cabinet'
@@ -43,8 +67,8 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
 
   if (action === 'publica') {
     const day = String(form.get('zi') ?? '')
-    const startHour = Number(form.get('ora_start') ?? 14)
-    const endHour = Number(form.get('ora_final') ?? 16)
+    const startHour = parseClock(form.get('ora_start')) ?? 14
+    const endHour = parseClock(form.get('ora_final')) ?? 16
     const mode = String(form.get('mod') ?? 'in_person')
     const location = String(form.get('locatie') ?? '').trim()
     const meetingUrl = String(form.get('link_online') ?? '').trim()
@@ -68,7 +92,11 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
       return back('Scrie unde are loc consultația — clădirea, etajul și sala.', true)
     }
 
-    const hours = Math.min(endHour - startHour, 8)
+    // Blocul deschis se împarte în ore întregi, deci un capăt la și jumătate nu
+    // are voie să producă un interval care trece de ora de final.
+    const hours = Math.min(Math.floor(endHour - startHour), 8)
+    if (hours < 1) return back('Intervalul trebuie să acopere cel puțin o oră.', true)
+
     const created: { starts_at: string; ends_at: string }[] = []
 
     for (let i = 0; i < hours; i++) {
@@ -150,14 +178,15 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
     // chapter do not need three separate hours.
     const studentIds = form.getAll('student_id').map(formId).filter((v): v is string => Boolean(v))
     const day = String(form.get('zi') ?? '')
-    const startHour = Number(form.get('ora_start') ?? 14)
+    const startHour = parseClock(form.get('ora_start'))
     const durationHours = Number(form.get('durata') ?? 1)
     const mode = String(form.get('mod') ?? 'in_person')
     const location = String(form.get('locatie') ?? '').trim()
     const meetingUrl = String(form.get('link_online') ?? '').trim()
     const note = String(form.get('subiect') ?? '').trim()
 
-    if (!day || !Number.isFinite(startHour)) return back('Alege ziua și ora consultației.', true)
+    if (!day) return back('Alege ziua consultației.', true)
+    if (startHour === null) return back('Ora consultației nu este validă.', true)
     if (!['in_person', 'online'].includes(mode)) return back('Mod invalid.', true)
     if (mode === 'online' && !meetingUrl) {
       return back('O consultație online are nevoie de un link de întâlnire.', true)
@@ -183,7 +212,8 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
     )
     if (students.length === 0) return back('Alege studenți pe care îi coordonezi.', true)
 
-    const hours = Math.min(Math.max(1, Math.trunc(durationHours) || 1), 4)
+    // Sfert de oră este cea mai mică unitate pe care o oferă formularul.
+    const hours = Math.min(Math.max(0.25, Math.round(durationHours * 4) / 4 || 1), 4)
 
     /* `student_id` on the slot names a single invitee, so it is only set when
      * there is exactly one — with several, the slot is theirs collectively and

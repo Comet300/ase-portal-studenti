@@ -195,7 +195,7 @@ const freeTeachers = teachers.filter((t) => !t.is_full).length
                       <li class="tema" data-level={t.level} data-limba={t.language}>
                         <div class="row row--between" style="gap:var(--s-2);align-items:flex-start">
                           <h3 class="tema__titlu">{t.title}</h3>
-                          <span class="badge badge--info">
+                          <span class="badge badge--taxon">
                             {LEVEL_LABELS[t.level]}
                             {t.language !== 'ro' ? ` · ${languageLabel(t.language)}` : ''}
                           </span>
@@ -268,7 +268,7 @@ const freeTeachers = teachers.filter((t) => !t.is_full).length
             >
               <div class="row row--between" style="gap:var(--s-3);align-items:flex-start">
                 <h2 class="card-tema__titlu">{t.title}</h2>
-                <span class="badge badge--info">
+                <span class="badge badge--taxon">
                   {LEVEL_LABELS[t.level]}
                   {t.language !== 'ro' ? ` · ${languageLabel(t.language)}` : ''}
                 </span>

@@ -182,7 +182,7 @@ function deadline(expiresAt: string | null | undefined) {
             <div class="panel__header">
               <h2 class="section-title">Cereri decise</h2>
             </div>
-            <div class="table-wrap">
+            <div class="table-wrap" tabindex="0" role="region" aria-label="Cereri decise">
               <table class="table">
                 <thead>
                   <tr>
@@ -246,7 +246,7 @@ function deadline(expiresAt: string | null | undefined) {
             </p>
           </div>
         ) : (
-          <div class="table-wrap">
+          <div class="table-wrap" tabindex="0" role="region" aria-label="Directorul studenților">
             <table class="table">
               <thead>
                 <tr>
@@ -418,7 +418,7 @@ function deadline(expiresAt: string | null | undefined) {
                               j.status === 'done'
                                 ? 'badge--aprobata'
                                 : j.status === 'in_progress'
-                                  ? 'badge--asteptare'
+                                  ? 'badge--in-lucru'
                                   : 'badge--ciorna',
                             ]}
                           >
@@ -638,7 +638,7 @@ function deadline(expiresAt: string | null | undefined) {
                         i.status === 'accepted'
                           ? 'badge--aprobata'
                           : i.status === 'pending'
-                            ? 'badge--asteptare'
+                            ? 'badge--in-lucru'
                             : 'badge--respinsa',
                       ]}
                     >
@@ -994,8 +994,8 @@ function deadline(expiresAt: string | null | undefined) {
     border-color: var(--ok);
   }
   .termen--in_progress .jalon__punct {
-    background: var(--red);
-    border-color: var(--red);
+    background: var(--info);
+    border-color: var(--info);
   }
 
   .jalon__corp {
