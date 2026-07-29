@@ -653,7 +653,10 @@ await q(
  */
 await q(
   `UPDATE seat_allocations a
-      SET bachelor_seats = GREATEST(ocupate.b, 1),
+      -- Exact câte sunt ocupate. Un GREATEST(…, 1) aici dădea un loc de licență
+      -- în plus unui coordonator al cărui singur student e la master, deci nu
+      -- mai era plin deloc. HAVING de mai jos garantează că totalul nu e zero.
+      SET bachelor_seats = ocupate.b,
           master_seats   = ocupate.m
      FROM (
        SELECT r.teacher_id,
