@@ -657,14 +657,17 @@ const freeTeachers = teachers.filter((t) => !t.is_full).length
     max-height: 60vh;
     overflow-y: auto;
   }
-  .echipa__lista li {
+  .echipa__lista :global(li) {
     border-bottom: 1px solid var(--border);
   }
-  .echipa__lista li:last-child {
+  .echipa__lista :global(li:last-child) {
     border-bottom: 0;
   }
 
-  .echipa__student {
+  /* Rândurile din dialog sunt construite în JavaScript, deci nu primesc
+     atributul de scope pe care Astro îl adaugă la compilare — fără `:global`
+     regulile de aici nu s-ar aplica deloc și lista ar apărea nestilizată. */
+  .echipa__lista :global(.echipa__student) {
     display: flex;
     flex-direction: column;
     gap: 2px;
@@ -673,16 +676,18 @@ const freeTeachers = teachers.filter((t) => !t.is_full).length
     text-decoration: none;
     color: var(--ink);
   }
-  .echipa__student:hover {
+  .echipa__lista :global(.echipa__student:hover) {
     background: var(--surface-sunken);
     color: var(--ink);
   }
-  .echipa__student strong {
+  .echipa__lista :global(.echipa__student strong) {
     font-size: var(--t-sm);
+    font-weight: 600;
   }
-  .echipa__student small,
-  .echipa__titlu {
+  .echipa__lista :global(.echipa__student small),
+  .echipa__lista :global(.echipa__titlu) {
     font-size: var(--t-xs);
+    color: var(--ink-muted);
   }
 
   .teme {
