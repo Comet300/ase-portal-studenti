@@ -1,6 +1,7 @@
 ---
 import BaseLayout from './BaseLayout.astro'
 import Avatar from '../components/Avatar.astro'
+import Clopotel from '../components/Clopotel.astro'
 import { currentYearLabel } from '../lib/years'
 import { hasApprovedRequest } from '../lib/repo'
 
@@ -88,6 +89,7 @@ const linkuriCont = [
                   Zona cadrelor didactice
                 </a>
               )}
+              <Clopotel baseMesaje="/mesaje" />
               <Avatar
                 name={u.name}
                 src={u.avatar_path}

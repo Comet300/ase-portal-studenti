@@ -185,3 +185,56 @@ export async function ensureSupervisorConversation(studentId: string): Promise<s
   )
   return row?.id ?? null
 }
+
+export interface Notificare {
+  id: string
+  event_type: string | null
+  body: string
+  created_at: string
+  read_at: string | null
+  conversation_id: string
+  /** Cine a produs evenimentul — celălalt din conversație, nu cititorul. */
+  peer_name: string
+}
+
+/**
+ * Ce s-a întâmplat, pentru cineva care tocmai s-a întors.
+ *
+ * Portalul scria de la început fiecare decizie ca eveniment în firul perechii —
+ * aprobări, respingeri, propuneri, consultații programate, locuri alocate. Nu
+ * exista însă niciun loc care să le arate laolaltă: un student care nu își
+ * citea emailul nu avea de unde afla că i s-a răspuns decât deschizând pe rând
+ * fiecare ecran.
+ *
+ * Fără tabel nou și fără coloană nouă: aceleași rânduri, citite altfel.
+ */
+export function recentEvents(userId: string, limit = 20) {
+  return query<Notificare>(
+    `SELECT m.id, m.event_type, m.body, m.created_at, m.read_at, m.conversation_id,
+            peer.name AS peer_name
+       FROM messages m
+       JOIN conversations c ON c.id = m.conversation_id
+       JOIN users peer ON peer.id = CASE WHEN c.student_id = $1 THEN c.teacher_id ELSE c.student_id END
+      WHERE m.kind = 'event'
+        AND (c.student_id = $1 OR c.teacher_id = $1)
+        AND m.sender_id <> $1
+      ORDER BY m.created_at DESC
+      LIMIT $2`,
+    [userId, limit],
+  )
+}
+
+/** Câte dintre ele nu au fost încă văzute. */
+export async function unreadEvents(userId: string): Promise<number> {
+  const row = await queryOne<{ n: number }>(
+    `SELECT count(*)::int AS n
+       FROM messages m
+       JOIN conversations c ON c.id = m.conversation_id
+      WHERE m.kind = 'event'
+        AND (c.student_id = $1 OR c.teacher_id = $1)
+        AND m.sender_id <> $1
+        AND m.read_at IS NULL`,
+    [userId],
+  )
+  return row?.n ?? 0
+}

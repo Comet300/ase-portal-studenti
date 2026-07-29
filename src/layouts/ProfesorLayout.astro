@@ -1,5 +1,6 @@
 ---
 import BaseLayout from './BaseLayout.astro'
+import Clopotel from '../components/Clopotel.astro'
 import { initials, DEMO_MODE } from '../lib/auth'
 import { currentYearLabel } from '../lib/years'
 
@@ -124,6 +125,7 @@ const cai: Record<string, string> = {
             <strong>{u.name}</strong>
             <small>{u.role === 'head' ? 'Director de departament' : 'Cadru didactic'}</small>
           </span>
+          <Clopotel baseMesaje="/profesor/mesaje" />
           <form method="POST" action="/api/deconectare">
             <button class="btn btn--ghost btn--sm" type="submit" title="Deconectare" aria-label="Deconectare">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
@@ -400,6 +402,23 @@ const cai: Record<string, string> = {
   .demo-note p {
     margin-top: var(--s-2);
     padding-left: var(--s-4);
+  }
+
+  /* Clopoțelul stă în josul unei bare închise: panoul se deschide în sus, altfel
+     ar cădea sub marginea ecranului, iar iconița ia cerneala suprafeței închise.
+     Stilurile lui sunt scoped în componentă, deci ajung la el prin `:global`. */
+  .user :global(.clopotel summary) {
+    color: #c3c9d1;
+  }
+  .user :global(.clopotel summary:hover) {
+    background: rgba(255, 255, 255, 0.08);
+    color: #fff;
+  }
+  .user :global(.clopotel__panou) {
+    top: auto;
+    bottom: calc(100% + var(--s-2));
+    right: auto;
+    left: 0;
   }
 
   .nav__grup {
