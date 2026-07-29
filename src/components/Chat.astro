@@ -62,19 +62,52 @@ const {
 } = Astro.props
 
 /** Messages are grouped by day, the way a messaging app does it. */
-const days: { label: string; items: Message[] }[] = []
+type Bucata = Message & { continuare: boolean; ultimulDinGrup: boolean }
+
+const days: { label: string; items: Bucata[] }[] = []
 const today = new Date().toDateString()
 const yesterday = new Date(Date.now() - 86400000).toDateString()
 
-for (const m of messages) {
+const PAUZA = 5 * 60 * 1000
+
+for (const [i, m] of messages.entries()) {
   const d = new Date(m.created_at)
   const key = d.toDateString()
   const label =
     key === today ? 'Astăzi' : key === yesterday ? 'Ieri' : `${d.getDate()} ${shortMonth(m.created_at)}`
+
+  /* Cinci replici la rând de la același om erau cinci cutii identice, fiecare
+   * cu ora ei. Se leagă într-un bloc: doar ultima poartă ora, iar cele din
+   * mijloc pierd coada și marginea. */
+  const anterior = messages[i - 1]
+  const urmator = messages[i + 1]
+  const acelasiGrup = (a: Message | undefined, b: Message) =>
+    !!a &&
+    a.kind === 'text' &&
+    b.kind === 'text' &&
+    a.sender_id === b.sender_id &&
+    new Date(a.created_at).toDateString() === new Date(b.created_at).toDateString() &&
+    Math.abs(new Date(b.created_at).getTime() - new Date(a.created_at).getTime()) < PAUZA
+
+  const bucata: Bucata = {
+    ...m,
+    continuare: m.kind === 'text' && acelasiGrup(anterior, m),
+    ultimulDinGrup: m.kind !== 'text' || !acelasiGrup(m, urmator ?? m) || !urmator,
+  }
+
   const last = days.at(-1)
-  if (last?.label === label) last.items.push(m)
-  else days.push({ label, items: [m] })
+  if (last?.label === label) last.items.push(bucata)
+  else days.push({ label, items: [bucata] })
 }
+
+/** Tipurile pe care browserul le poate arăta în siguranță chiar în fir. */
+const PREVIZUALIZABILE = ['image/png', 'image/jpeg', 'image/webp', 'image/gif']
+
+const INCEPUTURI = [
+  'Bună ziua! Mă bucur că lucrăm împreună.',
+  'Am o întrebare despre structura lucrării.',
+  'Am atașat prima versiune a capitolului.',
+]
 ---
 
 <div class:list={['chat', { 'chat--cu-context': hasContext }]} data-has-thread={active ? '' : undefined}>
@@ -105,6 +138,12 @@ for (const m of messages) {
   </aside>
 
   <section class="chat__thread">
+    {/* Ținta pentru fișierele trase peste fir. Stă peste tot firul, nu peste un
+        colț: la o conversație lungă, o zonă mică e imposibil de nimerit. */}
+    <div class="chat__drop" aria-hidden="true">
+      <span>Lasă fișierul aici ca să îl atașezi</span>
+    </div>
+
     {
       active ? (
         <>
@@ -126,12 +165,20 @@ for (const m of messages) {
 
           <div class="chat__messages" id="chat-messages">
             {messages.length === 0 && (
-              <div class="empty">
-                <p class="empty__title">Niciun mesaj încă</p>
+              /* Un fir gol cere un început, nu o explicație. */
+              <div class="chat__inceput">
+                <p class="empty__title">Scrie primul mesaj</p>
                 <p class="empty__text">
-                  Scrie primul mesaj. Interlocutorul primește o notificare pe email dacă nu este în
-                  portal.
+                  {active?.peer_name.split(' ').slice(-1)[0]} primește o notificare pe email dacă nu
+                  este în portal.
                 </p>
+                <div class="chat__sugestii">
+                  {INCEPUTURI.map((text) => (
+                    <button class="chat__sugestie" type="button" data-inceput={text}>
+                      {text}
+                    </button>
+                  ))}
+                </div>
               </div>
             )}
 
@@ -145,20 +192,53 @@ for (const m of messages) {
                         {EVENT_LABELS[m.event_type ?? ''] ?? 'Actualizare'}
                       </span>
                       <p class="eveniment__corp">{m.body}</p>
-                      <span class="eveniment__ora numeric">{formatTime(m.created_at)}</span>
+                      <time class="eveniment__ora numeric" datetime={m.created_at}>
+                        {formatTime(m.created_at)}
+                      </time>
                     </article>
                   ) : (
-                  <article class:list={['bubble', { 'bubble--mine': m.sender_id === userId }]}>
-                    <p class="bubble__body">{m.body}</p>
-                    {m.file_id && (
-                      <a class="bubble__file" href={`/fisiere/${m.file_id}`}>
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
-                          <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
-                        </svg>
-                        {m.file_name}
-                      </a>
+                  <article
+                    class:list={[
+                      'bubble',
+                      {
+                        'bubble--mine': m.sender_id === userId,
+                        'bubble--continuare': m.continuare,
+                      },
+                    ]}
+                    id={m.id === messages.at(-1)?.id ? 'ultim-mesaj' : undefined}
+                  >
+                    {m.body !== '(fișier atașat)' && <p class="bubble__body">{m.body}</p>}
+
+                    {m.file_id &&
+                      (PREVIZUALIZABILE.includes(m.file_mime ?? '') ? (
+                        /* O imagine numită prin fișierul ei este o imagine pe care
+                           nu o vezi. Se arată; clic o deschide întreagă. */
+                        <a class="bubble__imagine" href={`/fisiere/${m.file_id}?inline=1`} target="_blank" rel="noopener">
+                          <img src={`/fisiere/${m.file_id}?inline=1`} alt={m.file_name ?? 'Imagine atașată'} loading="lazy" />
+                        </a>
+                      ) : (
+                        <a class="bubble__file" href={`/fisiere/${m.file_id}`}>
+                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+                            <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
+                          </svg>
+                          {m.file_name}
+                        </a>
+                      ))}
+
+                    {m.ultimulDinGrup && (
+                      <span class="bubble__time numeric">
+                        <time datetime={m.created_at} title={formatTime(m.created_at)}>
+                          {formatTime(m.created_at)}
+                        </time>
+                        {/* Starea de citit era deja în baza de date și nu o vedea
+                            nimeni. O bifă: trimis. Două: citit. */}
+                        {m.sender_id === userId && (
+                          <span class="bubble__stare" title={m.read_at ? `Văzut ${formatTime(m.read_at)}` : 'Trimis'}>
+                            {m.read_at ? '✓✓' : '✓'}
+                          </span>
+                        )}
+                      </span>
                     )}
-                    <span class="bubble__time numeric">{formatTime(m.created_at)}</span>
                   </article>
                   ),
                 )}
@@ -166,21 +246,43 @@ for (const m of messages) {
             ))}
           </div>
 
+          {/* Când conversația e derulată în sus, mesajul nou ajunge sub margine
+              fără niciun semn. Pilula spune că s-a întâmplat ceva jos. */}
+          <button class="chat__noi" type="button" id="mesaje-noi" hidden>
+            Mesaje mai noi ↓
+          </button>
+
           {/* Toate fișierele firului, în ordine cronologică. Stă peste conversație
               ca un sertar, ca să nu fure lățime când nu e nevoie de el. */}
-          <aside class="fisiere-drawer" id="fisiere-drawer" hidden>
+          <aside class="fisiere-drawer" id="fisiere-drawer" role="dialog" aria-modal="false" aria-label="Fișiere din conversație" hidden>
             <div class="fisiere-drawer__cap">
               <strong>Fișiere din conversație</strong>
               <button class="btn btn--ghost btn--sm" type="button" id="inchide-fisiere" aria-label="Închide">✕</button>
             </div>
+
+            {files.length > 4 && (
+              <div class="fisiere-drawer__cauta">
+                <input
+                  class="input"
+                  type="search"
+                  id="cauta-fisier"
+                  placeholder="Caută după nume…"
+                  aria-label="Caută un fișier"
+                />
+              </div>
+            )}
+
             {files.length === 0 ? (
               <p class="fisiere-drawer__gol">
                 Niciun fișier încă. Atașează unul cu agrafa de lângă câmpul de mesaj.
               </p>
             ) : (
               <ul class="fisiere-drawer__lista">
+                <li class="fisiere-drawer__gol" id="fisiere-fara-rezultat" hidden>
+                  Niciun fișier cu numele acesta.
+                </li>
                 {files.map((f) => (
-                  <li>
+                  <li data-nume-fisier={f.original_name.toLowerCase()}>
                     <a class="fisier" href={`/fisiere/${f.id}`}>
                       <span class="fisier__icon" aria-hidden="true">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
@@ -208,17 +310,21 @@ for (const m of messages) {
             <input type="hidden" name="conversation_id" value={active.id} />
             <input type="hidden" name="redirect" value={`${base}?conversatie=${active.id}`} />
 
-            <label class="attach" title="Atașează un fișier">
-              <input type="file" name="file" hidden />
+            {/* Butonul este un buton, nu o etichetă: o etichetă nu primește
+                focus de la tastatură, deci atașarea unui fișier era imposibilă
+                fără mouse. Câmpul rămâne în pagină, ascuns vizual dar accesibil. */}
+            <input type="file" name="file" class="visually-hidden" id="camp-fisier" />
+            <button class="attach" type="button" id="alege-fisier">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
                 <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
               </svg>
               <span class="visually-hidden">Atașează un fișier</span>
-            </label>
+            </button>
 
             <div class="chat__camp">
               {/* Fișierul ales se vede înainte de trimitere: altfel nu ai cum să
-                  știi că s-a atașat, nici cum să te răzgândești. */}
+                  știi că s-a atașat, nici cum să te răzgândești. Bara de jos
+                  arată cât a urcat, iar „✕” devine „oprește” cât timp urcă. */}
               <div class="atasament" id="atasament" hidden>
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
                   <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6" />
@@ -228,6 +334,7 @@ for (const m of messages) {
                   <small class="muted" id="atasament-marime"></small>
                 </span>
                 <button class="atasament__scoate" type="button" id="scoate-atasament" aria-label="Elimină fișierul">✕</button>
+                <span class="atasament__bara" id="atasament-bara"></span>
               </div>
 
               <textarea class="chat__input" name="body" rows="1" placeholder="Scrie un mesaj…" aria-label="Mesaj"></textarea>
@@ -254,96 +361,9 @@ for (const m of messages) {
 </div>
 
 <script>
-  // Start at the latest message; this is a starting position, not a transition.
-  const scroller = document.getElementById('chat-messages')
-  scroller?.scrollTo({ top: scroller.scrollHeight })
+  import { porneste } from '../scripts/chat'
 
-  const input = document.querySelector<HTMLTextAreaElement>('.chat__input')
-
-  // Enter sends, Shift+Enter breaks the line.
-  input?.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault()
-      input.form?.requestSubmit()
-    }
-  })
-
-  input?.addEventListener('input', () => {
-    input.style.height = 'auto'
-    input.style.height = Math.min(input.scrollHeight, 160) + 'px'
-  })
-
-  /* --- atașamentul, vizibil înainte de trimitere ------------------------- */
-
-  const file = document.querySelector<HTMLInputElement>('input[type="file"]')
-  const chip = document.getElementById('atasament')
-  const chipNume = document.getElementById('atasament-nume')
-  const chipMarime = document.getElementById('atasament-marime')
-  const scoate = document.getElementById('scoate-atasament')
-
-  const marime = (bytes: number) =>
-    bytes < 1024
-      ? `${bytes} B`
-      : bytes < 1024 * 1024
-        ? `${Math.round(bytes / 1024)} KB`
-        : `${(bytes / (1024 * 1024)).toFixed(1)} MB`
-
-  const MAX = 15 * 1024 * 1024
-
-  function aratăAtașament() {
-    const f = file?.files?.[0]
-    if (!f) {
-      if (chip) chip.hidden = true
-      return
-    }
-    if (f.size > MAX) {
-      window.notifica?.(`„${f.name}" depășește 15 MB și nu poate fi atașat.`, 'error')
-      if (file) file.value = ''
-      if (chip) chip.hidden = true
-      return
-    }
-    if (chipNume) chipNume.textContent = f.name
-    if (chipMarime) chipMarime.textContent = marime(f.size)
-    if (chip) chip.hidden = false
-  }
-
-  file?.addEventListener('change', aratăAtașament)
-
-  scoate?.addEventListener('click', () => {
-    if (file) file.value = ''
-    if (chip) chip.hidden = true
-    input?.focus()
-  })
-
-  // Un mesaj poate fi doar un fișier, dar nu poate fi gol de tot.
-  input?.form?.addEventListener('submit', (e) => {
-    const areText = (input.value ?? '').trim().length > 0
-    const areFisier = Boolean(file?.files?.length)
-    if (!areText && !areFisier) {
-      e.preventDefault()
-      window.notifica?.('Scrie un mesaj sau atașează un fișier.', 'error')
-      return
-    }
-    // Trimiterea poate dura cât urcă fișierul; butonul trebuie să arate asta.
-    const buton = input.form?.querySelector<HTMLButtonElement>('button[type="submit"]')
-    if (buton) buton.dataset.loading = ''
-  })
-
-  /* --- sertarul cu fișiere ------------------------------------------------ */
-
-  const drawer = document.getElementById('fisiere-drawer')
-  const comuta = document.getElementById('comuta-fisiere')
-
-  const setDrawer = (deschis: boolean) => {
-    if (drawer) drawer.hidden = !deschis
-    comuta?.setAttribute('aria-expanded', String(deschis))
-  }
-
-  comuta?.addEventListener('click', () => setDrawer(drawer?.hidden ?? true))
-  document.getElementById('inchide-fisiere')?.addEventListener('click', () => setDrawer(false))
-  document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && drawer && !drawer.hidden) setDrawer(false)
-  })
+  porneste()
 </script>
 
 <style>
@@ -516,21 +536,36 @@ for (const m of messages) {
     padding: var(--s-3) var(--s-4);
     background: var(--surface);
     border: 1px solid var(--border);
-    border-radius: var(--r-lg);
+    /* Colțurile aproape drepte ale portalului sunt potrivite pentru un formular
+       instituțional; într-o conversație arătau ca niște celule de tabel. */
+    border-radius: 14px;
     border-bottom-left-radius: var(--r-sm);
     display: flex;
     flex-direction: column;
     gap: var(--s-1);
   }
 
-  /* Own messages carry the institutional red — the "me" state, not decoration. */
+  /* Replicile proprii erau roșu plin — adică sigiliul instituției pe jumătate
+     din suprafața ecranului, într-un loc care e mobilier, nu acțiune. Rămâne
+     aceeași familie de culoare, la intensitatea care distinge fără să domine. */
   .bubble--mine {
     align-self: flex-end;
-    background: var(--red);
-    border-color: var(--red);
-    color: #fff;
-    border-bottom-left-radius: var(--r-lg);
+    background: var(--red-tint);
+    border-color: #f3d9d5;
+    color: var(--ink);
+    border-bottom-left-radius: 14px;
     border-bottom-right-radius: var(--r-sm);
+  }
+
+  /* Cinci replici la rând de la același om se citesc ca un bloc, nu ca cinci
+     cutii: continuarea pierde coada și se lipește de cea de dinainte. */
+  .bubble--continuare {
+    margin-top: calc(var(--s-2) * -1 + 2px);
+    border-top-left-radius: var(--r-sm);
+  }
+  .bubble--mine.bubble--continuare {
+    border-top-left-radius: 14px;
+    border-top-right-radius: var(--r-sm);
   }
 
   .bubble__body {
@@ -540,12 +575,66 @@ for (const m of messages) {
   }
 
   .bubble__time {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--s-1);
     align-self: flex-end;
     font-size: 11px;
     color: var(--ink-muted);
   }
-  .bubble--mine .bubble__time {
-    color: rgba(255, 255, 255, 0.75);
+
+  .bubble__stare {
+    letter-spacing: -1px;
+    color: var(--info);
+  }
+
+  /* O poză numită prin fișierul ei este o poză pe care nu o vezi. */
+  .bubble__imagine {
+    display: block;
+    max-width: 260px;
+    border-radius: var(--r-md);
+    overflow: hidden;
+    line-height: 0;
+  }
+  .bubble__imagine img {
+    width: 100%;
+    height: auto;
+    max-height: 260px;
+    object-fit: cover;
+  }
+
+  /* Bula provizorie, cât mesajul urcă spre server. */
+  .bubble.is-pending {
+    opacity: 0.6;
+  }
+  .bubble.is-failed {
+    border-color: var(--danger);
+    background: var(--danger-tint);
+  }
+  .bubble__reia {
+    align-self: flex-end;
+    margin-top: var(--s-1);
+    border: 1px solid var(--danger);
+    border-radius: var(--r-sm);
+    background: none;
+    padding: 2px var(--s-2);
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--danger);
+    cursor: pointer;
+  }
+
+  /* Doar ultima bulă intră cu mișcare — animate toate, un fir lung ar tremura
+     la fiecare încărcare. */
+  .chat__messages > .bubble:last-child {
+    animation: bula-noua var(--base) var(--ease-spring);
+  }
+
+  @keyframes bula-noua {
+    from {
+      opacity: 0;
+      transform: translateY(10px) scale(0.97);
+    }
   }
 
   .bubble__file {
@@ -564,8 +653,89 @@ for (const m of messages) {
     height: 14px;
   }
   .bubble--mine .bubble__file {
-    background: rgba(255, 255, 255, 0.15);
-    color: #fff;
+    background: rgba(153, 0, 0, 0.07);
+    color: var(--ink);
+  }
+
+  /* --- ținta pentru fișiere trase peste fir ------------------------------- */
+
+  .chat__drop {
+    position: absolute;
+    inset: 0;
+    z-index: 3;
+    display: grid;
+    place-items: center;
+    background: color-mix(in srgb, var(--surface) 88%, transparent);
+    border: 2px dashed var(--red);
+    border-radius: var(--r-md);
+    font-weight: 600;
+    color: var(--red);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity var(--fast) var(--ease);
+  }
+
+  .chat__thread[data-drop] .chat__drop {
+    opacity: 1;
+  }
+
+  /* --- pilula „mesaje mai noi” --------------------------------------------- */
+
+  .chat__noi {
+    position: absolute;
+    bottom: 84px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 2;
+    padding: var(--s-2) var(--s-4);
+    border: 1px solid var(--border-strong);
+    border-radius: 999px;
+    background: var(--surface);
+    box-shadow: var(--shadow-raised);
+    font-size: var(--t-xs);
+    font-weight: 600;
+    cursor: pointer;
+    animation: bula-noua var(--base) var(--ease);
+  }
+
+  /* --- firul gol ----------------------------------------------------------- */
+
+  .chat__inceput {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--s-3);
+    margin: auto;
+    padding: var(--s-6) var(--s-5);
+    text-align: center;
+  }
+
+  .chat__sugestii {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: var(--s-2);
+    margin-top: var(--s-2);
+  }
+
+  /* Trei începuturi de conversație: un fir gol cere o primă propoziție, nu o
+     explicație despre cum funcționează emailul. */
+  .chat__sugestie {
+    padding: var(--s-2) var(--s-3);
+    border: 1px solid var(--border-strong);
+    border-radius: 999px;
+    background: var(--surface);
+    font-size: var(--t-xs);
+    color: var(--ink-soft);
+    cursor: pointer;
+    transition:
+      background var(--fast) var(--ease),
+      border-color var(--fast) var(--ease);
+  }
+  .chat__sugestie:hover {
+    background: var(--surface-sunken);
+    border-color: var(--ink-muted);
+    color: var(--ink);
   }
 
   /* Un eveniment nu are „autor” în același sens: se așază pe toată lățimea,
@@ -652,17 +822,32 @@ for (const m of messages) {
 
   /* Sertarul acoperă conversația în loc să o îngusteze: e o consultare scurtă,
      nu o a treia coloană permanentă. */
+  /* Sertarul pornea de la 56px — o măsurătoare a antetului scrisă cu mâna, care
+     nu mai era adevărată de când antetul are avatar. Acoperă firul de sus până
+     jos și intră alunecând dinspre margine. */
   .fisiere-drawer {
     position: absolute;
-    inset: 56px 0 0 auto;
+    inset: 0 0 0 auto;
     width: min(340px, 100%);
-    z-index: 2;
+    z-index: 4;
     display: flex;
     flex-direction: column;
     background: var(--surface);
     border-left: 1px solid var(--border);
-    box-shadow: var(--shadow-raised);
+    box-shadow: var(--shadow-overlay);
     overflow: hidden;
+    animation: sertar-intra var(--base) var(--ease);
+  }
+
+  @keyframes sertar-intra {
+    from {
+      transform: translateX(100%);
+    }
+  }
+
+  .fisiere-drawer__cauta {
+    padding: var(--s-3) var(--s-4);
+    border-bottom: 1px solid var(--border);
   }
 
   .fisiere-drawer__cap {
@@ -759,6 +944,7 @@ for (const m of messages) {
   }
 
   .atasament {
+    position: relative;
     display: flex;
     align-items: center;
     gap: var(--s-2);
@@ -768,6 +954,18 @@ for (const m of messages) {
     border: 1px solid var(--border-strong);
     border-radius: var(--r-md);
     background: var(--surface-sunken);
+    overflow: hidden;
+  }
+
+  /* Cât urcă fișierul, chipul îl arată: un capitol de 12 MB fără niciun semn
+     este exact momentul în care omul apasă a doua oară. */
+  .atasament__bara {
+    position: absolute;
+    inset: auto 0 0 0;
+    height: 3px;
+    width: 0;
+    background: var(--red);
+    transition: width 120ms linear;
   }
   .atasament svg {
     width: 15px;
@@ -836,14 +1034,21 @@ for (const m of messages) {
   .attach {
     display: grid;
     place-items: center;
-    width: 38px;
-    height: 38px;
+    width: var(--tap);
+    height: var(--tap);
     border: 1px solid var(--border-strong);
     border-radius: var(--r-md);
+    background: var(--surface);
     cursor: pointer;
     color: var(--ink-muted);
     flex: none;
-    transition: color var(--fast) var(--ease), border-color var(--fast) var(--ease);
+    transition:
+      color var(--fast) var(--ease),
+      border-color var(--fast) var(--ease),
+      transform 90ms var(--ease-in);
+  }
+  .attach:active {
+    transform: scale(0.94);
   }
   .attach:hover {
     color: var(--ink);

@@ -33,6 +33,7 @@ export interface Message {
   sender_name: string
   file_id: string | null
   file_name: string | null
+  file_mime: string | null
 }
 
 /** Threads the user takes part in, most recently active first. */
@@ -80,7 +81,7 @@ export function conversationMessages(userId: string, conversationId: string) {
   return query<Message>(
     `SELECT m.id, m.sender_id, m.body, m.kind, m.event_type, m.created_at, m.read_at,
             u.name AS sender_name,
-            f.id AS file_id, f.original_name AS file_name
+            f.id AS file_id, f.original_name AS file_name, f.mime AS file_mime
        FROM messages m
        JOIN conversations c ON c.id = m.conversation_id
        JOIN users u ON u.id = m.sender_id
