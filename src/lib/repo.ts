@@ -629,3 +629,22 @@ export function timeAgo(iso: string | null): string {
 export function shortMonth(iso: string): string {
   return MONTHS[new Date(iso).getMonth()].slice(0, 3)
 }
+
+/**
+ * Are studentul o cerere aprobată în sesiunea curentă?
+ *
+ * Bara de navigație o folosește ca să spună „Lucrarea mea” în loc de „Cererile
+ * mele”: după ce coordonarea e confirmată, ecranul nu mai este despre cereri.
+ */
+export async function hasApprovedRequest(studentId: string): Promise<boolean> {
+  const row = await queryOne<{ exista: boolean }>(
+    `SELECT EXISTS (
+       SELECT 1 FROM requests
+        WHERE student_id = $1
+          AND status = 'approved'
+          AND academic_year_id = (SELECT id FROM academic_years WHERE is_current)
+     ) AS exista`,
+    [studentId],
+  )
+  return row?.exista ?? false
+}

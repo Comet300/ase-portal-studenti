@@ -2,27 +2,40 @@
 import BaseLayout from './BaseLayout.astro'
 import Avatar from '../components/Avatar.astro'
 import { currentYearLabel } from '../lib/years'
+import { hasApprovedRequest } from '../lib/repo'
 
 interface Props {
   title: string
+  /** Titlul din bara browserului, când cel din pagină nu e bun de semn de carte. */
+  docTitle?: string
   description?: string
   active?: string
 }
 
-const { title, description, active } = Astro.props
+const { title, docTitle, description, active } = Astro.props
 const u = Astro.locals.user
 const sesiune = await currentYearLabel()
 
-// Arhiva și coordonările sunt publice pentru oricine autentificat, dar nu au ce
-// căuta în bara unui vizitator care nici nu le poate deschide.
+const areLucrare = u?.role === 'student' && (await hasApprovedRequest(u.id))
+
+/* Un vizitator primea în bară patru legături care îl trimiteau direct în ecranul
+ * de autentificare — inclusiv „Cererile Mele”, care pentru el nu înseamnă nimic.
+ * Tot ce cere sesiune stă acum într-un singur loc, în spatele lui `u`.
+ *
+ * Iar odată ce cererea e aprobată, pagina nu mai este despre cereri: este despre
+ * lucrare, și se numește așa. */
 const linkuri = [
   { href: '/', text: 'Acasă', cheie: 'acasa' },
   { href: '/coordonatori', text: 'Coordonatori & Teme', cheie: 'coordonatori' },
-  { href: '/cererile-mele', text: 'Cererile Mele', cheie: 'cereri' },
-  { href: '/mesaje', text: 'Mesaje', cheie: 'mesaje' },
-  { href: '/consultatii', text: 'Consultații', cheie: 'consultatii' },
   ...(u
     ? [
+        {
+          href: '/cererile-mele',
+          text: areLucrare ? 'Lucrarea mea' : 'Cererile mele',
+          cheie: 'cereri',
+        },
+        { href: '/mesaje', text: 'Mesaje', cheie: 'mesaje' },
+        { href: '/consultatii', text: 'Consultații', cheie: 'consultatii' },
         { href: '/arhiva', text: 'Arhivă', cheie: 'arhiva' },
       ]
     : []),
@@ -34,7 +47,7 @@ const linkuri = [
 const linkCont = { href: '/contul-meu', text: 'Contul meu', cheie: 'cont' }
 ---
 
-<BaseLayout title={title} description={description}>
+<BaseLayout title={title} docTitle={docTitle} description={description}>
   <header class="topbar">
     <div class="topbar__inner container">
       <a href="/" class="brand">
@@ -112,13 +125,9 @@ const linkCont = { href: '/contul-meu', text: 'Contul meu', cheie: 'cont' }
 </BaseLayout>
 
 <script>
-  const buton = document.querySelector<HTMLButtonElement>('.hamburger')
-  const meniu = document.getElementById('meniu-mobil')
-  buton?.addEventListener('click', () => {
-    const deschis = buton.getAttribute('aria-expanded') === 'true'
-    buton.setAttribute('aria-expanded', String(!deschis))
-    if (meniu) meniu.hidden = deschis
-  })
+  import { porneste } from '../scripts/meniu'
+
+  porneste({ buton: '.hamburger', panou: '#meniu-mobil' })
 </script>
 
 <style>
@@ -229,8 +238,8 @@ const linkCont = { href: '/contul-meu', text: 'Contul meu', cheie: 'cont' }
     display: none;
     align-items: center;
     justify-content: center;
-    width: 38px;
-    height: 38px;
+    width: var(--tap);
+    height: var(--tap);
     border: 1px solid var(--border-strong);
     border-radius: var(--r-md);
     background: var(--surface);
@@ -241,11 +250,39 @@ const linkCont = { href: '/contul-meu', text: 'Contul meu', cheie: 'cont' }
     height: 18px;
   }
 
+  /* Un panou care intră dinspre margine, nu o listă care apare brusc sub bară. */
   .meniu-mobil {
     display: none;
     flex-direction: column;
-    padding: var(--s-2) var(--s-5) var(--s-4);
+    padding: var(--s-4) var(--s-5) var(--s-6);
     border-top: 1px solid var(--border);
+  }
+
+  @media (max-width: 900px) {
+    .meniu-mobil {
+      position: fixed;
+      inset: var(--topbar-h) 0 auto 0;
+      z-index: var(--z-drawer);
+      max-height: calc(100dvh - var(--topbar-h));
+      overflow-y: auto;
+      background: var(--surface);
+      box-shadow: var(--shadow-overlay);
+      transform: translateY(-8px);
+      opacity: 0;
+      transition:
+        transform var(--base) var(--ease),
+        opacity var(--base) var(--ease);
+    }
+    .meniu-mobil.is-deschis {
+      transform: none;
+      opacity: 1;
+    }
+  }
+
+  .meniu-mobil__link {
+    min-height: var(--tap);
+    display: flex;
+    align-items: center;
   }
 
   .meniu-mobil__link {

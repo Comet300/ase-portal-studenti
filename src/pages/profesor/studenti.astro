@@ -119,7 +119,7 @@ function deadline(expiresAt: string | null | undefined) {
               {inAsteptare.map((c) => {
                 const termen = deadline(c.expires_at)
                 return (
-                  <li class="cerere">
+                  <li class="cerere" id={`cerere-${c.id}`}>
                     <div class="cerere__cap">
                       <Avatar name={c.student_name} />
                       <div class="cerere__ident">

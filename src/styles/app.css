@@ -896,6 +896,24 @@ h4 {
   }
 }
 
+/* Fundalul de sub un panou deschis. Nu doar închide la atingere — spune că
+ * restul paginii nu mai ascultă. */
+.perdea {
+  position: fixed;
+  inset: 0;
+  /* Sub sertar, peste tot restul: `--z-backdrop` este pentru dialogurile modale,
+   * care stau mai sus decât un meniu. */
+  z-index: calc(var(--z-drawer) - 1);
+  background: rgba(26, 30, 35, 0.4);
+  animation: perdea-intra var(--base) var(--ease);
+}
+
+@keyframes perdea-intra {
+  from {
+    opacity: 0;
+  }
+}
+
 .banner-offline {
   position: sticky;
   top: 0;

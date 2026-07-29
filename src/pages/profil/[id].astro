@@ -23,7 +23,7 @@ const me = Astro.locals.user!
 
 // A hand-edited URL must read as "no such person", not as a database error.
 const id = routeId(Astro.params.id ?? null)
-if (!id) return new Response('Pagina nu a fost găsită', { status: 404 })
+if (!id) return Astro.rewrite('/404')
 
 const person = await queryOne<{
   id: string
@@ -51,7 +51,7 @@ const person = await queryOne<{
   [id],
 )
 
-if (!person) return new Response('Pagina nu a fost găsită', { status: 404 })
+if (!person) return Astro.rewrite('/404')
 
 const isTeacherProfile = person.role !== 'student'
 const isMe = person.id === me.id

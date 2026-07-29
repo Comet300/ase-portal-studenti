@@ -5,6 +5,8 @@ import { currentYearLabel } from '../lib/years'
 
 interface Props {
   title: string
+  /** Titlul din bara browserului, când cel din pagină e un salut, nu un nume de ecran. */
+  docTitle?: string
   lede?: string
   active?: string
   /**
@@ -18,25 +20,48 @@ interface Props {
   fill?: boolean
 }
 
-const { title, lede, active, fill = false } = Astro.props
+const { title, docTitle, lede, active, fill = false } = Astro.props
 const u = Astro.locals.user!
 const sesiune = await currentYearLabel()
 
-const linkuri = [
-  { href: '/profesor', cheie: 'dashboard', text: 'Dashboard', icon: 'grid' },
-  { href: '/profesor/studenti', cheie: 'studenti', text: 'Studenți & Cereri', icon: 'users' },
-  { href: '/profesor/teme', cheie: 'teme', text: 'Teme propuse', icon: 'book' },
-  { href: '/profesor/consultatii', cheie: 'consultatii', text: 'Consultații', icon: 'clock' },
-  { href: '/profesor/mesaje', cheie: 'mesaje', text: 'Mesaje', icon: 'chat' },
-  { href: '/profesor/facultate', cheie: 'facultate', text: 'Studenții facultății', icon: 'list' },
+/* Zece intrări la rând, fără nicio ierarhie, iar directorul primea încă trei
+ * amestecate printre ele. Se împart în ce faci zilnic, ce ține de facultate și
+ * ce se configurează o dată pe an.
+ *
+ * „Dashboard” era singurul cuvânt englezesc dintr-o navigație integral
+ * românească. */
+const grupuri = [
+  {
+    titlu: 'Coordonare',
+    linkuri: [
+      { href: '/profesor', cheie: 'dashboard', text: 'Panoul meu', icon: 'grid' },
+      { href: '/profesor/studenti', cheie: 'studenti', text: 'Studenți & Cereri', icon: 'users' },
+      { href: '/profesor/teme', cheie: 'teme', text: 'Teme propuse', icon: 'book' },
+      { href: '/profesor/consultatii', cheie: 'consultatii', text: 'Consultații', icon: 'clock' },
+      { href: '/profesor/mesaje', cheie: 'mesaje', text: 'Mesaje', icon: 'chat' },
+    ],
+  },
+  {
+    titlu: 'Facultate',
+    linkuri: [
+      { href: '/profesor/facultate', cheie: 'facultate', text: 'Studenții facultății', icon: 'list' },
+      { href: '/profesor/arhiva', cheie: 'arhiva', text: 'Arhiva mea', icon: 'archive' },
+      ...(u.role === 'head'
+        ? [{ href: '/profesor/departament', cheie: 'departament', text: 'Departament', icon: 'chart' }]
+        : []),
+    ],
+  },
   ...(u.role === 'head'
     ? [
-        { href: '/profesor/departament', cheie: 'departament', text: 'Departament', icon: 'chart' },
-        { href: '/profesor/calendar', cheie: 'calendar', text: 'Calendarul sesiunii', icon: 'calendar' },
-        { href: '/profesor/an-universitar', cheie: 'an', text: 'An universitar', icon: 'refresh' },
+        {
+          titlu: 'Administrare',
+          linkuri: [
+            { href: '/profesor/calendar', cheie: 'calendar', text: 'Calendarul sesiunii', icon: 'calendar' },
+            { href: '/profesor/an-universitar', cheie: 'an', text: 'An universitar', icon: 'refresh' },
+          ],
+        },
       ]
     : []),
-  { href: '/profesor/arhiva', cheie: 'arhiva', text: 'Arhivă & Profil', icon: 'archive' },
 ]
 
 const cai: Record<string, string> = {
@@ -53,7 +78,7 @@ const cai: Record<string, string> = {
 }
 ---
 
-<BaseLayout title={title}>
+<BaseLayout title={title} docTitle={docTitle}>
   <div class:list={['shell', { 'shell--fill': fill }]}>
     <aside class="sidebar" id="sidebar">
       <a href="/profesor" class="brand">
@@ -66,13 +91,22 @@ const cai: Record<string, string> = {
 
       <nav class="nav" aria-label="Navigație cadru didactic">
         {
-          linkuri.map((l) => (
-            <a href={l.href} class:list={['nav__link', { 'is-active': active === l.cheie }]}>
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
-                <path d={cai[l.icon]} />
-              </svg>
-              {l.text}
-            </a>
+          grupuri.map((g) => (
+            <div class="nav__grup">
+              <p class="nav__grup-titlu">{g.titlu}</p>
+              {g.linkuri.map((l) => (
+                <a
+                  href={l.href}
+                  class:list={['nav__link', { 'is-active': active === l.cheie }]}
+                  aria-current={active === l.cheie ? 'page' : undefined}
+                >
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+                    <path d={cai[l.icon]} />
+                  </svg>
+                  {l.text}
+                </a>
+              ))}
+            </div>
           ))
         }
       </nav>
@@ -102,48 +136,51 @@ const cai: Record<string, string> = {
     </aside>
 
     <div class="content">
-      <header class="content__header">
-        <button class="hamburger" aria-label="Deschide meniul" aria-expanded="false" aria-controls="sidebar">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-            ><path d="M3 6h18M3 12h18M3 18h18"></path></svg
-          >
-        </button>
-        <div>
-          <h1 class="page-title">{title}</h1>
-          {lede && <p class="page-lede">{lede}</p>}
+      {/* `main` începe deasupra titlului: altfel legătura „Sari la conținut”
+          sărea peste chiar titlul paginii, iar h1-ul rămânea în afara reperului
+          principal. */}
+      <main id="continut" tabindex="-1">
+        <header class="content__header">
+          <button class="hamburger" aria-label="Deschide meniul" aria-expanded="false" aria-controls="sidebar">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+              ><path d="M3 6h18M3 12h18M3 18h18"></path></svg
+            >
+          </button>
+          <div>
+            <h1 class="page-title">{title}</h1>
+            {lede && <p class="page-lede">{lede}</p>}
+          </div>
+          <slot name="actiuni" />
+        </header>
+
+        {
+          DEMO_MODE && (
+            <details class="demo-note">
+              <summary>
+                <strong>Mod demonstrativ activ.</strong> Datele sunt fictive.
+              </summary>
+              <p>
+                Autentificarea fără email este permisă, iar emailurile sunt redirecționate către o
+                singură adresă de test.
+              </p>
+            </details>
+          )
+        }
+
+        <div class="content__body">
+          <slot />
         </div>
-        <slot name="actiuni" />
-      </header>
-
-      {
-        DEMO_MODE && (
-          <p class="demo-note">
-            <strong>Mod demonstrativ activ.</strong> Datele sunt fictive, iar autentificarea fără email este
-            permisă. Emailurile sunt redirecționate către o singură adresă de test.
-          </p>
-        )
-      }
-
-      <main id="continut" class="content__body">
-        <slot />
       </main>
     </div>
   </div>
 </BaseLayout>
 
 <script>
-  const buton = document.querySelector<HTMLButtonElement>('.hamburger')
-  const bara = document.getElementById('sidebar')
-  buton?.addEventListener('click', () => {
-    const deschis = bara?.classList.toggle('is-open') ?? false
-    buton.setAttribute('aria-expanded', String(deschis))
-  })
-  document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') {
-      bara?.classList.remove('is-open')
-      buton?.setAttribute('aria-expanded', 'false')
-    }
-  })
+  import { porneste } from '../scripts/meniu'
+
+  // Bara rămâne pe ecran la lățime mare, deci nu primește `hidden` — doar clasa
+  // pe care o știu deja stilurile.
+  porneste({ buton: '.hamburger', panou: '#sidebar', clasa: 'is-open', ascunde: false })
 </script>
 
 <style>
@@ -345,6 +382,9 @@ const cai: Record<string, string> = {
     flex: 1;
   }
 
+  /* Trei rânduri de avertisment mâncau o treime din ecranul unui telefon, de
+     fiecare dată, ca să spună acelaşi lucru. Prima propoziție rămâne; restul se
+     desface la cerere. */
   .demo-note {
     margin: var(--s-5) var(--s-6) 0;
     padding: var(--s-3) var(--s-4);
@@ -352,6 +392,32 @@ const cai: Record<string, string> = {
     color: var(--warn);
     border-radius: var(--r-md);
     font-size: var(--t-sm);
+  }
+  .demo-note summary {
+    cursor: pointer;
+    list-style-position: inside;
+  }
+  .demo-note p {
+    margin-top: var(--s-2);
+    padding-left: var(--s-4);
+  }
+
+  .nav__grup {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .nav__grup + .nav__grup {
+    margin-top: var(--s-4);
+  }
+
+  .nav__grup-titlu {
+    padding: 0 var(--s-3) var(--s-2);
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--dark-ink-muted, #7d848d);
   }
 
   .hamburger {

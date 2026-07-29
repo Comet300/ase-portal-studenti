@@ -220,8 +220,13 @@ const DOCS = [
 
   // Linkurile din alte pagini (/ghid#antiplagiat) deschid fila potrivită.
   const anchor = location.hash.replace('#', '')
-  const initialTab = tabs.findIndex((t) => t.id === `t-${anchor}`)
-  if (initialTab >= 0) showTab(initialTab)
+  if (anchor) {
+    const initialTab = tabs.findIndex((t) => t.id === `t-${anchor}`)
+    if (initialTab >= 0) showTab(initialTab)
+    // O ancoră care nu duce nicăieri lăsa pagina pe prima filă, fără niciun
+    // semn — așa a trăit `#formulare` până acum, deși fila se numește altfel.
+    else console.warn(`[ghid] nu există fila „${anchor}”; linkul care trimite aici e vechi.`)
+  }
 </script>
 
 <style>

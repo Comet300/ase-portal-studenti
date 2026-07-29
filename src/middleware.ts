@@ -63,11 +63,11 @@ export const onRequest = defineMiddleware(async (context, next) => {
   }
 
   if (path.startsWith(TEACHER_AREA) && user?.role === 'student') {
-    return new Response('Pagina nu a fost găsită', { status: 404 })
+    return context.rewrite('/404')
   }
 
   if (HEAD_ONLY.some((p) => path.startsWith(p)) && user && user.role !== 'head') {
-    return new Response('Pagina nu a fost găsită', { status: 404 })
+    return context.rewrite('/404')
   }
 
   const response = await next()
