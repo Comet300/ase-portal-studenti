@@ -137,6 +137,11 @@ for (const s of free) {
                       Intră în întâlnire
                     </a>
                   )}
+                  {/* Invitația pleca doar prin email; cine o ștergea nu mai avea
+                      de unde să o ia, deși portalul o poate genera oricând. */}
+                  <a class="btn btn--secondary btn--sm" href={`/consultatii/${s.id}.ics`}>
+                    Adaugă în calendar
+                  </a>
                   <button
                     class="btn btn--danger btn--sm"
                     type="button"

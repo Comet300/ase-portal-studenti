@@ -21,6 +21,20 @@ export interface CalendarEvent {
   cancelled?: boolean
 }
 
+/**
+ * Identitatea unui eveniment, pentru clientul de calendar.
+ *
+ * Trebuie să fie aceeași la creare, la modificare și la anulare — altfel
+ * `METHOD:CANCEL` nu găsește ce să anuleze și lasă în calendar o oră fantomă.
+ * Existau trei scheme diferite în trei fișiere; acum e una singură, aici.
+ *
+ * Un interval de grup are câte un eveniment pentru fiecare invitat, deci
+ * identitatea îl include și pe el.
+ */
+export function consultationUid(slotId: string, studentId: string): string {
+  return `consultatie-${slotId}-${studentId}@portal-studenti.ase.ro`
+}
+
 function utc(d: Date): string {
   return d.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '')
 }

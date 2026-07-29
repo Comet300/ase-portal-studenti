@@ -2,7 +2,7 @@ import type { APIRoute } from 'astro'
 import { isTeacher } from '../../lib/auth'
 import { postEvent } from '../../lib/chat'
 import { execute, query, queryOne } from '../../lib/db'
-import { buildIcs } from '../../lib/ics'
+import { buildIcs, consultationUid } from '../../lib/ics'
 import { redirectWithNotice } from '../../lib/http'
 import { formAction } from '../../lib/forms'
 import { html, joinHtml, sendEmail, template } from '../../lib/mail'
@@ -270,7 +270,7 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
             {
               filename: 'consultatie.ics',
               content: buildIcs({
-                uid: `consultatie-${slot.id}-${student.id}@portal.stargrid.dev`,
+                uid: consultationUid(slot.id, student.id),
                 title: `Consultație — ${u!.name}`,
                 description: note || 'Consultație pentru lucrarea de finalizare a studiilor.',
                 location: place,

@@ -1,6 +1,7 @@
 import type { APIRoute } from 'astro'
+import { postEvent } from '../../lib/chat'
 import { queryOne } from '../../lib/db'
-import { buildIcs } from '../../lib/ics'
+import { buildIcs, consultationUid } from '../../lib/ics'
 import { template, sendEmail, html } from '../../lib/mail'
 import { formatDate, formatTime } from '../../lib/repo'
 import { redirectWithNotice } from '../../lib/http'
@@ -20,14 +21,83 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
   const back = (message: string, isError = false) =>
     redirectWithNotice('/consultatii', message, isError)
 
+  // Un id absent nu s-ar potrivi cu niciun rând oricum; refuzat aici, mesajul
+  // este despre ce s-a întâmplat, nu „intervalul nu mai este disponibil”.
+  if (!slotId) return back('Intervalul nu a fost identificat.', true)
+
   if (action === 'anuleaza') {
-    const cancelledRow = await queryOne<{ id: string }>(
-      `UPDATE bookings SET status = 'cancelled'
-        WHERE slot_id = $2 AND student_id = $1 AND status = 'booked'
-        RETURNING id`,
+    /* Anularea trebuie să ajungă și la coordonator.
+     *
+     * Dialogul de confirmare îi spunea studentului, negru pe alb, că
+     * „coordonatorul vede anularea”. Codul făcea un singur UPDATE și se
+     * întorcea: niciun email, niciun eveniment în fir, nicio anulare în
+     * calendar — deși `ics.ts` are `METHOD:CANCEL` scris de la început și
+     * nimeni nu i-l cerea vreodată. Ora rămânea în calendarul cadrului
+     * didactic pentru totdeauna. */
+    const anulata = await queryOne<{
+      starts_at: string
+      ends_at: string
+      mode: string
+      location: string | null
+      meeting_url: string | null
+      teacher_id: string
+      teacher_name: string
+      teacher_email: string
+      student_name: string
+      student_email: string
+    }>(
+      `UPDATE bookings b SET status = 'cancelled'
+         FROM consultation_slots s, users t, users st
+        WHERE b.slot_id = s.id AND s.teacher_id = t.id AND st.id = b.student_id
+          AND b.slot_id = $2 AND b.student_id = $1 AND b.status = 'booked'
+       RETURNING s.starts_at, s.ends_at, s.mode, s.location, s.meeting_url,
+                 t.id AS teacher_id, t.name AS teacher_name, t.email AS teacher_email,
+                 st.name AS student_name, st.email AS student_email`,
       [u.id, slotId],
     )
-    return back(cancelledRow ? 'Rezervarea a fost anulată.' : 'Rezervarea nu a fost găsită.', !cancelledRow)
+
+    if (!anulata) return back('Rezervarea nu a fost găsită.', true)
+
+    const cand = `${formatDate(anulata.starts_at)}, ${formatTime(anulata.starts_at)}–${formatTime(anulata.ends_at)}`
+
+    await postEvent({
+      studentId: u.id,
+      teacherId: anulata.teacher_id,
+      senderId: u.id,
+      eventType: 'consultation_cancelled',
+      body: `${anulata.student_name} a anulat consultația din ${cand}. Locul este din nou liber.`,
+      createConversation: false,
+    })
+
+    // Anularea din calendar: același UID, `SEQUENCE` mai mare, `METHOD:CANCEL`.
+    const anulare = buildIcs({
+      uid: consultationUid(slotId, u.id),
+      title: `Consultație cu ${anulata.student_name}`,
+      location: anulata.mode === 'online' ? (anulata.meeting_url ?? 'Online') : (anulata.location ?? 'Cabinet'),
+      start: new Date(anulata.starts_at),
+      end: new Date(anulata.ends_at),
+      organizerName: anulata.teacher_name,
+      organizerEmail: anulata.teacher_email,
+      attendeeName: anulata.student_name,
+      attendeeEmail: anulata.student_email,
+      cancelled: true,
+    })
+
+    void sendEmail({
+      to: anulata.teacher_email,
+      subject: `Consultație anulată — ${cand}`,
+      html: template(
+        'O consultație a fost anulată',
+        html`<p><strong>${anulata.student_name}</strong> a anulat consultația din ${cand}.</p>
+         <p>Intervalul este din nou disponibil pentru ceilalți studenți pe care îi coordonezi.</p>`,
+        { text: 'Vezi programul', url: `${process.env.APP_BASE_URL ?? url.origin}/profesor/consultatii` },
+      ),
+      attachments: [
+        { filename: 'anulare.ics', content: Buffer.from(anulare), contentType: 'text/calendar; method=CANCEL' },
+      ],
+    }).catch((err) => console.error('[rezervari] anularea nu a fost anunțată', err))
+
+    return back('Rezervarea a fost anulată. Coordonatorul a fost anunțat.')
   }
 
   /* Slotul trebuie să fie liber, viitor, neanulat — și al coordonatorului tău.
@@ -79,7 +149,7 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
   if (slot) {
     const location = slot.mode === 'online' ? (slot.meeting_url ?? 'Online') : (slot.location ?? 'Cabinet')
     const ics = buildIcs({
-      uid: `consultatie-${slotId}@portal.stargrid.dev`,
+      uid: consultationUid(slotId, u.id),
       title: `Consultație — ${slot.teacher_name}`,
       description: subject || 'Consultație pentru lucrarea de finalizare a studiilor.',
       location,
