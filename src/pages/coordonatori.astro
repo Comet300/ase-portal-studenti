@@ -177,12 +177,12 @@ const freeTeachers = teachers.filter((t) => !t.is_full).length
 
                   {u?.role === 'student' &&
                     (p.is_full ? (
-                      <span class="btn btn--secondary btn--sm is-dezactivat" aria-disabled="true">
-                        Depune cerere
+                      <span class="btn btn--secondary coord__actiune is-dezactivat" aria-disabled="true">
+                        Fără locuri disponibile
                       </span>
                     ) : (
-                      <a class="btn btn--primary btn--sm" href={`/cererile-mele?coordonator=${p.id}`}>
-                        Depune cerere
+                      <a class="btn btn--primary coord__actiune" href={`/cererile-mele?coordonator=${p.id}`}>
+                        Depune cerere de coordonare
                       </a>
                     ))}
                 </div>
@@ -226,20 +226,25 @@ const freeTeachers = teachers.filter((t) => !t.is_full).length
                 )}
 
                 {theirStudents.length > 0 && (
-                  <details class="coord__studenti">
-                    <summary>
+                  <button
+                    class="coord__echipa"
+                    type="button"
+                    data-echipa={p.id}
+                    aria-haspopup="dialog"
+                  >
+                    <span class="fete">
+                      {theirStudents.slice(0, 5).map((s) => (
+                        <Avatar name={s.student_name} size="xs" class="fete__fata" />
+                      ))}
+                      {theirStudents.length > 5 && (
+                        <span class="fete__rest numeric">+{theirStudents.length - 5}</span>
+                      )}
+                    </span>
+                    <span class="coord__echipa-text">
                       Coordonează {theirStudents.length}{' '}
                       {theirStudents.length === 1 ? 'student' : 'studenți'} în această sesiune
-                    </summary>
-                    <ul>
-                      {theirStudents.map((s) => (
-                        <li>
-                          <a href={`/profil/${s.student_id}`}>{s.student_name}</a>
-                          <span class="muted"> — {s.title_ro}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </details>
+                    </span>
+                  </button>
                 )}
               </li>
             )
@@ -318,6 +323,42 @@ const freeTeachers = teachers.filter((t) => !t.is_full).length
       )
     }
 
+    {/* Lista completă a studenților unui coordonator. Un singur dialog,
+        completat din cardul apăsat — 9 dialoguri identice în pagină ar fi
+        9 copii ale aceluiași markup. */}
+    <dialog id="dialog-echipa">
+      <div class="echipa">
+        <div class="echipa__cap">
+          <h2 class="section-title" id="echipa-titlu">Studenți coordonați</h2>
+          <button class="btn btn--ghost btn--sm" type="button" data-inchide-echipa aria-label="Închide">✕</button>
+        </div>
+        <ul class="echipa__lista" id="echipa-lista"></ul>
+      </div>
+    </dialog>
+
+    {
+      teachers.map((p) => {
+        const theirStudents = studentsByTeacher.get(p.id) ?? []
+        return theirStudents.length > 0 ? (
+          <script
+            type="application/json"
+            data-echipa-date={p.id}
+            set:html={JSON.stringify({
+              nume: p.name,
+              studenti: theirStudents.map((s) => ({
+                id: s.student_id,
+                nume: s.student_name,
+                titlu: s.title_ro,
+                grup: [s.program === 'master' ? 'Master' : 'Licență', s.specialization]
+                  .filter(Boolean)
+                  .join(' · '),
+              })),
+            })}
+          />
+        ) : null
+      })
+    }
+
     <p class="empty__text" id="fara-rezultate" hidden>
       Nimic nu corespunde filtrelor. Încearcă un alt cuvânt-cheie, altă limbă, sau debifează „doar
       cu locuri libere”.
@@ -377,6 +418,48 @@ const freeTeachers = teachers.filter((t) => !t.is_full).length
   for (const el of [search, level, language, dep, onlyFree]) {
     el?.addEventListener('input', filter)
   }
+
+  /* --- lista completă a studenților unui coordonator --------------------- */
+
+  const echipa = document.getElementById('dialog-echipa') as HTMLDialogElement | null
+  const echipaLista = document.getElementById('echipa-lista')
+  const echipaTitlu = document.getElementById('echipa-titlu')
+
+  document.querySelectorAll<HTMLButtonElement>('[data-echipa]').forEach((b) => {
+    b.addEventListener('click', () => {
+      const holder = document.querySelector(`[data-echipa-date="${b.dataset.echipa}"]`)
+      if (!holder || !echipaLista) return
+
+      const date = JSON.parse(holder.textContent ?? '{}')
+      if (echipaTitlu) {
+        echipaTitlu.textContent = `${date.nume} — ${date.studenti.length} ${
+          date.studenti.length === 1 ? 'student coordonat' : 'studenți coordonați'
+        }`
+      }
+
+      echipaLista.replaceChildren(
+        ...date.studenti.map((s: { id: string; nume: string; titlu: string; grup: string }) => {
+          const li = document.createElement('li')
+          const a = document.createElement('a')
+          a.href = `/profil/${s.id}`
+          a.className = 'echipa__student'
+          a.innerHTML =
+            `<strong></strong><small class="muted"></small><span class="muted echipa__titlu"></span>`
+          a.querySelector('strong')!.textContent = s.nume
+          a.querySelector('small')!.textContent = s.grup
+          a.querySelector('.echipa__titlu')!.textContent = s.titlu
+          li.appendChild(a)
+          return li
+        }),
+      )
+
+      echipa?.showModal()
+    })
+  })
+
+  echipa
+    ?.querySelector('[data-inchide-echipa]')
+    ?.addEventListener('click', () => echipa.close())
 
   // Filtrele pornesc din grupa studentului, deci prima rulare nu e redundantă:
   // ea aplică nivelul și limba deja selectate.
@@ -497,22 +580,108 @@ const freeTeachers = teachers.filter((t) => !t.is_full).length
     pointer-events: none;
   }
 
-  .coord__studenti {
-    font-size: var(--t-sm);
-  }
-  .coord__studenti summary {
+  /* Cine sunt studenții contează mai mult decât câți: fețele întâi, numărul
+     după. Lista completă stă într-un dialog, ca să nu lungească fiecare card. */
+  .coord__echipa {
+    display: flex;
+    align-items: center;
+    gap: var(--s-3);
+    padding: var(--s-2);
+    margin-inline: calc(var(--s-2) * -1);
+    border: 0;
+    border-radius: var(--r-md);
+    background: none;
     cursor: pointer;
-    color: var(--ink-muted);
-    font-size: var(--t-xs);
+    text-align: left;
+    align-self: flex-start;
+    transition: background var(--fast) var(--ease);
   }
-  .coord__studenti ul {
-    list-style: none;
-    margin: var(--s-3) 0 0;
-    padding: 0 0 0 var(--s-4);
-    border-left: 2px solid var(--border);
+  .coord__echipa:hover {
+    background: var(--surface-sunken);
+  }
+
+  .coord__echipa-text {
+    font-size: var(--t-xs);
+    color: var(--ink-muted);
+  }
+  .coord__echipa:hover .coord__echipa-text {
+    color: var(--ink);
+  }
+
+  .fete {
+    display: flex;
+    flex: none;
+  }
+  .fete :global(.fete__fata) {
+    box-shadow: 0 0 0 2px var(--surface);
+  }
+  .fete :global(.fete__fata:not(:first-child)) {
+    margin-left: -8px;
+  }
+  .fete__rest {
+    display: grid;
+    place-items: center;
+    width: 28px;
+    height: 28px;
+    margin-left: -8px;
+    border-radius: 50%;
+    background: var(--ink-soft);
+    color: #fff;
+    font-size: 10px;
+    font-weight: 600;
+    box-shadow: 0 0 0 2px var(--surface);
+  }
+
+  .coord__actiune {
+    flex: none;
+  }
+
+  .echipa {
     display: flex;
     flex-direction: column;
-    gap: var(--s-1);
+    gap: var(--s-4);
+    padding: var(--s-5);
+  }
+
+  .echipa__cap {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--s-3);
+  }
+
+  .echipa__lista {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    max-height: 60vh;
+    overflow-y: auto;
+  }
+  .echipa__lista li {
+    border-bottom: 1px solid var(--border);
+  }
+  .echipa__lista li:last-child {
+    border-bottom: 0;
+  }
+
+  .echipa__student {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: var(--s-3);
+    border-radius: var(--r-md);
+    text-decoration: none;
+    color: var(--ink);
+  }
+  .echipa__student:hover {
+    background: var(--surface-sunken);
+    color: var(--ink);
+  }
+  .echipa__student strong {
+    font-size: var(--t-sm);
+  }
+  .echipa__student small,
+  .echipa__titlu {
     font-size: var(--t-xs);
   }
 
