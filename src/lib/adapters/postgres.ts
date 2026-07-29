@@ -24,21 +24,24 @@ export function createPostgresDatabase(connectionString: string): Database {
     max: Number(process.env.DATABASE_POOL_MAX ?? 8),
     idleTimeoutMillis: 30_000,
     connectionTimeoutMillis: 10_000,
+
+    /* Every connection speaks the faculty's timezone.
+     *
+     * Consultation times are built in SQL — `date + '14 hours'` — so the session
+     * timezone decides what instant "14:00" is. With the server default (UTC)
+     * and a process running in Bucharest, a typed 14:00 was stored as 14:00 UTC
+     * and the calendar invitation arrived for 17:00 while every screen said
+     * 14:00.
+     *
+     * Sent in the startup packet rather than as a `SET` from a `connect`
+     * listener: that listener cannot be awaited, so its statement raced the
+     * first real query on the connection — pg warns about exactly this and will
+     * make it an error in 9.0. Here the server has applied it before the
+     * connection is ever handed out. */
+    options: `-c timezone=${TIMEZONE}`,
   })
 
   pool.on('error', (err) => console.error('[db] idle client error', err))
-
-  /* Every connection speaks the faculty's timezone.
-   *
-   * Consultation times are built in SQL — `date + '14 hours'` — so the session
-   * timezone decides what instant "14:00" is. With the server default (UTC) and
-   * a process running in Bucharest, a typed 14:00 was stored as 14:00 UTC and
-   * the calendar invitation arrived for 17:00 while every screen said 14:00. */
-  pool.on('connect', (client) => {
-    client.query(`SET TIME ZONE '${TIMEZONE}'`).catch((err) => {
-      console.error('[db] nu s-a putut fixa fusul orar al conexiunii', err)
-    })
-  })
 
   /** Values travel only as `$n` parameters; there is no interpolating variant. */
   async function query<T>(sql: string, params: unknown[] = []): Promise<T[]> {
