@@ -102,7 +102,7 @@ function deadline(expiresAt: string | null | undefined) {
         <section class="panel">
           <div class="panel__header">
             <h2 class="section-title">În așteptare</h2>
-            <span class="muted" style="font-size:var(--t-sm)">
+            <span class="muted text-sm">
               {inAsteptare.length} {inAsteptare.length === 1 ? 'cerere' : 'cereri'}
             </span>
           </div>
@@ -247,7 +247,7 @@ function deadline(expiresAt: string | null | undefined) {
       <section class="panel">
         <div class="panel__header">
           <h2 class="section-title">Studenți coordonați</h2>
-          <span class="muted" style="font-size:var(--t-sm)">
+          <span class="muted text-sm">
             {locuri.total_taken} din {locuri.total_seats} locuri · licență{' '}
             {locuri.bachelor_taken}/{locuri.bachelor_seats} · master{' '}
             {locuri.master_taken}/{locuri.master_seats}
@@ -299,7 +299,7 @@ function deadline(expiresAt: string | null | undefined) {
                           <div class="bara" role="img" aria-label={`Progres ${procent}%`}>
                             <span class="bara__fill" style={`--procent:${procent / 100}`} />
                           </div>
-                          <span class="muted numeric" style="font-size:var(--t-xs)">
+                          <span class="muted numeric text-xs">
                             {s.milestones_done}/{s.milestones_total}
                           </span>
                         </div>
@@ -415,7 +415,7 @@ function deadline(expiresAt: string | null | undefined) {
             <section class="panel">
               <div class="panel__header">
                 <h2 class="section-title">Termenele lucrării</h2>
-                <span class="muted" style="font-size:var(--t-sm)">
+                <span class="muted text-sm">
                   {milestones.filter((j) => j.status === 'done').length} din {milestones.length} finalizate
                 </span>
               </div>
@@ -551,7 +551,7 @@ function deadline(expiresAt: string | null | undefined) {
         <section class="panel">
           <div class="panel__header">
             <h2 class="section-title">Propune coordonarea unui student</h2>
-            <span class="muted" style="font-size:var(--t-sm)">
+            <span class="muted text-sm">
               {locuri.free} {locuri.free === 1 ? 'loc liber' : 'locuri libere'}
             </span>
           </div>
@@ -615,7 +615,7 @@ function deadline(expiresAt: string | null | undefined) {
                 </span>
               </div>
 
-              <div class="row" style="justify-content:flex-end">
+              <div class="row row--end">
                 <button class="btn btn--primary" type="submit">Trimite propunerea</button>
               </div>
             </form>
@@ -643,8 +643,8 @@ function deadline(expiresAt: string | null | undefined) {
                     <div class="row" style="gap:var(--s-3)">
                       <Avatar name={i.student_name} size="xs" />
                       <div class="stack stack--tight" style="gap:0">
-                        <strong style="font-size:var(--t-sm)">{i.student_name}</strong>
-                        <span class="muted" style="font-size:var(--t-xs)">
+                        <strong class="text-sm">{i.student_name}</strong>
+                        <span class="muted text-xs">
                           {i.student_number} · trimisă {timeAgo(i.created_at)}
                         </span>
                       </div>
@@ -664,7 +664,7 @@ function deadline(expiresAt: string | null | undefined) {
                   </div>
 
                   {i.topic_title && (
-                    <p class="muted" style="font-size:var(--t-xs)">Temă propusă: {i.topic_title}</p>
+                    <p class="muted text-xs">Temă propusă: {i.topic_title}</p>
                   )}
                   <p class="invitatii__mesaj">{i.message}</p>
 
@@ -688,7 +688,7 @@ function deadline(expiresAt: string | null | undefined) {
   <dialog id="dialog-decizie">
     <form method="POST" action="/api/cereri/decizie" class="dialog">
       <h2 class="section-title" id="dialog-titlu">Decizia ta</h2>
-      <p class="muted" style="font-size:var(--t-sm)" id="dialog-explicatie">
+      <p class="muted text-sm" id="dialog-explicatie">
         Mesajul ajunge la student prin email și rămâne în conversație.
       </p>
 

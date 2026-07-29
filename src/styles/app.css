@@ -577,10 +577,14 @@ h4 {
 
 /* --- panouri ------------------------------------------------------------- */
 
+/* Un panou se ridică de pe fundal printr-o umbră, nu doar printr-un chenar de
+ * 1px. Erau trei niveluri de umbră definite și unul folosit o singură dată, iar
+ * ecranele arătau ca o foaie de hârtie desenată cu pixul. */
 .panel {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--r-lg);
+  box-shadow: var(--shadow-card);
 }
 
 .panel__header {
@@ -711,6 +715,20 @@ h4 {
   background: var(--surface-sunken);
 }
 
+/* Într-un tabel de treizeci de rânduri, o legătură roșie pe fiecare rând face
+ * un perete roșu în care nimic nu mai iese în evidență. Numele rămân cerneală;
+ * sublinierea la hover spune că sunt de apăsat. */
+.table a:not(.btn) {
+  color: var(--ink);
+  text-decoration: underline;
+  text-decoration-color: var(--border-strong);
+  text-underline-offset: 3px;
+}
+.table a:not(.btn):hover {
+  color: var(--red);
+  text-decoration-color: currentColor;
+}
+
 /* --- stare goală și schelet --------------------------------------------- */
 
 .empty {
@@ -734,8 +752,10 @@ h4 {
   text-wrap: pretty;
 }
 
-.prose p,
-.prose li {
+/* `:where()` nu adaugă specificitate, deci o utilitară pusă pe un paragraf din
+ * proză o poate încă bate — altfel `.text-sm` pierdea în fața acestei reguli. */
+:where(.prose) p,
+:where(.prose) li {
   font-size: var(--t-body);
 }
 
@@ -1014,8 +1034,28 @@ dialog[open]::backdrop {
 .stack--tight {
   gap: var(--s-2);
 }
+
+/* Secțiunile unei pagini au nevoie de mai mult aer decât are un card înăuntru,
+ * altfel „între secțiuni” și „între rânduri” arată la fel. */
 .stack--loose {
-  gap: var(--s-6);
+  gap: var(--s-7);
+}
+
+/* --- utilitare mici, în locul stilurilor scrise în atribut ----------------
+ *
+ * Portalul avea 247 de atribute `style` — aproape toate repetând aceleași patru
+ * lucruri. Astea sunt cele patru. */
+.text-sm {
+  font-size: var(--t-sm);
+}
+.text-xs {
+  font-size: var(--t-xs);
+}
+.row--end {
+  justify-content: flex-end;
+}
+.row--baseline {
+  align-items: flex-end;
 }
 
 .row {

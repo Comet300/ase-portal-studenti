@@ -117,7 +117,7 @@ const shouldOpenForm = Boolean(openWith.teacher) && !hasActiveRequest
               </strong>
               {/* O dată de expirare este o informație; câte zile mai sunt este
                   un motiv să răspunzi. */}
-              <span class="muted" style="font-size:var(--t-xs)">
+              <span class="muted text-xs">
                 Propunere primită {formatDate(i.created_at)}
               </span>
               {(() => {
@@ -202,7 +202,7 @@ const shouldOpenForm = Boolean(openWith.teacher) && !hasActiveRequest
             {requests.map((c) => (
               <li class="cerere">
                 <div class="row row--between row--wrap" style="gap:var(--s-3)">
-                  <span class="numeric muted" style="font-size:var(--t-xs)">
+                  <span class="numeric muted text-xs">
                     {c.number} · depusă {formatDate(c.submitted_at)}
                   </span>
                   <span class:list={['badge', STATUS_CLASS[c.status]]}>{STATUS_LABELS[c.status]}</span>
@@ -211,7 +211,7 @@ const shouldOpenForm = Boolean(openWith.teacher) && !hasActiveRequest
                 <h3 class="cerere__titlu">{c.title_ro}</h3>
                 {c.title_en && <p class="cerere__en">{c.title_en}</p>}
 
-                <p class="muted" style="font-size:var(--t-sm)">
+                <p class="muted text-sm">
                   Coordonator: <a href={`/profil/${c.teacher_id}`}>{c.teacher_name}</a>
                 </p>
 
@@ -330,7 +330,7 @@ const shouldOpenForm = Boolean(openWith.teacher) && !hasActiveRequest
         <section class="panel">
           <div class="panel__header">
             <h2 class="section-title">Termenele lucrării</h2>
-            <span class="muted" style="font-size:var(--t-sm)">
+            <span class="muted text-sm">
               {milestones.filter((j) => j.status === 'done').length} din {milestones.length} finalizate
             </span>
           </div>
@@ -354,7 +354,7 @@ const shouldOpenForm = Boolean(openWith.teacher) && !hasActiveRequest
                       {MILESTONE_LABELS[j.status]}
                     </span>
                   </div>
-                  <span class="muted" style="font-size:var(--t-xs)">
+                  <span class="muted text-xs">
                     Termen: {j.due_on ? formatDate(j.due_on) : 'nestabilit'}
                   </span>
                   {j.description && <p class="jalon__descriere">{j.description}</p>}
@@ -487,7 +487,7 @@ const shouldOpenForm = Boolean(openWith.teacher) && !hasActiveRequest
       </div>
 
       <div class="pas" data-pas="2" hidden>
-        <p class="muted" style="font-size:var(--t-sm)">
+        <p class="muted text-sm">
           Verifică datele. După depunere, cererea ajunge la coordonator și nu mai poate fi
           modificată — doar retrasă.
         </p>
@@ -527,7 +527,7 @@ const shouldOpenForm = Boolean(openWith.teacher) && !hasActiveRequest
       <input type="hidden" name="raspuns" value="declined" />
       <input type="hidden" name="invitatie_id" id="refuz-id" />
 
-      <p class="muted" style="font-size:var(--t-sm)">
+      <p class="muted text-sm">
         Motivul ajunge la <strong id="refuz-nume">coordonator</strong> prin email și în conversație.
       </p>
 

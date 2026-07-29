@@ -200,7 +200,7 @@ const necitite = studenti.reduce((s, x) => s + x.unread, 0)
         </div>
         <div class="panel__body stack">
           <div class="row row--between">
-            <span class="muted" style="font-size:var(--t-sm)">
+            <span class="muted text-sm">
               Licență {locuri.bachelor_taken}/{locuri.bachelor_seats} · Master {locuri.master_taken}/{locuri.master_seats}
             </span>
             <span class="numeric" style="font-weight:600">{ocupate} / {capacitate}</span>
@@ -215,7 +215,7 @@ const necitite = studenti.reduce((s, x) => s + x.unread, 0)
           >
             <span class="bara__fill" style={`--procent:${procent / 100}`}></span>
           </div>
-          <p class="muted" style="font-size:var(--t-sm)">
+          <p class="muted text-sm">
             {
               capacitate === 0
                 ? 'Directorul de departament nu ți-a alocat încă locuri pentru această sesiune.'

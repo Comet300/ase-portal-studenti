@@ -134,7 +134,7 @@ const openSeatRequest = mySeatRequests.find((r) => r.status === 'pending')
     <section class="panel" id="locuri" tabindex="-1">
       <div class="panel__header">
         <h2 class="section-title">Locuri alocate</h2>
-        <span class="muted" style="font-size:var(--t-sm)">{year?.label}</span>
+        <span class="muted text-sm">{year?.label}</span>
       </div>
 
       <div class="panel__body stack">
@@ -198,7 +198,7 @@ const openSeatRequest = mySeatRequests.find((r) => r.status === 'pending')
                   />
                   <span class="hint">Directorul decide pe baza acestui text.</span>
                 </div>
-                <div class="row" style="justify-content:flex-end">
+                <div class="row row--end">
                   <button class="btn btn--secondary" type="submit">Trimite cererea directorului</button>
                 </div>
               </form>
@@ -238,11 +238,11 @@ const openSeatRequest = mySeatRequests.find((r) => r.status === 'pending')
               <li>
                 <div class="row row--between row--wrap" style="gap:var(--s-2)">
                   <strong>{r.student_name}</strong>
-                  <span class="muted numeric" style="font-size:var(--t-xs)">
+                  <span class="muted numeric text-xs">
                     {r.number} · {formatDate(r.decided_at)}
                   </span>
                 </div>
-                <p class="muted" style="font-size:var(--t-sm)">{r.title_ro}</p>
+                <p class="muted text-sm">{r.title_ro}</p>
                 {r.rejection_reason && <p class="reason">{r.rejection_reason}</p>}
               </li>
             ))}
@@ -254,7 +254,7 @@ const openSeatRequest = mySeatRequests.find((r) => r.status === 'pending')
     <section class="panel">
       <div class="panel__header">
         <h2 class="section-title">Istoricul cererilor</h2>
-        <span class="muted" style="font-size:var(--t-sm)">
+        <span class="muted text-sm">
           {history.length} {history.length === 1 ? 'înregistrare' : 'înregistrări'} · {year?.label}
         </span>
       </div>

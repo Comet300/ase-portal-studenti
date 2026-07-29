@@ -78,8 +78,8 @@ const freeTeachers = teachers.filter((t) => !t.is_full).length
     </nav>
 
     <div class="filtre panel">
-      <div class="panel__body row row--wrap filtre__rand" style="gap:var(--s-4)">
-        <div class="field" style="flex:2;min-width:240px">
+      <div class="panel__body filtre__rand">
+        <div class="field filtre__cauta">
           <label class="label" for="cauta">Caută</label>
           <input
             class="input"
@@ -89,7 +89,7 @@ const freeTeachers = teachers.filter((t) => !t.is_full).length
             autocomplete="off"
           />
         </div>
-        <div class="field" style="flex:1;min-width:170px">
+        <div class="field filtre__camp">
           <label class="label" for="nivel">Nivel</label>
           <select class="select" id="nivel">
             <option value="">Licență și master</option>
@@ -100,7 +100,7 @@ const freeTeachers = teachers.filter((t) => !t.is_full).length
             }
           </select>
         </div>
-        <div class="field" style="flex:1;min-width:170px">
+        <div class="field filtre__camp">
           <label class="label" for="limba">Limba lucrării</label>
           <select class="select" id="limba">
             <option value="">Toate limbile</option>
@@ -113,7 +113,7 @@ const freeTeachers = teachers.filter((t) => !t.is_full).length
         </div>
         {
           view === 'coordonatori' && (
-            <div class="field" style="flex:1;min-width:180px">
+            <div class="field filtre__camp filtre__camp--lat">
               <label class="label" for="departament">Departament</label>
               <select class="select" id="departament">
                 <option value="">Toate departamentele</option>
@@ -161,7 +161,7 @@ const freeTeachers = teachers.filter((t) => !t.is_full).length
                     <h2 class="coord__nume">
                       <a href={`/profil/${p.id}`}>{p.name}</a>
                     </h2>
-                    <p class="muted" style="font-size:var(--t-xs)">
+                    <p class="muted text-xs">
                       {p.department}
                       {p.office ? ` · ${p.office}` : ''}
                     </p>
@@ -201,10 +201,10 @@ const freeTeachers = teachers.filter((t) => !t.is_full).length
                           </span>
                         </div>
                         {t.methods && (
-                          <p class="muted" style="font-size:var(--t-xs)">Metode: {t.methods}</p>
+                          <p class="muted text-xs">Metode: {t.methods}</p>
                         )}
                         {t.prerequisites && t.prerequisites !== '—' && (
-                          <p class="muted" style="font-size:var(--t-xs)">
+                          <p class="muted text-xs">
                             Prerechizite: {t.prerequisites}
                           </p>
                         )}
@@ -510,15 +510,35 @@ const freeTeachers = teachers.filter((t) => !t.is_full).length
   /* Câmpurile au etichetă deasupra, caseta nu — aliniate pe centru, caseta
      plutea la mijlocul rândului, deasupra bazei celorlalte controale. Se aliniază
      toate la bază, iar caseta primește exact înălțimea unui câmp. */
+  /* Fiecare filtru își cere lățimea de care are nevoie, iar rândul se rupe
+     singur. Cu `flex:1` egal pentru toate, „Toate departamentele” se tăia la
+     „Toate departamer”. */
   .filtre__rand {
+    display: flex;
+    flex-wrap: wrap;
     align-items: flex-end;
+    gap: var(--s-4);
   }
 
+  .filtre__cauta {
+    flex: 3 1 240px;
+    min-width: 0;
+  }
+  .filtre__camp {
+    flex: 1 1 170px;
+    min-width: 0;
+  }
+  .filtre__camp--lat {
+    flex: 1 1 220px;
+  }
+
+  /* Caseta nu are etichetă deasupra, deci ar pluti peste controalele care au:
+     înălțimea unui câmp o așază pe aceeași linie de bază. */
   .doar-libere {
     display: flex;
     align-items: center;
     gap: var(--s-2);
-    min-height: 38px;
+    min-height: var(--tap);
     font-size: var(--t-sm);
     color: var(--ink-soft);
     cursor: pointer;

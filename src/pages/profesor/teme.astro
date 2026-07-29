@@ -25,7 +25,7 @@ const teme = await teacherTopics(u.id)
         {/* Titlul paginii spune deja „Teme propuse”; antetul panoului repeta
             cuvânt cu cuvânt și nu adăuga nimic. Aici e util numărul. */}
         <h2 class="section-title">În catalog</h2>
-        <span class="muted" style="font-size:var(--t-sm)">
+        <span class="muted text-sm">
           {teme.filter((t) => t.is_active).length} din {teme.length}
           {teme.length === 1 ? ' temă' : ' teme'} publicate
         </span>
@@ -48,14 +48,14 @@ const teme = await teacherTopics(u.id)
                   {t.level === 'master' ? 'Master' : 'Licență'}
                   {t.language !== 'ro' ? ` · ${languageLabel(t.language)}` : ''}
                 </span>
-                <span class="muted numeric" style="font-size:var(--t-xs)">
+                <span class="muted numeric text-xs">
                   {t.taken}/{t.seats} locuri
                 </span>
               </div>
               <h3 class="tema__titlu">{t.title}</h3>
-              {t.methods && <p class="muted" style="font-size:var(--t-sm)">Metode: {t.methods}</p>}
+              {t.methods && <p class="muted text-sm">Metode: {t.methods}</p>}
               {t.prerequisites && t.prerequisites !== '—' && (
-                <p class="muted" style="font-size:var(--t-xs)">Prerechizite: {t.prerequisites}</p>
+                <p class="muted text-xs">Prerechizite: {t.prerequisites}</p>
               )}
               <form method="POST" action="/api/teme" style="margin-top:auto">
                 <input type="hidden" name="actiune" value="comuta" />

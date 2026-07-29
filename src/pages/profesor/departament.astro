@@ -232,7 +232,7 @@ const sectiuni = [
         <section class="panel">
           <div class="panel__header">
             <h2 class="section-title">Încărcare pe coordonatori</h2>
-            <span class="muted" style="font-size:var(--t-sm)">
+            <span class="muted text-sm">
               {fullyBooked.length} din {load.length} au locurile ocupate
             </span>
           </div>
@@ -282,7 +282,7 @@ const sectiuni = [
         <section class="panel">
           <div class="panel__header">
             <h2 class="section-title">Cereri</h2>
-            <span class="muted" style="font-size:var(--t-sm)">{rows.length} afișate</span>
+            <span class="muted text-sm">{rows.length} afișate</span>
           </div>
 
           <form method="GET" class="panel__body row row--wrap" style="gap:var(--s-3);align-items:flex-end">
@@ -344,7 +344,7 @@ const sectiuni = [
                       <td>
                         <div class="stack stack--tight" style="gap:0">
                           <strong>{r.student_name}</strong>
-                          <span class="muted" style="font-size:var(--t-xs)">{r.student_number}</span>
+                          <span class="muted text-xs">{r.student_number}</span>
                         </div>
                       </td>
                       <td>
@@ -374,7 +374,7 @@ const sectiuni = [
         <section class="panel">
           <div class="panel__header">
             <h2 class="section-title">Cereri de locuri suplimentare</h2>
-            <span class="muted" style="font-size:var(--t-sm)">
+            <span class="muted text-sm">
               {locuriInAsteptare.length} în așteptare
             </span>
           </div>
@@ -393,11 +393,11 @@ const sectiuni = [
                 <li>
                   <div class="row row--between row--wrap" style="gap:var(--s-2)">
                     <strong>{r.teacher_name}</strong>
-                    <span class="muted" style="font-size:var(--t-xs)">
+                    <span class="muted text-xs">
                       cerută {timeAgo(r.created_at)}
                     </span>
                   </div>
-                  <p style="font-size:var(--t-sm)">
+                  <p class="text-sm">
                     Solicită <strong>{r.extra_seats}</strong> locuri la{' '}
                     {LEVEL_LABELS[r.level].toLowerCase()}.
                   </p>
@@ -428,7 +428,7 @@ const sectiuni = [
         <section class="panel">
           <div class="panel__header">
             <h2 class="section-title">Alocarea locurilor</h2>
-            <span class="muted" style="font-size:var(--t-sm)">{year?.label}</span>
+            <span class="muted text-sm">{year?.label}</span>
           </div>
 
           <p class="panel__body hint">

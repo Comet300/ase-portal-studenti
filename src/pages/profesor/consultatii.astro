@@ -132,7 +132,7 @@ const cuStudent = Astro.url.searchParams.get('cu') ?? ''
             placeholder="Ex: discutăm metodologia și eșantionul" />
         </div>
 
-        <div class="row" style="justify-content:flex-end">
+        <div class="row row--end">
           <button class="btn btn--primary" type="submit" id="programeaza">
             Programează și trimite invitația
           </button>
@@ -144,7 +144,7 @@ const cuStudent = Astro.url.searchParams.get('cu') ?? ''
   <section class="panel">
     <div class="panel__header">
       <h2 class="section-title">Program de consultații</h2>
-      <span class="muted" style="font-size:var(--t-sm)">
+      <span class="muted text-sm">
         {sloturi.filter((s) => !s.is_cancelled).length} intervale
       </span>
     </div>
@@ -180,12 +180,12 @@ const cuStudent = Astro.url.searchParams.get('cu') ?? ''
                   <div class="stack stack--tight" style="gap:0">
                     <span>{s.mode === 'online' ? 'Online' : (s.location ?? 'Cabinet')}</span>
                     {s.meeting_url && (
-                      <a href={s.meeting_url} class="muted" style="font-size:var(--t-xs)" target="_blank" rel="noopener">
+                      <a href={s.meeting_url} class="muted text-xs" target="_blank" rel="noopener">
                         link întâlnire
                       </a>
                     )}
                     {s.note && (
-                      <span class="muted" style="font-size:var(--t-xs)">{s.note}</span>
+                      <span class="muted text-xs">{s.note}</span>
                     )}
                   </div>
                 </td>
@@ -197,7 +197,7 @@ const cuStudent = Astro.url.searchParams.get('cu') ?? ''
                       <span class="badge badge--aprobata">
                         {s.capacity > 1 ? `${s.booked} din ${s.capacity} locuri` : 'Rezervat'}
                       </span>
-                      <span class="muted" style="font-size:var(--t-xs)">
+                      <span class="muted text-xs">
                         {s.student_names.join(', ')}
                       </span>
                     </div>

@@ -111,7 +111,7 @@ const editHref = isTeacherProfile ? '/profesor/arhiva' : '/contul-meu'
           </p>
           {
             !isTeacherProfile && (
-              <p class="muted" style="font-size:var(--t-sm)">
+              <p class="muted text-sm">
                 {person.student_number} · {groupLabel(person)}
                 {person.study_group ? ` · grupa ${person.study_group}` : ''}
               </p>
@@ -119,7 +119,7 @@ const editHref = isTeacherProfile ? '/profesor/arhiva' : '/contul-meu'
           }
           {
             isTeacherProfile && seats && (
-              <p class="muted" style="font-size:var(--t-sm)">
+              <p class="muted text-sm">
                 {seats.total_taken} din {seats.total_seats} locuri ocupate
                 {seats.free > 0 ? ` · ${seats.free} libere` : ' · fără locuri disponibile'}
               </p>
@@ -205,7 +205,7 @@ const editHref = isTeacherProfile ? '/profesor/arhiva' : '/contul-meu'
         <section class="panel">
           <div class="panel__header">
             <h2 class="section-title">Teme propuse în sesiunea curentă</h2>
-            <span class="muted" style="font-size:var(--t-sm)">{topics.length}</span>
+            <span class="muted text-sm">{topics.length}</span>
           </div>
 
           {topics.length === 0 ? (
@@ -224,7 +224,7 @@ const editHref = isTeacherProfile ? '/profesor/arhiva' : '/contul-meu'
                   <div class="stack stack--tight" style="gap:2px">
                     <strong>{t.title}</strong>
                     {t.methods && (
-                      <span class="muted" style="font-size:var(--t-xs)">Metode: {t.methods}</span>
+                      <span class="muted text-xs">Metode: {t.methods}</span>
                     )}
                   </div>
                   <span class="badge badge--taxon">
@@ -244,7 +244,7 @@ const editHref = isTeacherProfile ? '/profesor/arhiva' : '/contul-meu'
         <section class="panel">
           <div class="panel__header">
             <h2 class="section-title">Studenți coordonați</h2>
-            <span class="muted" style="font-size:var(--t-sm)">{supervised.length}</span>
+            <span class="muted text-sm">{supervised.length}</span>
           </div>
           <ul class="teme">
             {supervised.map((s) => (
@@ -253,7 +253,7 @@ const editHref = isTeacherProfile ? '/profesor/arhiva' : '/contul-meu'
                   <strong>
                     <a href={`/profil/${s.student_id}`}>{s.student_name}</a>
                   </strong>
-                  <span class="muted" style="font-size:var(--t-xs)">{s.title_ro}</span>
+                  <span class="muted text-xs">{s.title_ro}</span>
                 </div>
               </li>
             ))}
@@ -274,7 +274,7 @@ const editHref = isTeacherProfile ? '/profesor/arhiva' : '/contul-meu'
               <strong style="font-family:var(--serif);font-size:var(--t-md)">
                 {coordination.title_ro}
               </strong>
-              <p class="muted" style="font-size:var(--t-sm)">
+              <p class="muted text-sm">
                 Coordonator:{' '}
                 <a href={`/profil/${coordination.teacher_id}`}>{coordination.teacher_name}</a>
                 {coordination.decided_at

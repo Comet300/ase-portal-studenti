@@ -121,7 +121,7 @@ const levels = {
           <section class="panel">
             <div class="panel__header">
               <h2 class="section-title">{teacher}</h2>
-              <span class="muted" style="font-size:var(--t-sm)">
+              <span class="muted text-sm">
                 {list.length} {list.length === 1 ? 'lucrare' : 'lucrări'}
               </span>
             </div>
@@ -130,7 +130,7 @@ const levels = {
                 <li>
                   <div class="stack stack--tight" style="gap:2px">
                     <strong class="lucrari__titlu">{r.title_ro}</strong>
-                    <span class="muted" style="font-size:var(--t-xs)">
+                    <span class="muted text-xs">
                       {r.student_name}
                       {r.student_number ? ` · ${r.student_number}` : ''}
                       {r.programme ? ` · ${r.programme}` : ''}
@@ -142,7 +142,7 @@ const levels = {
                   </div>
                   <span class="lucrari__meta">
                     {r.defended_on && (
-                      <span class="muted" style="font-size:var(--t-xs)">
+                      <span class="muted text-xs">
                         {formatDate(r.defended_on)}
                       </span>
                     )}

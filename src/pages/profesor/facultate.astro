@@ -167,10 +167,30 @@ const STARI = [
     {
       grouped.length === 0 ? (
         <section class="panel">
-          <div class="empty">
-            <p class="empty__title">Niciun student pentru filtrele alese</p>
-            <p class="empty__text">Schimbă nivelul, limba sau starea, ori golește căutarea.</p>
-          </div>
+          {/* „Niciun student pentru filtrele alese” era afișat și când facultatea
+              chiar nu are încă niciun student — două situații cu pași următori
+              complet diferiți. */}
+          {all.length === 0 ? (
+            <div class="empty">
+              <p class="empty__title">Niciun student în sesiune</p>
+              <p class="empty__text">
+                Studenții apar aici după ce sunt înscriși în anul universitar curent. Deschide un an
+                și adaugă programele de studiu ca să începi.
+              </p>
+              <a class="btn btn--primary btn--sm" href="/profesor/an-universitar">
+                Deschide anul universitar
+              </a>
+            </div>
+          ) : (
+            <div class="empty">
+              <p class="empty__title">Niciun student pentru filtrele alese</p>
+              <p class="empty__text">
+                Cei {all.length} studenți din sesiune nu se potrivesc cu filtrele active. Schimbă
+                nivelul, limba sau starea, ori golește căutarea.
+              </p>
+              <a class="btn btn--secondary btn--sm" href="/profesor/facultate">Golește filtrele</a>
+            </div>
+          )}
         </section>
       ) : (
         grouped.map((g) => (
@@ -180,7 +200,7 @@ const STARI = [
                 {levelLabel(g.level)} · {g.specialization}
                 {g.language !== 'ro' ? ` · ${languageLabel(g.language).toLowerCase()}` : ''}
               </h2>
-              <span class="muted" style="font-size:var(--t-sm)">
+              <span class="muted text-sm">
                 {g.coordonati} din {g.students.length} au coordonator
               </span>
             </div>
@@ -206,7 +226,7 @@ const STARI = [
                           <Avatar name={s.name} src={s.avatar_path} size="xs" href={`/profil/${s.id}`} />
                           <div class="stack stack--tight" style="gap:0">
                             <strong>{s.name}</strong>
-                            <span class="muted" style="font-size:var(--t-xs)">{s.student_number}</span>
+                            <span class="muted text-xs">{s.student_number}</span>
                           </div>
                         </div>
                       </td>
