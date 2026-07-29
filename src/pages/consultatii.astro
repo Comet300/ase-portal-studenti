@@ -4,7 +4,7 @@ import { query, queryOne } from '../lib/db'
 import { formatDate, formatTime } from '../lib/repo'
 
 const u = Astro.locals.user!
-if (u.role !== 'student') return Astro.redirect('/profesor/studenti?sectiune=consultatii', 302)
+if (u.role !== 'student') return Astro.redirect('/profesor/consultatii', 302)
 
 interface Slot {
   id: string

@@ -11,7 +11,7 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
 
   const form = await request.formData()
   const action = String(form.get('actiune') ?? 'adauga')
-  const redirectTo = '/profesor/studenti?sectiune=teme'
+  const redirectTo = '/profesor/teme'
 
   const back = (message: string, isError = false) =>
     redirectWithNotice(redirectTo, message, isError)

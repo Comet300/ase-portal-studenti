@@ -21,7 +21,7 @@ import { id as formId } from '../../lib/ids'
  * a meeting link, or both when a student may attend remotely.
  */
 
-const PAGE = '/profesor/studenti?sectiune=consultatii'
+const PAGE = '/profesor/consultatii'
 
 function whereItIs(mode: string, location: string | null, meetingUrl: string | null): string {
   if (mode === 'online') return meetingUrl || 'Online'
