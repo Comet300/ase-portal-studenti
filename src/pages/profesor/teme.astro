@@ -64,7 +64,7 @@ const teme = await teacherTopics(u.id)
       )}
 
       <div class="panel__footer">
-        <form method="POST" action="/api/teme" class="row row--wrap" style="gap:var(--s-3);align-items:flex-end">
+        <form method="POST" action="/api/teme" class="tema-noua">
           <input type="hidden" name="actiune" value="adauga" />
           <div class="field" style="flex:3;min-width:240px">
             <label class="label" for="tema-titlu">Temă nouă</label>
@@ -99,17 +99,30 @@ const teme = await teacherTopics(u.id)
             <label class="label" for="tema-prerechizite">Prerechizite</label>
             <input class="input" id="tema-prerechizite" name="prerechizite" placeholder="Ex: Statistică aplicată" />
           </div>
-          <button class="btn btn--primary" type="submit">Publică tema</button>
+          <button class="btn btn--primary tema-noua__actiune" type="submit">Publică tema</button>
         </form>
       </div>
     </section>
-  )
-}
-
-{/* -------------------------------------------------------- consultații */}
 </ProfesorLayout>
 
 <style>
+  /* Fiecare câmp își ține propria coloană și propriul rând de etichetă; înainte
+     era un rând flex, iar singurul câmp cu text ajutător împingea tot ce urma
+     cu o linie mai jos. */
+  .tema-noua {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: var(--s-3) var(--s-4);
+    align-items: start;
+  }
+  .tema-noua .field {
+    min-width: 0;
+  }
+  .tema-noua__actiune {
+    grid-column: 1 / -1;
+    justify-self: start;
+  }
+
   .teme {
     list-style: none;
     margin: 0;

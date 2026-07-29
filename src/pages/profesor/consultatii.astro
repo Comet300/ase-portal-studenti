@@ -44,15 +44,33 @@ const cuStudent = Astro.url.searchParams.get('cu') ?? ''
 
         <div class="row row--wrap" style="gap:var(--s-3)">
           <div class="field" style="flex:2;min-width:260px">
-            <label class="label" for="prog-student">Cu cine</label>
-            <select class="select" id="prog-student" name="student_id" required>
-              <option value="">Alege un student coordonat…</option>
-              {studenti.map((s) => (
-                <option value={s.student_id} selected={s.student_id === cuStudent}>
-                  {s.student_name} — {s.title_ro}
-                </option>
-              ))}
-            </select>
+            {/* O consultație poate fi cu mai mulți studenți deodată — trei care
+                lucrează pe același capitol nu au nevoie de trei ore separate.
+                Selectarea multiplă cere casete, nu o listă derulantă. */}
+            <span class="label" id="et-cu-cine">Cu cine</span>
+            <fieldset class="alege-studenti" aria-labelledby="et-cu-cine">
+              <label class="alege-studenti__toti">
+                <input type="checkbox" id="toti-studentii" />
+                <span>Selectează toți studenții coordonați</span>
+              </label>
+              <div class="alege-studenti__lista">
+                {studenti.map((s) => (
+                  <label class="student-optiune">
+                    <input
+                      type="checkbox"
+                      name="student_id"
+                      value={s.student_id}
+                      checked={s.student_id === cuStudent}
+                    />
+                    <span class="student-optiune__corp">
+                      <strong>{s.student_name}</strong>
+                      <small class="muted">{s.title_ro}</small>
+                    </span>
+                  </label>
+                ))}
+              </div>
+              <p class="hint" id="numar-alesi" aria-live="polite" />
+            </fieldset>
           </div>
           <div class="field" style="min-width:160px">
             <label class="label" for="prog-zi">Ziua</label>
@@ -246,7 +264,97 @@ const cuStudent = Astro.url.searchParams.get('cu') ?? ''
 </div>
 </ProfesorLayout>
 
+<style>
+  .alege-studenti {
+    border: 1px solid var(--border);
+    border-radius: var(--r-md);
+    padding: var(--s-3);
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-2);
+    min-width: 0;
+  }
+
+  .alege-studenti__toti {
+    display: flex;
+    align-items: center;
+    gap: var(--s-3);
+    padding-bottom: var(--s-2);
+    border-bottom: 1px solid var(--border);
+    font-size: var(--t-xs);
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  .alege-studenti__lista {
+    display: flex;
+    flex-direction: column;
+    max-height: 220px;
+    overflow-y: auto;
+  }
+
+  .student-optiune {
+    display: flex;
+    align-items: center;
+    gap: var(--s-3);
+    padding: var(--s-2);
+    border-radius: var(--r-sm);
+    cursor: pointer;
+  }
+  .student-optiune:hover {
+    background: var(--surface-sunken);
+  }
+
+  .student-optiune__corp {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    line-height: 1.35;
+  }
+  .student-optiune__corp strong {
+    font-size: var(--t-sm);
+    font-weight: 500;
+  }
+  .student-optiune__corp small {
+    font-size: var(--t-xs);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+</style>
+
 <script>
+  /* --- selecția studenților ---------------------------------------------- */
+
+  const toti = document.getElementById('toti-studentii') as HTMLInputElement | null
+  const casete = [...document.querySelectorAll<HTMLInputElement>('input[name="student_id"]')]
+  const contor = document.getElementById('numar-alesi')
+  const buton = document.getElementById('programeaza') as HTMLButtonElement | null
+
+  function sincronizeaza() {
+    const alesi = casete.filter((c) => c.checked).length
+    if (toti) {
+      toti.checked = alesi === casete.length && casete.length > 0
+      toti.indeterminate = alesi > 0 && alesi < casete.length
+    }
+    if (contor) {
+      contor.textContent =
+        alesi === 0
+          ? 'Alege cel puțin un student.'
+          : alesi === 1
+            ? '1 student ales — primește invitația în calendar.'
+            : `${alesi} studenți aleși — fiecare primește invitația în calendar.`
+    }
+    if (buton) buton.disabled = alesi === 0
+  }
+
+  toti?.addEventListener('change', () => {
+    casete.forEach((c) => (c.checked = toti.checked))
+    sincronizeaza()
+  })
+  casete.forEach((c) => c.addEventListener('change', sincronizeaza))
+  sincronizeaza()
+
   // Un interval online are nevoie de link, unul la facultate de adresă. Câmpul
   // irelevant dispare în loc să rămână gol și obligatoriu.
   document.querySelectorAll<HTMLFormElement>('form').forEach((form) => {

@@ -14,7 +14,6 @@ const REQUIRES_SESSION = [
   '/consultatii',
   '/contul-meu',
   '/arhiva',
-  '/coordonari',
   '/profil',
 ]
 const TEACHER_AREA = '/profesor'

@@ -145,7 +145,9 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
   /* --- schedule one meeting with one student -------------------------------- */
 
   if (action === 'programeaza') {
-    const studentId = formId(form.get('student_id'))
+    // One interval, any number of students: three people working on the same
+    // chapter do not need three separate hours.
+    const studentIds = form.getAll('student_id').map(formId).filter((v): v is string => Boolean(v))
     const day = String(form.get('zi') ?? '')
     const startHour = Number(form.get('ora_start') ?? 14)
     const durationHours = Number(form.get('durata') ?? 1)
@@ -166,95 +168,121 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
       return back('Scrie unde are loc consultația — clădirea, etajul și sala.', true)
     }
 
-    // Only a student this coordinator actually supervises, and the condition is
+    if (studentIds.length === 0) return back('Alege cel puțin un student.', true)
+
+    // Only students this coordinator actually supervises, and the condition is
     // part of the lookup rather than a check before it.
-    const student = await queryOne<{ id: string; name: string; email: string }>(
+    const students = await query<{ id: string; name: string; email: string }>(
       `SELECT s.id, s.name, s.email
          FROM users s
          JOIN requests r ON r.student_id = s.id
-        WHERE s.id = $2 AND r.teacher_id = $1 AND r.status = 'approved'`,
-      [u!.id, studentId],
+        WHERE s.id = ANY($2::uuid[]) AND r.teacher_id = $1 AND r.status = 'approved'
+        ORDER BY s.name`,
+      [u!.id, studentIds],
     )
-    if (!student) return back('Alege un student pe care îl coordonezi.', true)
+    if (students.length === 0) return back('Alege studenți pe care îi coordonezi.', true)
 
     const hours = Math.min(Math.max(1, Math.trunc(durationHours) || 1), 4)
 
+    /* `student_id` on the slot names a single invitee, so it is only set when
+     * there is exactly one — with several, the slot is theirs collectively and
+     * the bookings below are what record who is coming. */
     const slot = await queryOne<{ id: string; starts_at: string; ends_at: string }>(
       `INSERT INTO consultation_slots
          (teacher_id, student_id, starts_at, ends_at, mode, location, meeting_url, note, capacity)
        VALUES ($1, $2,
                ($3::date + ($4 || ' hours')::interval),
                ($3::date + ($5 || ' hours')::interval),
-               $6, NULLIF($7, ''), NULLIF($8, ''), NULLIF($9, ''), 1)
+               $6, NULLIF($7, ''), NULLIF($8, ''), NULLIF($9, ''), $10)
        RETURNING id, starts_at, ends_at`,
       [
-        u!.id, studentId, day, String(startHour), String(startHour + hours),
-        mode, location, meetingUrl, note,
+        u!.id, students.length === 1 ? students[0].id : null,
+        day, String(startHour), String(startHour + hours),
+        mode, location, meetingUrl, note, students.length,
       ],
     )
     if (!slot) return back('Consultația nu a putut fi creată.', true)
 
-    // The coordinator scheduled it, so it is booked, not offered.
-    await execute(
-      `INSERT INTO bookings (slot_id, student_id, subject) VALUES ($1, $2, NULLIF($3, ''))
-       ON CONFLICT (slot_id, student_id) DO UPDATE SET status = 'booked'`,
-      [slot.id, student.id, note],
-    )
+    // The coordinator scheduled it, so it is booked for each of them, not offered.
+    for (const student of students) {
+      await execute(
+        `INSERT INTO bookings (slot_id, student_id, subject) VALUES ($1, $2, NULLIF($3, ''))
+         ON CONFLICT (slot_id, student_id) DO UPDATE SET status = 'booked'`,
+        [slot.id, student.id, note],
+      )
+    }
 
     const place = whereItIs(mode, location, meetingUrl)
-    const ics = buildIcs({
-      uid: `consultatie-${slot.id}@portal.stargrid.dev`,
-      title: `Consultație — ${u!.name}`,
-      description: note || 'Consultație pentru lucrarea de finalizare a studiilor.',
-      location: place,
-      start: new Date(slot.starts_at),
-      end: new Date(slot.ends_at),
-      organizerName: u!.name,
-      organizerEmail: u!.email,
-      attendeeName: student.name,
-      attendeeEmail: student.email,
-    })
+    const grup = students.length > 1
 
     const details = html`<p style="padding:12px 16px;background:#f8f9fa;border-radius:4px">
         <strong>${formatDate(slot.starts_at)}</strong>, ${formatTime(slot.starts_at)}–${formatTime(slot.ends_at)}<br>
         ${place}
       </p>
-      ${note ? html`<p><strong>Subiect:</strong> ${note}</p>` : ''}`
+      ${note ? html`<p><strong>Subiect:</strong> ${note}</p>` : ''}
+      ${grup ? html`<p style="color:#5b6169;font-size:13px">Participanți: ${students.map((s) => s.name).join(', ')}</p>` : ''}`
 
-    const attachment = [
-      { filename: 'consultatie.ics', content: ics, contentType: 'text/calendar; method=REQUEST' },
-    ]
+    /* Each student gets their own invitation: a calendar entry addressed to
+     * somebody else is one most clients quietly refuse to add. */
+    await Promise.all(
+      students.map((student) =>
+        sendEmail({
+          to: student.email,
+          subject: `Consultație programată — ${formatDate(slot.starts_at)}`,
+          html: template(
+            'Coordonatorul ți-a programat o consultație',
+            html`<p><strong>${u!.name}</strong> a programat o consultație${grup ? ' de grup' : ''} cu tine:</p>${details}
+             <p style="color:#5b6169;font-size:13px">Invitația atașată se adaugă automat în calendar.</p>`,
+            { text: 'Vezi consultațiile', url: `${base}/consultatii` },
+          ),
+          attachments: [
+            {
+              filename: 'consultatie.ics',
+              content: buildIcs({
+                uid: `consultatie-${slot.id}-${student.id}@portal.stargrid.dev`,
+                title: `Consultație — ${u!.name}`,
+                description: note || 'Consultație pentru lucrarea de finalizare a studiilor.',
+                location: place,
+                start: new Date(slot.starts_at),
+                end: new Date(slot.ends_at),
+                organizerName: u!.name,
+                organizerEmail: u!.email,
+                attendeeName: student.name,
+                attendeeEmail: student.email,
+              }),
+              contentType: 'text/calendar; method=REQUEST',
+            },
+          ],
+        }),
+      ),
+    )
 
-    await Promise.all([
-      sendEmail({
-        to: student.email,
-        subject: `Consultație programată — ${formatDate(slot.starts_at)}`,
-        html: template(
-          'Coordonatorul ți-a programat o consultație',
-          html`<p><strong>${u!.name}</strong> a programat o consultație cu tine:</p>${details}
-           <p style="color:#5b6169;font-size:13px">Invitația atașată se adaugă automat în calendar.</p>`,
-          { text: 'Vezi consultațiile', url: `${base}/consultatii` },
-        ),
-        attachments: attachment,
-      }),
-      sendEmail({
-        to: u!.email,
-        subject: `Consultație cu ${student.name} — ${formatDate(slot.starts_at)}`,
-        html: template('Consultație programată', details),
-        attachments: attachment,
-      }),
-    ])
-
-    await postEvent({
-      studentId: student.id,
-      teacherId: u!.id,
-      senderId: u!.id,
-      eventType: 'consultation_scheduled',
-      body: `Consultație programată pentru ${formatDate(slot.starts_at)}, ${formatTime(slot.starts_at)}–${formatTime(slot.ends_at)}.\n${place}${note ? `\n\nSubiect: ${note}` : ''}`,
-      createConversation: true,
+    await sendEmail({
+      to: u!.email,
+      subject: grup
+        ? `Consultație de grup cu ${students.length} studenți — ${formatDate(slot.starts_at)}`
+        : `Consultație cu ${students[0].name} — ${formatDate(slot.starts_at)}`,
+      html: template('Consultație programată', details),
     })
 
-    return back(`Consultație programată cu ${student.name}. Invitația a plecat pe email.`)
+    for (const student of students) {
+      await postEvent({
+        studentId: student.id,
+        teacherId: u!.id,
+        senderId: u!.id,
+        eventType: 'consultation_scheduled',
+        body:
+          `Consultație${grup ? ' de grup' : ''} programată pentru ${formatDate(slot.starts_at)}, ${formatTime(slot.starts_at)}–${formatTime(slot.ends_at)}.\n${place}` +
+          (note ? `\n\nSubiect: ${note}` : ''),
+        createConversation: true,
+      })
+    }
+
+    return back(
+      grup
+        ? `Consultație de grup programată cu ${students.length} studenți. Fiecare a primit invitația pe email.`
+        : `Consultație programată cu ${students[0].name}. Invitația a plecat pe email.`,
+    )
   }
 
   /* --- cancel --------------------------------------------------------------- */

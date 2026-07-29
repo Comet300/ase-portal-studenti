@@ -78,7 +78,7 @@ const freeTeachers = teachers.filter((t) => !t.is_full).length
     </nav>
 
     <div class="filtre panel">
-      <div class="panel__body row row--wrap" style="gap:var(--s-4)">
+      <div class="panel__body row row--wrap filtre__rand" style="gap:var(--s-4)">
         <div class="field" style="flex:2;min-width:240px">
           <label class="label" for="cauta">Caută</label>
           <input
@@ -507,14 +507,22 @@ const freeTeachers = teachers.filter((t) => !t.is_full).length
     color: var(--red);
   }
 
+  /* Câmpurile au etichetă deasupra, caseta nu — aliniate pe centru, caseta
+     plutea la mijlocul rândului, deasupra bazei celorlalte controale. Se aliniază
+     toate la bază, iar caseta primește exact înălțimea unui câmp. */
+  .filtre__rand {
+    align-items: flex-end;
+  }
+
   .doar-libere {
     display: flex;
     align-items: center;
     gap: var(--s-2);
+    min-height: 38px;
     font-size: var(--t-sm);
     color: var(--ink-soft);
     cursor: pointer;
-    padding-bottom: var(--s-2);
+    white-space: nowrap;
   }
 
   .lista-coord {

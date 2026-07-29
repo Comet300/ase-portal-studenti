@@ -120,11 +120,6 @@ for (const s of free) {
                     <span class="muted">{s.location}</span>
                   )}
                   {s.mode === 'online' && !s.meeting_url && <span class="muted">Online</span>}
-                  {s.meeting_url && (
-                    <a class="btn btn--primary btn--sm slot__intra" href={s.meeting_url} target="_blank" rel="noopener">
-                      Intră în întâlnire
-                    </a>
-                  )}
 
                   {(s.note ?? s.subject) && (
                     <span class="muted">Subiect: {s.note ?? s.subject}</span>
@@ -136,11 +131,21 @@ for (const s of free) {
                     </span>
                   )}
                 </div>
-                <form method="POST" action="/api/rezervari">
-                  <input type="hidden" name="actiune" value="anuleaza" />
-                  <input type="hidden" name="slot_id" value={s.id} />
-                  <button class="btn btn--danger btn--sm" type="submit">Anulează</button>
-                </form>
+                <div class="slot__actiuni">
+                  {s.meeting_url && (
+                    <a class="btn btn--primary btn--sm" href={s.meeting_url} target="_blank" rel="noopener">
+                      Intră în întâlnire
+                    </a>
+                  )}
+                  <button
+                    class="btn btn--danger btn--sm"
+                    type="button"
+                    data-anuleaza={s.id}
+                    data-cand={`${formatDate(s.starts_at)}, ${formatTime(s.starts_at)}–${formatTime(s.ends_at)}`}
+                  >
+                    Anulează
+                  </button>
+                </div>
               </li>
             ))}
           </ul>
@@ -213,6 +218,24 @@ for (const s of free) {
     </section>
   </div>
 
+  {/* Anularea eliberează locul și anunță coordonatorul; nu este o acțiune de
+      apăsat din greșeală în drum spre butonul de alături. */}
+  <dialog id="dialog-anulare">
+    <form method="POST" action="/api/rezervari" class="dialog">
+      <h2 class="section-title">Anulezi consultația?</h2>
+      <p class="muted" style="font-size:var(--t-sm)">
+        <span id="anulare-cand"></span> — locul se eliberează pentru alt student, iar
+        coordonatorul vede anularea. Poți rezerva din nou dacă intervalul rămâne liber.
+      </p>
+      <input type="hidden" name="actiune" value="anuleaza" />
+      <input type="hidden" name="slot_id" id="anulare-slot" />
+      <div class="row" style="justify-content:flex-end;gap:var(--s-2)">
+        <button class="btn btn--secondary" type="button" data-inchide-anulare>Păstrează</button>
+        <button class="btn btn--danger" type="submit">Anulează consultația</button>
+      </div>
+    </form>
+  </dialog>
+
   <dialog id="dialog-rezerva">
     <form method="POST" action="/api/rezervari" class="dialog">
       <h2 class="section-title">Rezervă consultația</h2>
@@ -247,6 +270,20 @@ for (const s of free) {
     })
   })
   dialog?.querySelector('[data-inchide]')?.addEventListener('click', () => dialog.close())
+
+  const anulare = document.getElementById('dialog-anulare') as HTMLDialogElement | null
+  document.querySelectorAll<HTMLButtonElement>('[data-anuleaza]').forEach((b) => {
+    b.addEventListener('click', () => {
+      const camp = document.getElementById('anulare-slot') as HTMLInputElement | null
+      const cand = document.getElementById('anulare-cand')
+      if (camp) camp.value = b.dataset.anuleaza ?? ''
+      if (cand) cand.textContent = b.dataset.cand ?? ''
+      anulare?.showModal()
+    })
+  })
+  anulare
+    ?.querySelector('[data-inchide-anulare]')
+    ?.addEventListener('click', () => anulare.close())
 </script>
 
 <style>
@@ -302,9 +339,11 @@ for (const s of free) {
     font-size: var(--t-xs);
   }
 
-  .slot__intra {
-    align-self: flex-start;
-    margin-top: var(--s-1);
+  .slot__actiuni {
+    display: flex;
+    align-items: center;
+    gap: var(--s-2);
+    flex: none;
   }
 
   .data-chip {
