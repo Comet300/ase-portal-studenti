@@ -77,7 +77,7 @@ function deadline(expiresAt: string | null | undefined) {
 
 <ProfesorLayout
   title="Studenți & Cereri"
-  lede="Triaj cereri, studenți coordonați, cronologia lucrărilor, teme și program de consultații."
+  lede="Triajul cererilor primite, studenții pe care îi coordonezi și termenele lucrărilor lor."
   active="studenti"
 >
   <nav class="taburi" aria-label="Secțiuni">
@@ -268,9 +268,9 @@ function deadline(expiresAt: string | null | undefined) {
                       <td>
                         <div class="row" style="gap:var(--s-3)">
                           <Avatar name={s.student_name} href={`/profil/${s.student_id}`} />
-                          <div class="stack stack--tight" style="gap:0">
+                          <div class="celula-student">
                             <strong>{s.student_name}</strong>
-                            <span class="muted" style="font-size:var(--t-xs)">
+                            <span class="muted" title={`${s.student_number} · ${groupLabel(s)}`}>
                               {s.student_number} · {groupLabel(s)}
                             </span>
                           </div>
@@ -899,6 +899,24 @@ function deadline(expiresAt: string | null | undefined) {
     padding-block: 0;
     font-size: var(--t-xs);
     min-width: 116px;
+  }
+
+  /* Coloana de student nu are voie să se rupă în șase rânduri fiindcă tabelul a
+     mai primit o coloană: numele pe un rând, restul trunchiat cu titlu la hover. */
+  .celula-student {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+  .celula-student strong {
+    white-space: nowrap;
+  }
+  .celula-student .muted {
+    font-size: var(--t-xs);
+    max-width: 26ch;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .celula-title {
