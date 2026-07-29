@@ -481,6 +481,23 @@ await q(
 )
 
 console.log('[seed] consultații')
+
+/* Intervalele deschise se reconstruiesc, nu se completează.
+ *
+ * Cele create înainte ca aplicația să ruleze pe fusul Bucureștiului poartă
+ * instantul greșit — un „14:00” scris atunci este 17:00 acum. Se șterg doar
+ * cele viitoare și nerezervate: o consultație pe care un student și-a
+ * programat-o nu dispare de sub el.
+ */
+await q(
+  `DELETE FROM consultation_slots s
+    WHERE s.starts_at > now()
+      AND s.student_id IS NULL
+      AND NOT EXISTS (
+        SELECT 1 FROM bookings b WHERE b.slot_id = s.id AND b.status = 'booked'
+      )`,
+)
+
 // Sloturi de consultații pentru profesorul demo și încă doi. Unul din trei este
 // online, ca linkul întâlnirii să fie vizibil undeva în interfață.
 for (const profesorId of [teacherIds[0], teacherIds[1], headId]) {
