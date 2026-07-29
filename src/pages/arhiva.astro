@@ -1,4 +1,5 @@
 ---
+import AlegeAn from '../components/AlegeAn.astro'
 import StudentLayout from '../layouts/StudentLayout.astro'
 import { archiveRows, formatDate } from '../lib/repo'
 import { LEVEL_LABELS, allYears, languageLabel, levelLabel } from '../lib/years'
@@ -59,29 +60,26 @@ const levels = {
       </p>
     </header>
 
-    <form method="GET" class="panel">
+    <div class="panel">
       <div class="panel__body row row--wrap" style="gap:var(--s-4);align-items:flex-end">
-        <div class="field" style="min-width:200px">
-          <label class="label" for="an">An universitar</label>
-          <select class="select" id="an" name="an">
-            {
-              years.map((y) => (
-                <option value={y.id} selected={y.id === year?.id}>
-                  {y.label}
-                  {y.is_current ? ' · în curs' : ''}
-                </option>
-              ))
-            }
-          </select>
-        </div>
-        <div class="field" style="flex:2;min-width:240px">
-          <label class="label" for="q">Caută</label>
-          <input class="input" id="q" name="q" type="search" value={search}
-            placeholder="Nume, coordonator, titlu sau specializare…" />
-        </div>
-        <button class="btn btn--secondary" type="submit">Caută</button>
+        <AlegeAn years={years} selected={year?.id ?? ''} base="/arhiva"
+          keep={search ? { q: search } : {}} />
+        <form method="GET" class="row row--wrap" style="gap:var(--s-3);align-items:flex-end;flex:1">
+          <input type="hidden" name="an" value={year?.id} />
+          <div class="field" style="flex:2;min-width:240px">
+            <label class="label" for="q">Caută</label>
+            <input class="input" id="q" name="q" type="search" value={search}
+              placeholder="Nume, coordonator, titlu sau specializare…" />
+          </div>
+          <button class="btn btn--secondary" type="submit">Caută</button>
+        </form>
       </div>
-    </form>
+      <p class="panel__footer hint">
+        Lucrările apar în sesiunea în care sunt susținute, nu în cea în care a început
+        coordonarea — un student poate alege coordonatorul în anul II și susține la finalul
+        anului III.
+      </p>
+    </div>
 
     <div class="grid-auto">
       <div class="metric">
