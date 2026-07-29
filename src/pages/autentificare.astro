@@ -5,6 +5,7 @@ import { demoAccounts, DEMO_MODE, initials, ROLE_LABELS } from '../lib/auth'
 const redirect = Astro.url.searchParams.get('redirect') ?? ''
 const trimis = Astro.url.searchParams.get('trimis') === '1'
 const eroare = Astro.url.searchParams.get('eroare')
+const emailScris = Astro.url.searchParams.get('email') ?? ''
 const conturi = await demoAccounts()
 
 if (Astro.locals.user && !trimis) {
@@ -44,12 +45,13 @@ if (Astro.locals.user && !trimis) {
               </p>
             </div>
 
-            {eroare && <p class="error-text" role="alert">{eroare}</p>}
-
             <form method="POST" action="/api/autentificare" class="stack">
               <input type="hidden" name="redirect" value={redirect} />
               <div class="field">
                 <label class="label" for="email">Adresă de email</label>
+                {/* Adresa scrisă se păstrează: greșeala e aproape întotdeauna o
+                    literă, iar retastarea întregii adrese pentru o literă este
+                    exact felul de mărunțiș care face un portal obositor. */}
                 <input
                   class="input"
                   id="email"
@@ -57,9 +59,20 @@ if (Astro.locals.user && !trimis) {
                   type="email"
                   required
                   autocomplete="email"
-                  placeholder="prenume.name@stud.ase.ro"
+                  placeholder="prenume.nume@stud.ase.ro"
+                  value={emailScris}
+                  aria-invalid={eroare ? 'true' : undefined}
+                  aria-describedby={eroare ? 'eroare-email ajutor-email' : 'ajutor-email'}
+                  autofocus
                 />
-                <span class="hint">Conturi @stud.ase.ro pentru studenți, @ase.ro pentru cadre didactice.</span>
+                {eroare && (
+                  <p class="error-text" id="eroare-email" role="alert">
+                    {eroare}
+                  </p>
+                )}
+                <span class="hint" id="ajutor-email">
+                  Conturi @stud.ase.ro pentru studenți, @ase.ro pentru cadre didactice.
+                </span>
               </div>
               <button class="btn btn--primary" type="submit">Trimite linkul de acces</button>
             </form>

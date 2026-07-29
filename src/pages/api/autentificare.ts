@@ -15,7 +15,12 @@ export const POST: APIRoute = async ({ request, url }) => {
   const redirectTo = String(date.get('redirect') ?? '')
 
   if (!email || !email.includes('@')) {
-    return redirect('/autentificare?eroare=Adresă+de+email+invalidă.')
+    // Adresa se întoarce cu eroarea: greșeala e aproape întotdeauna o literă.
+    return redirect(
+      `/autentificare?eroare=${encodeURIComponent('Adresa de email nu pare validă. Verifică dacă are @ și domeniul instituțional.')}` +
+        `&email=${encodeURIComponent(email)}` +
+        (redirectTo ? `&redirect=${encodeURIComponent(redirectTo)}` : ''),
+    )
   }
 
   const utilizator = await findUserByEmail(email)

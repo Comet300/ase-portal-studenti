@@ -55,7 +55,19 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
       [teacherId, clamp(bachelor), clamp(master), u!.id],
     )
 
-    return redirectWithNotice(HEAD_PAGE, `Locurile pentru ${teacher.name} au fost actualizate.`)
+    /* Valoarea salvată poate să nu fie cea trimisă.
+     *
+     * `clamp` taie tăcut la 0–40: cine scria 100 primea „Locurile au fost
+     * actualizate” și pleca convins că a alocat 100. Dacă s-a schimbat ceva,
+     * mesajul spune ce s-a scris de fapt. */
+    const taiat = clamp(bachelor) !== bachelor || clamp(master) !== master
+    return redirectWithNotice(
+      HEAD_PAGE,
+      taiat
+        ? `Locurile pentru ${teacher.name}: ${clamp(bachelor)} licență și ${clamp(master)} master. Valorile au fost limitate la intervalul 0–40.`
+        : `Locurile pentru ${teacher.name} au fost actualizate.`,
+      taiat,
+    )
   }
 
   /* --- a coordinator asks --------------------------------------------------- */

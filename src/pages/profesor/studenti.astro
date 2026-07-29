@@ -107,6 +107,14 @@ function deadline(expiresAt: string | null | undefined) {
             </span>
           </div>
 
+          {locuri.free === 0 && inAsteptare.length > 0 && (
+            <p class="fara-locuri">
+              <strong>Toate locurile sunt ocupate</strong> ({locuri.total_taken}/{locuri.total_seats}).
+              Nu poți accepta o cerere nouă până nu primești locuri suplimentare.
+              <a class="link" href="/profesor/arhiva#locuri">Cere locuri directorului</a>
+            </p>
+          )}
+
           {inAsteptare.length === 0 ? (
             <div class="empty">
               <p class="empty__title">Nicio cerere în așteptare</p>
@@ -148,12 +156,21 @@ function deadline(expiresAt: string | null | undefined) {
                     )}
 
                     <div class="cerere__actiuni">
+                      {/* Fără locuri libere, serverul refuză acceptarea — dar abia
+                          după ce coordonatorul a scris mesajul. Refuzul se mută
+                          înaintea muncii, nu după. */}
                       <button
                         class="btn btn--primary btn--sm"
                         type="button"
                         data-decizie="approved"
                         data-cerere={c.id}
                         data-nume={c.student_name}
+                        disabled={locuri.free === 0}
+                        title={
+                          locuri.free === 0
+                            ? `Toate cele ${locuri.total_seats} locuri sunt ocupate. Cere locuri suplimentare directorului.`
+                            : undefined
+                        }
                       >
                         Acceptă coordonarea
                       </button>

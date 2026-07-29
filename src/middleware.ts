@@ -48,8 +48,12 @@ export const onRequest = defineMiddleware(async (context, next) => {
   const user = await getUserFromSession(sessionId)
   context.locals.user = user
 
-  // Deadlines are enforced here rather than by a scheduler: one container, no
-  // cron, and the sweep throttles itself. It never blocks the response.
+  /* Plasa de siguranță pentru termene.
+   *
+   * Sursa principală este `/api/sweep`, chemată de un planificator: legată doar
+   * de trafic, o cerere care trebuia închisă vineri seara rămânea deschisă până
+   * luni. Apelul de aici acoperă cazul în care planificatorul nu e configurat —
+   * se auto-limitează și nu ține răspunsul în loc. */
   void sweepDeadlines(process.env.APP_BASE_URL ?? context.url.origin)
 
   const path = context.url.pathname

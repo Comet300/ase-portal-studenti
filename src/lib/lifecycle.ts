@@ -148,17 +148,38 @@ export async function grantSeats(
 /**
  * Turns undecided requests and unanswered invitations into decisions.
  *
- * Runs from middleware rather than a scheduler, throttled to once every few
- * minutes: the portal is one container, and a request that expires a few minutes
- * late is still a week-old request. Failures are logged and swallowed — a sweep
- * that cannot run must never take a page down with it.
+ * Chemată de un planificator prin `/api/sweep`, și — ca plasă de siguranță — de
+ * middleware, limitată la o dată la câteva minute. Legată doar de trafic, o
+ * cerere care trebuia închisă vineri seara rămânea deschisă până luni, iar
+ * studentul aștepta un termen care trecuse deja.
+ *
+ * Un lock consultativ în Postgres ține locul unei singure rulări: două apeluri
+ * simultane nu au voie să trimită de două ori aceleași emailuri.
+ *
+ * Eșecurile se scriu în jurnal și se înghit — o măturare care nu poate rula nu
+ * are voie să doboare o pagină.
  */
 let lastSweep = 0
 const SWEEP_INTERVAL_MS = 5 * 60 * 1000
 
-export async function sweepDeadlines(baseUrl: string): Promise<void> {
+/** Când a rulat ultima oară cu succes; `/api/sanatate` o poate raporta. */
+export function lastSweepAt(): string | null {
+  return lastSweep ? new Date(lastSweep).toISOString() : null
+}
+
+export async function sweepDeadlines(
+  baseUrl: string,
+  { fortat = false }: { fortat?: boolean } = {},
+): Promise<void> {
   const now = Date.now()
-  if (now - lastSweep < SWEEP_INTERVAL_MS) return
+  if (!fortat && now - lastSweep < SWEEP_INTERVAL_MS) return
+
+  // Cheia este arbitrară, dar constantă: identifică *această* sarcină.
+  const lock = await queryOne<{ luat: boolean }>(
+    `SELECT pg_try_advisory_lock(hashtext('sweep_deadlines')) AS luat`,
+  )
+  if (!lock?.luat) return
+
   lastSweep = now
 
   try {
@@ -207,16 +228,72 @@ export async function sweepDeadlines(baseUrl: string): Promise<void> {
       })
     }
 
-    const lapsed = await query<{ id: string }>(
-      `UPDATE invitations SET status = 'expired', responded_at = now()
-        WHERE status = 'pending' AND expires_at <= now()
-        RETURNING id`,
+    /* Invitațiile expirate se anunțau nimănui.
+     *
+     * Un cadru didactic ținea un loc ocupat pentru un student care nu mai
+     * răspundea, iar studentul nu afla niciodată că propunerea a căzut — starea
+     * se schimba în tăcere, în baza de date. Aceeași buclă ca la cereri. */
+    const lapsed = await query<{
+      id: string
+      student_id: string
+      student_name: string
+      student_email: string
+      teacher_id: string
+      teacher_name: string
+      teacher_email: string
+    }>(
+      `UPDATE invitations i SET status = 'expired', responded_at = now()
+         FROM users s, users t
+        WHERE i.student_id = s.id AND i.teacher_id = t.id
+          AND i.status = 'pending' AND i.expires_at <= now()
+       RETURNING i.id,
+                 s.id AS student_id, s.name AS student_name, s.email AS student_email,
+                 t.id AS teacher_id, t.name AS teacher_name, t.email AS teacher_email`,
     )
+
+    for (const i of lapsed) {
+      await postEvent({
+        studentId: i.student_id,
+        teacherId: i.teacher_id,
+        senderId: i.teacher_id,
+        eventType: 'invitation_declined',
+        body: `Propunerea de coordonare de la ${i.teacher_name} a expirat după ${INVITATION_WINDOW_DAYS} zile fără răspuns. Locul rezervat a fost eliberat.`,
+        createConversation: false,
+      })
+
+      await sendEmail({
+        to: i.student_email,
+        subject: 'Propunerea de coordonare a expirat',
+        html: template(
+          'Propunerea a expirat',
+          html`<p>Bună, ${i.student_name.split(' ')[0]}. Propunerea de coordonare primită de la
+           ${i.teacher_name} a expirat după ${INVITATION_WINDOW_DAYS} zile fără răspuns.</p>
+           <p>Locul pe care îl ținea nu mai este rezervat, dar poți depune oricând o cerere
+           obișnuită — către același coordonator sau către altul.</p>`,
+          { text: 'Vezi coordonatorii', url: `${baseUrl}/coordonatori` },
+        ),
+      })
+
+      await sendEmail({
+        to: i.teacher_email,
+        subject: `Propunerea către ${i.student_name} a expirat`,
+        html: template(
+          'Propunerea a expirat',
+          html`<p>Propunerea trimisă lui ${i.student_name} a expirat după
+           ${INVITATION_WINDOW_DAYS} zile fără răspuns. Locul pe care îl ținea s-a eliberat.</p>`,
+          { text: 'Vezi propunerile', url: `${baseUrl}/profesor/studenti?sectiune=invitatii` },
+        ),
+      })
+    }
 
     if (expired.length || lapsed.length) {
       console.log(`[sweep] ${expired.length} cereri expirate, ${lapsed.length} invitații expirate`)
     }
   } catch (err) {
     console.error('[sweep] eșec', err)
+  } finally {
+    // Lockul se eliberează chiar dacă măturarea a picat la jumătate; altfel
+    // rularea următoare l-ar găsi ocupat pentru totdeauna.
+    await queryOne(`SELECT pg_advisory_unlock(hashtext('sweep_deadlines'))`).catch(() => {})
   }
 }

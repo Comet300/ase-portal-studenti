@@ -20,6 +20,39 @@ const u = Astro.locals.user!
 // îl trimitem în zona lui în loc să-i arătăm un ecran gol fără sens.
 if (u.role !== 'student') return Astro.redirect('/profesor', 302)
 
+/**
+ * Unde se află cererea în săptămâna de așteptare.
+ *
+ * Fereastra nu e scrisă în cod aici: se măsoară între depunere și expirare, ca
+ * să rămână adevărată dacă `DECISION_WINDOW_DAYS` se schimbă vreodată.
+ */
+/**
+ * Cât mai e până la un termen, ca stare.
+ *
+ * Coada coordonatorului avea deja numărătoarea asta; partea care așteaptă —
+ * studentul — primea doar o dată calendaristică.
+ */
+function termenRamas(expiresAt: string | null | undefined) {
+  if (!expiresAt) return null
+  const zile = Math.ceil((new Date(expiresAt).getTime() - Date.now()) / 86_400_000)
+  if (zile < 0) return null
+  return {
+    text: zile === 0 ? 'expiră astăzi' : zile === 1 ? '1 zi rămasă' : `${zile} zile rămase`,
+    clasa: zile <= 2 ? 'badge--respinsa' : 'badge--asteptare',
+  }
+}
+
+function asteptare(submittedAt: string | null, expiresAt: string | null) {
+  if (!submittedAt || !expiresAt) return null
+
+  const inceput = new Date(submittedAt).getTime()
+  const sfarsit = new Date(expiresAt).getTime()
+  const total = Math.max(1, Math.round((sfarsit - inceput) / 86_400_000))
+  const trecut = (Date.now() - inceput) / 86_400_000
+
+  return { total, zi: Math.min(total, Math.max(1, Math.ceil(trecut))) }
+}
+
 const [requests, milestones, teachers, topics, invitations] = await Promise.all([
   studentRequests(u.id),
   studentMilestones(u.id),
@@ -82,9 +115,19 @@ const shouldOpenForm = Boolean(openWith.teacher) && !hasActiveRequest
               <strong class="propunere__titlu">
                 {i.teacher_name} îți propune să îți coordoneze lucrarea
               </strong>
+              {/* O dată de expirare este o informație; câte zile mai sunt este
+                  un motiv să răspunzi. */}
               <span class="muted" style="font-size:var(--t-xs)">
-                Propunere primită {formatDate(i.created_at)} · expiră {formatDate(i.expires_at)}
+                Propunere primită {formatDate(i.created_at)}
               </span>
+              {(() => {
+                const t = termenRamas(i.expires_at)
+                return t ? (
+                  <span class:list={['badge', t.clasa]} style="align-self:flex-start">
+                    {t.text}
+                  </span>
+                ) : null
+              })()}
             </div>
           </div>
 
@@ -174,22 +217,64 @@ const shouldOpenForm = Boolean(openWith.teacher) && !hasActiveRequest
 
                 {c.status === 'pending' && (
                   <>
-                    {c.expires_at && (
-                      <p class="hint">
-                        Coordonatorul are timp să răspundă până la {formatDate(c.expires_at)}. Dacă
-                        nu răspunde, cererea se respinge automat și poți depune alta.
-                      </p>
-                    )}
-                    <form method="POST" action="/api/cereri/retrage" class="row row--wrap" style="gap:var(--s-2);align-items:flex-end">
+                    {/* Săptămâna de așteptare este intervalul în care studentul
+                        intră cel mai des în portal și găsea o singură propoziție
+                        cu o dată. Se vede unde e în ea, ce se întâmplă la capăt
+                        și ce poate face între timp. */}
+                    {(() => {
+                      const a = asteptare(c.submitted_at, c.expires_at)
+                      return a ? (
+                        <div class="asteptare">
+                          <div class="asteptare__bara" role="img"
+                            aria-label={`Ziua ${a.zi} din ${a.total} de așteptare`}>
+                            {Array.from({ length: a.total }, (_, i) => (
+                              <span class:list={['asteptare__zi', { 'is-trecuta': i < a.zi }]} />
+                            ))}
+                          </div>
+                          <p class="asteptare__linie">
+                            <strong>Ziua {a.zi} din {a.total}</strong>
+                            <span class="muted"> · răspuns așteptat până {formatDate(c.expires_at)}</span>
+                          </p>
+                          <p class="hint">
+                            Dacă nu răspunde până atunci, cererea se închide automat și poți depune
+                            alta imediat.
+                          </p>
+                        </div>
+                      ) : null
+                    })()}
+
+                    <div class="row row--wrap" style="gap:var(--s-2)">
+                      <a class="btn btn--secondary btn--sm" href="/mesaje">
+                        Scrie-i coordonatorului
+                      </a>
+                      <button class="btn btn--ghost btn--sm" type="button" data-retrage={c.id}>
+                        Retrage cererea
+                      </button>
+                    </div>
+
+                    <form
+                      method="POST"
+                      action="/api/cereri/retrage"
+                      class="retragere"
+                      id={`retragere-${c.id}`}
+                      hidden
+                    >
                       <input type="hidden" name="cerere_id" value={c.id} />
-                      <div class="field" style="flex:1;min-width:240px">
+                      <div class="field">
                         <label class="label" for={`motiv-${c.id}`}>
-                          Retrage cererea <span class="muted">(motivul e opțional)</span>
+                          De ce retragi cererea? <span class="muted">(opțional, ajunge la coordonator)</span>
                         </label>
                         <input class="input" id={`motiv-${c.id}`} name="motiv"
                           placeholder="Ex: am găsit o temă mai potrivită la alt coordonator." />
                       </div>
-                      <button class="btn btn--danger btn--sm" type="submit">Retrage</button>
+                      <div class="row" style="gap:var(--s-2)">
+                        <button class="btn btn--danger btn--sm" type="submit">
+                          Confirmă retragerea
+                        </button>
+                        <button class="btn btn--ghost btn--sm" type="button" data-anuleaza-retragerea={c.id}>
+                          Renunț
+                        </button>
+                      </div>
                     </form>
                   </>
                 )}
@@ -201,12 +286,25 @@ const shouldOpenForm = Boolean(openWith.teacher) && !hasActiveRequest
                   </div>
                 )}
 
-                {(c.status === 'rejected' || c.status === 'expired') && c.rejection_reason && (
+                {/* O cerere retrasă rămânea o carcasă fără explicație și fără
+                    ieșire, deși retragerea este exact starea după care urmează,
+                    aproape întotdeauna, o cerere nouă. */}
+                {(c.status === 'rejected' || c.status === 'expired' || c.status === 'withdrawn') && (
                   <div class="motiv">
                     <strong>
-                      {c.status === 'expired' ? 'De ce s-a închis cererea' : 'Motivul respingerii'}
+                      {c.status === 'expired'
+                        ? 'De ce s-a închis cererea'
+                        : c.status === 'withdrawn'
+                          ? 'Ai retras această cerere'
+                          : 'Motivul respingerii'}
                     </strong>
-                    <p>{c.rejection_reason}</p>
+                    {c.rejection_reason ? (
+                      <p>{c.rejection_reason}</p>
+                    ) : (
+                      c.status === 'withdrawn' && (
+                        <p class="muted">Locul pe care îl ținea la coordonator s-a eliberat.</p>
+                      )
+                    )}
                     <a href="/coordonatori" class="btn btn--secondary btn--sm">Depune o cerere nouă</a>
                   </div>
                 )}
@@ -566,9 +664,86 @@ const shouldOpenForm = Boolean(openWith.teacher) && !hasActiveRequest
   refuz
     ?.querySelectorAll('[data-inchide-refuz]')
     .forEach((b) => b.addEventListener('click', () => refuz.close()))
+
+  /* --- retragerea cererii -------------------------------------------------
+   *
+   * Retragerea era un câmp și un buton roșu la vedere permanentă, lângă restul
+   * cererii: se putea apăsa din greșeală, iar acțiunea nu se poate desface.
+   * Acum se cere de două ori. */
+  document.querySelectorAll<HTMLButtonElement>('[data-retrage]').forEach((b) => {
+    b.addEventListener('click', () => {
+      const form = document.getElementById(`retragere-${b.dataset.retrage}`)
+      if (!form) return
+      form.hidden = false
+      b.hidden = true
+      form.querySelector<HTMLInputElement>('input[name="motiv"]')?.focus()
+    })
+  })
+
+  document.querySelectorAll<HTMLButtonElement>('[data-anuleaza-retragerea]').forEach((b) => {
+    b.addEventListener('click', () => {
+      const id = b.dataset.anulezaRetragerea ?? b.dataset.anuleazaRetragerea
+      const form = document.getElementById(`retragere-${id}`)
+      const declansator = document.querySelector<HTMLElement>(`[data-retrage="${id}"]`)
+      if (form) form.hidden = true
+      if (declansator) {
+        declansator.hidden = false
+        declansator.focus()
+      }
+    })
+  })
 </script>
 
 <style>
+  /* Săptămâna de așteptare, ca lungime pe ecran. Șapte segmente, câte unul pe zi. */
+  .asteptare {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-2);
+    padding: var(--s-3) var(--s-4);
+    background: var(--surface-sunken);
+    border-radius: var(--r-md);
+  }
+
+  .asteptare__bara {
+    display: flex;
+    gap: 3px;
+  }
+
+  .asteptare__zi {
+    flex: 1;
+    height: 6px;
+    border-radius: 999px;
+    background: var(--border-strong);
+    opacity: 0.4;
+  }
+  .asteptare__zi.is-trecuta {
+    background: var(--warn);
+    opacity: 1;
+  }
+
+  .asteptare__linie {
+    font-size: var(--t-sm);
+  }
+
+  .retragere {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-3);
+    padding: var(--s-4);
+    border: 1px solid var(--danger);
+    border-radius: var(--r-md);
+    background: var(--danger-tint);
+  }
+
+  .fara-locuri {
+    margin: 0 var(--s-5) var(--s-4);
+    padding: var(--s-3) var(--s-4);
+    background: var(--warn-tint);
+    color: var(--warn);
+    border-radius: var(--r-md);
+    font-size: var(--t-sm);
+  }
   /* Propunerea nu este o notificare: e o decizie care așteaptă studentul, așa că
      stă deasupra listei și poartă sigiliul roșu. */
   .propunere {
