@@ -427,9 +427,9 @@ function deadline(expiresAt: string | null | undefined) {
                         </span>
                       </summary>
 
-                      <form method="POST" action="/api/jaloane" class="jalon__editor">
+                      <form method="POST" action="/api/termene" class="jalon__editor">
                         <input type="hidden" name="actiune" value="actualizeaza" />
-                        <input type="hidden" name="jalon_id" value={j.id} />
+                        <input type="hidden" name="termen_id" value={j.id} />
                         <input
                           type="hidden"
                           name="redirect"
@@ -478,7 +478,7 @@ function deadline(expiresAt: string | null | undefined) {
                           <button
                             class="btn btn--danger btn--sm"
                             type="submit"
-                            formaction="/api/jaloane"
+                            formaction="/api/termene"
                             name="actiune"
                             value="sterge"
                           >
@@ -492,7 +492,7 @@ function deadline(expiresAt: string | null | undefined) {
               </ol>
 
               <div class="panel__footer">
-                <form method="POST" action="/api/jaloane" class="row row--wrap" style="gap:var(--s-3);align-items:flex-end">
+                <form method="POST" action="/api/termene" class="row row--wrap" style="gap:var(--s-3);align-items:flex-end">
                   <input type="hidden" name="actiune" value="adauga" />
                   <input type="hidden" name="cerere_id" value={timelineRequest?.id} />
                   <input

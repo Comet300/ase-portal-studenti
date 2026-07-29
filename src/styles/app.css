@@ -129,14 +129,35 @@ textarea {
   color: inherit;
 }
 
+/* Sublinierea marchează proza, nu interfața.
+ *
+ * Aproape fiecare legătură din portal este un control — un buton, o celulă de
+ * tabel, o acțiune dintr-un rând. Subliniate toate, ecranele deveneau un covor
+ * de linii care nu mai distingea nimic. Rămân subliniate legăturile din text
+ * curgător, unde chiar trebuie recunoscute dintre cuvinte. */
 a {
   color: var(--red);
+  text-decoration: none;
   text-decoration-thickness: 1px;
   text-underline-offset: 2px;
 }
 
 a:hover {
   color: var(--red-hover);
+  text-decoration: underline;
+}
+
+.prose a,
+.page-lede a,
+.empty__text a,
+.hint a,
+a.link {
+  text-decoration: underline;
+}
+
+.btn,
+.btn:hover {
+  text-decoration: none;
 }
 
 /* Un singur inel de focus pentru toată aplicația. */

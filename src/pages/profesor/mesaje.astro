@@ -122,6 +122,7 @@ function fileSize(bytes: string | null): string {
     messages={messages}
     userId={u.id}
     base="/profesor/mesaje"
+    files={files.map((f) => ({ ...f, size_label: fileSize(f.size_bytes) }))}
     emptyText="Firele de discuție apar pe măsură ce accepți cereri de coordonare."
     hasContext
   >

@@ -29,10 +29,20 @@ const EVENT_TONE: Record<string, string> = {
   invitation_declined: 'is-rau',
 }
 
+export interface ChatFile {
+  id: string
+  original_name: string
+  size_label: string
+  created_at: string
+  uploaded_by: string
+}
+
 interface Props {
   conversations: Conversation[]
   active: Conversation | null
   messages: Message[]
+  /** Everything exchanged in the open thread, newest first. */
+  files?: ChatFile[]
   userId: string
   base: string
   emptyText: string
@@ -40,7 +50,16 @@ interface Props {
   hasContext?: boolean
 }
 
-const { conversations, active, messages, userId, base, emptyText, hasContext = false } = Astro.props
+const {
+  conversations,
+  active,
+  messages,
+  files = [],
+  userId,
+  base,
+  emptyText,
+  hasContext = false,
+} = Astro.props
 
 /** Messages are grouped by day, the way a messaging app does it. */
 const days: { label: string; items: Message[] }[] = []
@@ -95,6 +114,14 @@ for (const m of messages) {
               <strong>{active.peer_name}</strong>
               {active.peer_detail && <small class="muted">{active.peer_detail}</small>}
             </span>
+
+            <button class="chat__fisiere-buton" type="button" id="comuta-fisiere" aria-expanded="false">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true">
+                <path d="M4 4h5l2 2h9a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z" />
+              </svg>
+              Fișiere
+              {files.length > 0 && <span class="chat__fisiere-contor numeric">{files.length}</span>}
+            </button>
           </header>
 
           <div class="chat__messages" id="chat-messages">
@@ -139,6 +166,44 @@ for (const m of messages) {
             ))}
           </div>
 
+          {/* Toate fișierele firului, în ordine cronologică. Stă peste conversație
+              ca un sertar, ca să nu fure lățime când nu e nevoie de el. */}
+          <aside class="fisiere-drawer" id="fisiere-drawer" hidden>
+            <div class="fisiere-drawer__cap">
+              <strong>Fișiere din conversație</strong>
+              <button class="btn btn--ghost btn--sm" type="button" id="inchide-fisiere" aria-label="Închide">✕</button>
+            </div>
+            {files.length === 0 ? (
+              <p class="fisiere-drawer__gol">
+                Niciun fișier încă. Atașează unul cu agrafa de lângă câmpul de mesaj.
+              </p>
+            ) : (
+              <ul class="fisiere-drawer__lista">
+                {files.map((f) => (
+                  <li>
+                    <a class="fisier" href={`/fisiere/${f.id}`}>
+                      <span class="fisier__icon" aria-hidden="true">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+                          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6" />
+                        </svg>
+                      </span>
+                      <span class="fisier__corp">
+                        <strong>{f.original_name}</strong>
+                        <small class="muted">
+                          {[f.size_label, timeAgo(f.created_at)].filter(Boolean).join(' · ')}
+                          {f.uploaded_by === userId ? ' · trimis de tine' : ''}
+                        </small>
+                      </span>
+                      <svg class="fisier__descarca" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true">
+                        <path d="M12 3v12M7 12l5 5 5-5M4 21h16" />
+                      </svg>
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </aside>
+
           <form class="chat__compose" method="POST" action="/api/mesaje" enctype="multipart/form-data">
             <input type="hidden" name="conversation_id" value={active.id} />
             <input type="hidden" name="redirect" value={`${base}?conversatie=${active.id}`} />
@@ -151,7 +216,22 @@ for (const m of messages) {
               <span class="visually-hidden">Atașează un fișier</span>
             </label>
 
-            <textarea class="chat__input" name="body" rows="1" required placeholder="Scrie un mesaj…" aria-label="Mesaj"></textarea>
+            <div class="chat__camp">
+              {/* Fișierul ales se vede înainte de trimitere: altfel nu ai cum să
+                  știi că s-a atașat, nici cum să te răzgândești. */}
+              <div class="atasament" id="atasament" hidden>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
+                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6" />
+                </svg>
+                <span class="atasament__corp">
+                  <strong id="atasament-nume"></strong>
+                  <small class="muted" id="atasament-marime"></small>
+                </span>
+                <button class="atasament__scoate" type="button" id="scoate-atasament" aria-label="Elimină fișierul">✕</button>
+              </div>
+
+              <textarea class="chat__input" name="body" rows="1" placeholder="Scrie un mesaj…" aria-label="Mesaj"></textarea>
+            </div>
 
             <button class="btn btn--primary" type="submit">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
@@ -193,11 +273,76 @@ for (const m of messages) {
     input.style.height = Math.min(input.scrollHeight, 160) + 'px'
   })
 
-  // Without feedback there is no sign a file was attached at all.
+  /* --- atașamentul, vizibil înainte de trimitere ------------------------- */
+
   const file = document.querySelector<HTMLInputElement>('input[type="file"]')
-  file?.addEventListener('change', () => {
-    const n = file.files?.[0]?.name
-    if (n) window.notifica?.(`Fișier atașat: ${n}`)
+  const chip = document.getElementById('atasament')
+  const chipNume = document.getElementById('atasament-nume')
+  const chipMarime = document.getElementById('atasament-marime')
+  const scoate = document.getElementById('scoate-atasament')
+
+  const marime = (bytes: number) =>
+    bytes < 1024
+      ? `${bytes} B`
+      : bytes < 1024 * 1024
+        ? `${Math.round(bytes / 1024)} KB`
+        : `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+
+  const MAX = 15 * 1024 * 1024
+
+  function aratăAtașament() {
+    const f = file?.files?.[0]
+    if (!f) {
+      if (chip) chip.hidden = true
+      return
+    }
+    if (f.size > MAX) {
+      window.notifica?.(`„${f.name}" depășește 15 MB și nu poate fi atașat.`, 'error')
+      if (file) file.value = ''
+      if (chip) chip.hidden = true
+      return
+    }
+    if (chipNume) chipNume.textContent = f.name
+    if (chipMarime) chipMarime.textContent = marime(f.size)
+    if (chip) chip.hidden = false
+  }
+
+  file?.addEventListener('change', aratăAtașament)
+
+  scoate?.addEventListener('click', () => {
+    if (file) file.value = ''
+    if (chip) chip.hidden = true
+    input?.focus()
+  })
+
+  // Un mesaj poate fi doar un fișier, dar nu poate fi gol de tot.
+  input?.form?.addEventListener('submit', (e) => {
+    const areText = (input.value ?? '').trim().length > 0
+    const areFisier = Boolean(file?.files?.length)
+    if (!areText && !areFisier) {
+      e.preventDefault()
+      window.notifica?.('Scrie un mesaj sau atașează un fișier.', 'error')
+      return
+    }
+    // Trimiterea poate dura cât urcă fișierul; butonul trebuie să arate asta.
+    const buton = input.form?.querySelector<HTMLButtonElement>('button[type="submit"]')
+    if (buton) buton.dataset.loading = ''
+  })
+
+  /* --- sertarul cu fișiere ------------------------------------------------ */
+
+  const drawer = document.getElementById('fisiere-drawer')
+  const comuta = document.getElementById('comuta-fisiere')
+
+  const setDrawer = (deschis: boolean) => {
+    if (drawer) drawer.hidden = !deschis
+    comuta?.setAttribute('aria-expanded', String(deschis))
+  }
+
+  comuta?.addEventListener('click', () => setDrawer(drawer?.hidden ?? true))
+  document.getElementById('inchide-fisiere')?.addEventListener('click', () => setDrawer(false))
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && drawer && !drawer.hidden) setDrawer(false)
   })
 </script>
 
@@ -310,6 +455,7 @@ for (const m of messages) {
   }
 
   .chat__thread {
+    position: relative;
     display: flex;
     flex-direction: column;
     min-width: 0;
@@ -466,9 +612,198 @@ for (const m of messages) {
     color: var(--danger);
   }
 
+  .chat__fisiere-buton {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--s-2);
+    margin-left: auto;
+    min-height: 30px;
+    padding: 0 var(--s-3);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--r-md);
+    background: var(--surface);
+    color: var(--ink-soft);
+    font-size: var(--t-xs);
+    font-weight: 600;
+    cursor: pointer;
+    transition: border-color var(--fast) var(--ease), color var(--fast) var(--ease);
+  }
+  .chat__fisiere-buton:hover,
+  .chat__fisiere-buton[aria-expanded='true'] {
+    border-color: var(--ink-muted);
+    color: var(--ink);
+  }
+  .chat__fisiere-buton svg {
+    width: 15px;
+    height: 15px;
+  }
+  .chat__fisiere-contor {
+    padding: 0 5px;
+    border-radius: 999px;
+    background: var(--surface-sunken);
+    font-size: 11px;
+  }
+
+  /* Sertarul acoperă conversația în loc să o îngusteze: e o consultare scurtă,
+     nu o a treia coloană permanentă. */
+  .fisiere-drawer {
+    position: absolute;
+    inset: 56px 0 0 auto;
+    width: min(340px, 100%);
+    z-index: 2;
+    display: flex;
+    flex-direction: column;
+    background: var(--surface);
+    border-left: 1px solid var(--border);
+    box-shadow: var(--shadow-raised);
+    overflow: hidden;
+  }
+
+  .fisiere-drawer__cap {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--s-3);
+    padding: var(--s-3) var(--s-3) var(--s-3) var(--s-4);
+    border-bottom: 1px solid var(--border);
+    font-size: var(--t-sm);
+  }
+
+  .fisiere-drawer__gol {
+    padding: var(--s-4);
+    font-size: var(--t-xs);
+    color: var(--ink-muted);
+    text-wrap: pretty;
+  }
+
+  .fisiere-drawer__lista {
+    list-style: none;
+    margin: 0;
+    padding: var(--s-2);
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .fisier {
+    display: flex;
+    align-items: center;
+    gap: var(--s-3);
+    padding: var(--s-2) var(--s-3);
+    border-radius: var(--r-md);
+    text-decoration: none;
+    color: var(--ink);
+  }
+  .fisier:hover {
+    background: var(--surface-sunken);
+    color: var(--ink);
+  }
+
+  .fisier__icon {
+    display: grid;
+    place-items: center;
+    width: 32px;
+    height: 32px;
+    border-radius: var(--r-md);
+    background: var(--surface-sunken);
+    color: var(--ink-muted);
+    flex: none;
+  }
+  .fisier__icon svg {
+    width: 16px;
+    height: 16px;
+  }
+
+  .fisier__corp {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    flex: 1;
+  }
+  .fisier__corp strong {
+    font-size: var(--t-xs);
+    font-weight: 500;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .fisier__corp small {
+    font-size: 11px;
+  }
+
+  .fisier__descarca {
+    width: 15px;
+    height: 15px;
+    flex: none;
+    color: var(--ink-muted);
+    opacity: 0;
+    transition: opacity var(--fast) var(--ease);
+  }
+  .fisier:hover .fisier__descarca {
+    opacity: 1;
+  }
+
+  .chat__camp {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-2);
+    min-width: 0;
+  }
+
+  .atasament {
+    display: flex;
+    align-items: center;
+    gap: var(--s-2);
+    align-self: flex-start;
+    max-width: 100%;
+    padding: var(--s-2) var(--s-2) var(--s-2) var(--s-3);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--r-md);
+    background: var(--surface-sunken);
+  }
+  .atasament svg {
+    width: 15px;
+    height: 15px;
+    color: var(--ink-muted);
+    flex: none;
+  }
+  .atasament__corp {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    line-height: 1.3;
+  }
+  .atasament__corp strong {
+    font-size: var(--t-xs);
+    font-weight: 500;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .atasament__corp small {
+    font-size: 11px;
+  }
+  .atasament__scoate {
+    border: 0;
+    background: none;
+    color: var(--ink-muted);
+    cursor: pointer;
+    padding: 0 var(--s-1);
+    font-size: var(--t-sm);
+    line-height: 1;
+    flex: none;
+  }
+  .atasament__scoate:hover {
+    color: var(--danger);
+  }
+
   .chat__compose {
     display: flex;
     align-items: flex-end;
+    position: relative;
+    z-index: 3;
     gap: var(--s-2);
     padding: var(--s-3) var(--s-4);
     background: var(--surface);

@@ -216,8 +216,8 @@ const shouldOpenForm = Boolean(openWith.teacher) && !hasActiveRequest
                     <a class="btn btn--secondary btn--sm" href={`/documente/cerere/${c.id}`} target="_blank">
                       Descarcă cererea semnabilă
                     </a>
-                    <a class="btn btn--ghost btn--sm" href="/mesaje">Scrie coordonatorului</a>
-                    <a class="btn btn--ghost btn--sm" href="/consultatii">Programează o consultație</a>
+                    <a class="btn btn--secondary btn--sm" href="/mesaje">Scrie coordonatorului</a>
+                    <a class="btn btn--secondary btn--sm" href="/consultatii">Programează o consultație</a>
                   </div>
                 )}
               </li>
@@ -492,12 +492,27 @@ const shouldOpenForm = Boolean(openWith.teacher) && !hasActiveRequest
     if (topicSelect.selectedOptions[0]?.hidden) topicSelect.value = ''
   }
 
-  teacherSelect?.addEventListener('change', syncTopics)
+  teacherSelect?.addEventListener('change', () => {
+    syncTopics()
+    // Schimbarea coordonatorului invalidează tema aleasă, deci și titlul luat din ea.
+    fillTitleFromTopic()
+  })
   syncTopics()
 
+  /* Titlul urmează tema aleasă, în ambele sensuri.
+   *
+   * Completa doar câmpul gol, deci a doua alegere nu schimba nimic și „propun o
+   * temă proprie" lăsa pe ecran titlul temei respinse. Se rescrie la fiecare
+   * schimbare, mai puțin dacă studentul a scris deja ceva de mână. */
+  let titluDinTema = ''
+
   const fillTitleFromTopic = () => {
-    const t = topicSelect.selectedOptions[0]?.dataset.title
-    if (t && !title.value) title.value = t
+    const ales = topicSelect.selectedOptions[0]?.dataset.title ?? ''
+    const scrisDeMana = title.value.trim() !== '' && title.value !== titluDinTema
+    if (scrisDeMana) return
+
+    title.value = ales
+    titluDinTema = ales
   }
   topicSelect?.addEventListener('change', fillTitleFromTopic)
 

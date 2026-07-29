@@ -121,7 +121,7 @@ for (const s of free) {
                   )}
                   {s.mode === 'online' && !s.meeting_url && <span class="muted">Online</span>}
                   {s.meeting_url && (
-                    <a class="slot__link" href={s.meeting_url} target="_blank" rel="noopener">
+                    <a class="btn btn--primary btn--sm slot__intra" href={s.meeting_url} target="_blank" rel="noopener">
                       Intră în întâlnire
                     </a>
                   )}
@@ -302,11 +302,9 @@ for (const s of free) {
     font-size: var(--t-xs);
   }
 
-  .slot__link {
+  .slot__intra {
     align-self: flex-start;
-    font-size: var(--t-xs);
-    font-weight: 600;
-    color: var(--red);
+    margin-top: var(--s-1);
   }
 
   .data-chip {

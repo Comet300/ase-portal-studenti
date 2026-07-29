@@ -642,6 +642,39 @@ await q(
   ],
 )
 
+/* Un coordonator cu toate locurile ocupate.
+ *
+ * Starea „plin" schimbă catalogul, butonul de depunere și invitațiile, dar nu
+ * apărea nicăieri în datele demonstrative — nu se putea compara cu un
+ * coordonator disponibil fără să strici manual alocările.
+ */
+await q(
+  `UPDATE seat_allocations a
+      SET bachelor_seats = GREATEST(ocupate.b, 1),
+          master_seats   = ocupate.m
+     FROM (
+       SELECT r.teacher_id,
+              count(*) FILTER (WHERE s.program = 'bachelor')::int AS b,
+              count(*) FILTER (WHERE s.program = 'master')::int   AS m
+         FROM requests r
+         JOIN users s ON s.id = r.student_id
+         JOIN users t ON t.id = r.teacher_id
+        WHERE r.status = 'approved' AND r.academic_year_id = $1
+          AND t.email = 'radu.stoica@ase.ro'
+        GROUP BY r.teacher_id
+     ) ocupate
+    WHERE a.teacher_id = ocupate.teacher_id AND a.academic_year_id = $1`,
+  [currentYear.id],
+)
+
+/* Poza de profil a contului demo, ștearsă la fiecare pornire.
+ *
+ * Un fișier încărcat în timpul unui test rămâne acolo și ascunde exact ce ar
+ * trebui să se vadă implicit: inițialele. Conturile demonstrative pornesc fără
+ * poză, ca varianta implicită să fie cea vizibilă.
+ */
+await q(`UPDATE users SET avatar_path = NULL WHERE is_demo = true`)
+
 console.log('[seed] cerere de locuri')
 /* --- o cerere de locuri suplimentare, în așteptarea directorului ----------- */
 await q(
