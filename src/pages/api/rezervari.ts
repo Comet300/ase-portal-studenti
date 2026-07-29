@@ -4,6 +4,7 @@ import { buildIcs } from '../../lib/ics'
 import { template, sendEmail, html } from '../../lib/mail'
 import { formatDate, formatTime } from '../../lib/repo'
 import { redirectWithNotice } from '../../lib/http'
+import { formAction } from '../../lib/forms'
 import { id as formId } from '../../lib/ids'
 
 /** Rezervarea și anularea unui interval de consultație, cu invitație în calendar. */
@@ -12,7 +13,7 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
   if (!u) return new Response('Neautentificat', { status: 401 })
 
   const form = await request.formData()
-  const action = String(form.get('actiune') ?? 'rezerva')
+  const action = formAction(form) || 'rezerva'
   const slotId = formId(form.get('slot_id'))
   const subject = String(form.get('subiect') ?? '').trim()
 

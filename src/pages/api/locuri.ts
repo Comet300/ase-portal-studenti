@@ -3,6 +3,7 @@ import { isDepartmentHead, isTeacher } from '../../lib/auth'
 import { execute, queryOne } from '../../lib/db'
 import { grantSeats } from '../../lib/lifecycle'
 import { redirectWithNotice } from '../../lib/http'
+import { formAction } from '../../lib/forms'
 import { html, quote, sendEmail, template } from '../../lib/mail'
 import { id as formId } from '../../lib/ids'
 
@@ -24,7 +25,7 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
   if (!isTeacher(u)) return new Response('Neautorizat', { status: 401 })
 
   const form = await request.formData()
-  const action = String(form.get('actiune') ?? '')
+  const action = formAction(form)
   const base = process.env.APP_BASE_URL ?? url.origin
 
   /* --- the head allocates -------------------------------------------------- */

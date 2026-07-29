@@ -459,6 +459,12 @@ for (const m of messages) {
     display: flex;
     flex-direction: column;
     min-width: 0;
+    /* Fără această linie, minimul automat al unui element flex este dat de
+       conținut: firul crește peste celula lui de grilă, lista de mesaje nu mai
+       derulează niciodată, iar `.chat { overflow: hidden }` taie zona de scris
+       sub marginea de jos. Pe telefon nu se vedea, pentru că regula de mai jos
+       îi dă o înălțime explicită. */
+    min-height: 0;
     background: var(--bg);
   }
 

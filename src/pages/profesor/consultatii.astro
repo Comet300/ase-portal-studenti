@@ -48,7 +48,7 @@ const cuStudent = Astro.url.searchParams.get('cu') ?? ''
                 lucrează pe același capitol nu au nevoie de trei ore separate.
                 Selectarea multiplă cere casete, nu o listă derulantă. */}
             <span class="label" id="et-cu-cine">Cu cine</span>
-            <fieldset class="alege-studenti" aria-labelledby="et-cu-cine">
+            <fieldset class="alege-studenti" aria-labelledby="et-cu-cine" aria-describedby="numar-alesi">
               <label class="alege-studenti__toti">
                 <input type="checkbox" id="toti-studentii" />
                 <span>Selectează toți studenții coordonați</span>
@@ -119,7 +119,9 @@ const cuStudent = Astro.url.searchParams.get('cu') ?? ''
         </div>
 
         <div class="row" style="justify-content:flex-end">
-          <button class="btn btn--primary" type="submit">Programează și trimite invitația</button>
+          <button class="btn btn--primary" type="submit" id="programeaza">
+            Programează și trimite invitația
+          </button>
         </div>
       </form>
     )}

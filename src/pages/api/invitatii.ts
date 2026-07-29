@@ -2,6 +2,7 @@ import type { APIRoute } from 'astro'
 import { isTeacher } from '../../lib/auth'
 import { postEvent } from '../../lib/chat'
 import { execute, queryOne } from '../../lib/db'
+import { formAction } from '../../lib/forms'
 import { redirect, redirectWithNotice } from '../../lib/http'
 import { INVITATION_WINDOW_DAYS, openInvitationFor } from '../../lib/lifecycle'
 import { html, quote, sendEmail, template } from '../../lib/mail'
@@ -28,7 +29,7 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
   if (!u) return new Response('Neautentificat', { status: 401 })
 
   const form = await request.formData()
-  const action = String(form.get('actiune') ?? '')
+  const action = formAction(form)
   const base = process.env.APP_BASE_URL ?? url.origin
 
   /* --- the coordinator invites --------------------------------------------- */

@@ -1,9 +1,9 @@
 import type { APIRoute } from 'astro'
 import { myConversation } from '../../lib/chat'
 import { queryOne, transaction } from '../../lib/db'
-import { template, sendEmail, html } from '../../lib/mail'
-import { saveFile } from '../../lib/files'
-import { redirect } from '../../lib/http'
+import { template, sendEmail, html, quote } from '../../lib/mail'
+import { MAX_BYTES, saveFile } from '../../lib/files'
+import { redirect, redirectWithNotice } from '../../lib/http'
 import { id as formId } from '../../lib/ids'
 
 /** Trimite un mesaj, cu atașament opțional. */
@@ -27,49 +27,93 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
     return redirect(redirectTo)
   }
 
-  const messageId = await transaction(async (client) => {
-    const { rows } = await client.query<{ id: string }>(
-      `INSERT INTO messages (conversation_id, sender_id, body)
-       VALUES ($1, $2, $3) RETURNING id`,
-      [conversationId, u.id, body || '(fișier atașat)'],
-    )
-    await client.query(`UPDATE conversations SET last_message_at = now() WHERE id = $1`, [conversationId])
-    return rows[0].id
-  })
+  const atasament = file instanceof File && file.size > 0 ? file : null
 
-  if (file instanceof File && file.size > 0) {
-    try {
-      const stored = await saveFile(conversationId, file.name, Buffer.from(await file.arrayBuffer()))
-      await queryOne(
-        `INSERT INTO files (uploaded_by, conversation_id, message_id, original_name, stored_name, mime, size_bytes)
-         VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
-        [u.id, conversationId, messageId, file.name, stored, file.type || null, file.size],
-      )
-    } catch (err) {
-      console.error('[messages] atașamentul nu a putut fi salvat', err)
-    }
+  // Verificat înainte de a citi octeții în memorie: altfel un fișier de 200 MB
+  // este încărcat integral doar ca să fie refuzat la scriere.
+  if (atasament && atasament.size > MAX_BYTES) {
+    return redirectWithNotice(
+      redirectTo,
+      `„${atasament.name}” depășește ${Math.round(MAX_BYTES / (1024 * 1024))} MB. Mesajul nu a fost trimis.`,
+      true,
+    )
   }
 
-  // Notificare pe email doar dacă interlocutorul nu a fost active recent.
-  const recipient = await queryOne<{ email: string; name: string }>(
-    `SELECT email, name FROM users WHERE id = $1`,
-    [conversation.peer_id],
+  /* Mesajul și fișierul lui intră împreună sau deloc.
+   *
+   * Înainte, mesajul se scria primul, iar o eroare la salvarea fișierului era
+   * doar un `console.error`: expeditorul vedea mesajul trimis fără agrafă,
+   * destinatarul primea „(fișier atașat)” fără fișier, iar emailul anunța că a
+   * sosit ceva. Nimeni nu afla că încărcarea a eșuat. */
+  let messageId: string
+  try {
+    const octeti = atasament ? Buffer.from(await atasament.arrayBuffer()) : null
+
+    messageId = await transaction(async (client) => {
+      const { rows } = await client.query<{ id: string }>(
+        `INSERT INTO messages (conversation_id, sender_id, body)
+         VALUES ($1, $2, $3) RETURNING id`,
+        [conversationId, u.id, body || '(fișier atașat)'],
+      )
+      const id = rows[0].id
+      await client.query(`UPDATE conversations SET last_message_at = now() WHERE id = $1`, [conversationId])
+
+      if (atasament && octeti) {
+        const stored = await saveFile(conversationId, atasament.name, octeti)
+        await client.query(
+          `INSERT INTO files (uploaded_by, conversation_id, message_id, original_name, stored_name, mime, size_bytes)
+           VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+          [u.id, conversationId, id, atasament.name, stored, atasament.type || null, atasament.size],
+        )
+      }
+      return id
+    })
+  } catch (err) {
+    console.error('[messages] mesajul nu a putut fi salvat', err)
+    return redirectWithNotice(
+      redirectTo,
+      atasament
+        ? 'Fișierul nu a putut fi salvat, așa că mesajul nu a fost trimis. Încearcă din nou.'
+        : 'Mesajul nu a putut fi trimis. Încearcă din nou.',
+      true,
+    )
+  }
+
+  /* Emailul pleacă doar dacă are pe cine anunța.
+   *
+   * Comentariul de aici promitea de la început că notificarea se trimite „doar
+   * dacă interlocutorul nu a fost activ recent”, dar codul o trimitea de
+   * fiecare dată: un schimb de douăzeci de replici însemna douăzeci de emailuri
+   * pentru un om care avea firul deschis în fața lui. */
+  const contact = await queryOne<{ email: string; name: string; taci: boolean }>(
+    `SELECT p.email,
+            p.name,
+            (EXISTS (SELECT 1 FROM messages m
+                      WHERE m.conversation_id = $2 AND m.sender_id = $3
+                        AND m.read_at > now() - interval '10 minutes')
+             OR EXISTS (SELECT 1 FROM messages m
+                         WHERE m.conversation_id = $2 AND m.sender_id = $3
+                           AND m.id <> $4 AND m.created_at > now() - interval '15 minutes')
+            ) AS taci
+       FROM users p
+      WHERE p.id = $1`,
+    [conversation.peer_id, conversationId, u.id, messageId],
   )
 
-  if (recipient) {
+  if (contact && !contact.taci) {
     const base = process.env.APP_BASE_URL ?? url.origin
-    await sendEmail({
-      to: recipient.email,
+    // Trimiterea nu ține răspunsul în loc: expeditorul aștepta drumul până la
+    // Resend înainte să vadă propriul mesaj în fir.
+    void sendEmail({
+      to: contact.email,
       subject: `Mesaj nou de la ${u.name}`,
       html: template(
         'Ai primit un mesaj',
         html`<p><strong>${u.name}</strong> ți-a scris în portal:</p>
-         <p style="padding:12px 16px;background:#f8f9fa;border-radius:4px;white-space:pre-wrap">${
-           body.slice(0, 500) || '(fișier atașat)'
-         }</p>`,
+         ${quote(body.slice(0, 500) || '(fișier atașat)')}`,
         { text: 'Răspunde în portal', url: `${base}${redirectTo}` },
       ),
-    })
+    }).catch((err) => console.error('[messages] notificarea nu a plecat', err))
   }
 
   return redirect(redirectTo)

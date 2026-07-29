@@ -2,6 +2,7 @@ import type { APIRoute } from 'astro'
 import { isTeacher } from '../../lib/auth'
 import { execute } from '../../lib/db'
 import { redirectWithNotice } from '../../lib/http'
+import { formAction } from '../../lib/forms'
 import { id as formId } from '../../lib/ids'
 
 /** Temele propuse de un cadru didactic. Proprietarul este verificat în fiecare instrucțiune. */
@@ -10,7 +11,7 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
   if (!isTeacher(u)) return new Response('Neautorizat', { status: 401 })
 
   const form = await request.formData()
-  const action = String(form.get('actiune') ?? 'adauga')
+  const action = formAction(form) || 'adauga'
   const redirectTo = '/profesor/teme'
 
   const back = (message: string, isError = false) =>

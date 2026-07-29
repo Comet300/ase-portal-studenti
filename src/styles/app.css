@@ -1,3 +1,5 @@
+@import './fonts.css';
+
 /* =============================================================================
    Portal Studenți — sistem de design
    =============================================================================
@@ -216,13 +218,19 @@ h4 {
   font-variant-numeric: tabular-nums;
 }
 
+/* Un element absolut fără nicio coordonată rămâne la poziția lui firească în
+ * flux — iar dacă acea poziție este într-un tabel lat, iese din containerul cu
+ * derulare și lățește documentul. Etichetele pentru cititoarele de ecran
+ * împingeau așa pagina cu 276px pe telefon. Marginea negativă îl scoate din
+ * calculul de lățime, iar `clip-path` îl ascunde fără să îl mute. */
 .visually-hidden {
   position: absolute;
   width: 1px;
   height: 1px;
+  margin: -1px;
   padding: 0;
   overflow: hidden;
-  clip: rect(0, 0, 0, 0);
+  clip-path: inset(50%);
   white-space: nowrap;
   border: 0;
 }
@@ -340,6 +348,17 @@ h4 {
   color: var(--ink);
 }
 
+.btn--danger[data-loading]::after {
+  color: var(--danger);
+}
+
+/* `disabled` ar șterge perechea nume/valoare a butonului apăsat, de care depind
+ * formularele cu două verbe. `aria-disabled` spune același lucru fără să
+ * schimbe ce se trimite; clicul repetat e oprit din JavaScript. */
+.btn[aria-disabled='true'] {
+  pointer-events: none;
+}
+
 @keyframes spin {
   to {
     transform: rotate(360deg);
@@ -424,6 +443,15 @@ h4 {
 .error-text {
   font-size: var(--t-sm);
   color: var(--danger);
+}
+
+/* Contorul este o stare, nu o socoteală: sub prag e roșu și spune cât lipsește,
+ * aproape de plafon devine chihlimbar înainte să înceapă să înghită taste. */
+.hint.is-sub-minim {
+  color: var(--danger);
+}
+.hint.is-aproape-plin {
+  color: var(--warn);
 }
 
 /* --- panouri ------------------------------------------------------------- */
@@ -585,25 +613,98 @@ h4 {
   z-index: var(--z-toast);
   display: flex;
   flex-direction: column;
+  align-items: flex-end;
   gap: var(--s-2);
+  max-width: min(420px, calc(100vw - var(--s-5) * 2));
   pointer-events: none;
 }
 
+/* Erorile stau deasupra confirmărilor: dacă apar amândouă, cea care cere o
+ * decizie nu are voie să fie împinsă de una care doar liniștește. */
+.toast-host--erori {
+  bottom: auto;
+  top: var(--s-5);
+}
+
 .toast {
-  display: flex;
-  align-items: center;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: start;
   gap: var(--s-3);
-  padding: var(--s-3) var(--s-4);
+  padding: var(--s-3) var(--s-3) var(--s-3) var(--s-4);
   background: var(--navy);
   color: #fff;
   border-radius: var(--r-md);
   box-shadow: var(--shadow-raised);
   font-size: var(--t-sm);
+  text-wrap: pretty;
+  /* Gazda nu primește clicuri, ca să nu blocheze pagina de dedesubt; fiecare
+   * notificare și le ia înapoi, altfel butonul de închidere ar fi decorativ. */
+  pointer-events: auto;
   animation: toast-in var(--base) var(--ease);
+  transition:
+    opacity var(--base) var(--ease),
+    transform var(--base) var(--ease),
+    margin-block-start var(--base) var(--ease);
 }
 
 .toast--error {
   background: var(--danger);
+}
+
+.toast__semn {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  margin-top: 1px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.18);
+  font-size: 11px;
+  font-weight: 700;
+  flex: none;
+}
+
+.toast__corp {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+/* Culoarea singură nu spune care e care — nici pentru daltonism, nici pentru
+ * cineva care prinde notificarea din colțul ochiului. */
+.toast__eticheta {
+  font-size: var(--t-xs);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  opacity: 0.75;
+}
+
+.toast__inchide {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: none;
+  color: inherit;
+  opacity: 0.7;
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+  flex: none;
+}
+.toast__inchide:hover {
+  background: rgba(255, 255, 255, 0.14);
+  opacity: 1;
+}
+
+.toast[data-pleaca] {
+  opacity: 0;
+  transform: translateX(12px) scale(0.97);
 }
 
 @keyframes toast-in {
@@ -611,6 +712,48 @@ h4 {
     opacity: 0;
     transform: translateY(8px);
   }
+}
+
+/* --- bara de progres și starea offline ----------------------------------- */
+
+.progres-sus {
+  position: fixed;
+  inset: 0 auto auto 0;
+  z-index: var(--z-toast);
+  height: 2px;
+  width: 0;
+  background: var(--red);
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* Se oprește la 90%: restul drumului îl face navigarea propriu-zisă, iar o bară
+ * care ajunge la capăt și așteaptă minte mai tare decât una care încă urcă. */
+[data-se-incarca] .progres-sus {
+  opacity: 1;
+  animation: progres 12s cubic-bezier(0.1, 0.85, 0.3, 1) forwards;
+}
+
+@keyframes progres {
+  0% {
+    width: 0;
+  }
+  100% {
+    width: 90%;
+  }
+}
+
+.banner-offline {
+  position: sticky;
+  top: 0;
+  z-index: var(--z-toast);
+  padding: var(--s-2) var(--s-5);
+  background: var(--warn-tint);
+  color: var(--warn);
+  border-bottom: 1px solid currentColor;
+  font-size: var(--t-sm);
+  font-weight: 500;
+  text-align: center;
 }
 
 /* --- dialog -------------------------------------------------------------- */

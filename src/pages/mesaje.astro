@@ -59,22 +59,30 @@ function fileSize(bytes: string | null): string {
       </p>
     </header>
 
-    <Chat
-      conversations={conversations}
-      active={active}
-      messages={messages}
-      userId={u.id}
-      base="/mesaje"
-      files={files}
-      emptyText="Firul de discuție se deschide după ce un coordonator îți aprobă cererea."
-    />
+    <div class="chat-wrap">
+      <Chat
+        conversations={conversations}
+        active={active}
+        messages={messages}
+        userId={u.id}
+        base="/mesaje"
+        files={files}
+        emptyText="Firul de discuție se deschide după ce un coordonator îți aprobă cererea."
+      />
+    </div>
   </div>
 </StudentLayout>
 
 <style>
-  /* The chat fills its own box now, so the page has to give it one. */
-  /* Înălțime fixă: derulează conversația, nu pagina. */
-  .chat-wrap :global(.chat) {
+  /* Firul își umple propria cutie, deci pagina trebuie să îi dea una: altfel
+     `height: 100%` se măsoară față de un părinte fără înălțime, iar pagina
+     derulează în locul conversației. */
+  .chat-wrap {
     height: min(74vh, 780px);
+    min-height: 420px;
+  }
+
+  .chat-wrap :global(.chat) {
+    height: 100%;
   }
 </style>

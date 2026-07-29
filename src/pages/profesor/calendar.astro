@@ -77,7 +77,11 @@ const anCurent = new Date().getFullYear()
                   </summary>
 
                   <form method="POST" action="/api/etape" class="stage__form">
-                    <input type="hidden" name="actiune" value="actualizeaza" />
+                    {/* Numele diferă intenționat de cel al butoanelor: două câmpuri
+                        „actiune” în același formular ar fi trimise amândouă, în ordinea
+                        din document, iar `form.get` întoarce prima valoare — adică
+                        niciodată pe cea a butonului apăsat. Ștergerea era imposibilă. */}
+                    <input type="hidden" name="actiune_implicita" value="actualizeaza" />
                     <input type="hidden" name="etapa_id" value={s.id} />
 
                     <div class="row row--wrap" style="gap:var(--s-3)">

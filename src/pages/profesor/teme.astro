@@ -66,39 +66,67 @@ const teme = await teacherTopics(u.id)
       <div class="panel__footer">
         <form method="POST" action="/api/teme" class="tema-noua">
           <input type="hidden" name="actiune" value="adauga" />
-          <div class="field" style="flex:3;min-width:240px">
+
+          <div class="field tema-noua__titlu">
             <label class="label" for="tema-titlu">Temă nouă</label>
             <input class="input" id="tema-titlu" name="titlu" required
               placeholder="Ex: Adopția plăților contactless în mediul rural" />
           </div>
-          <div class="field" style="flex:1;min-width:130px">
+
+          <div class="field tema-noua__nivel">
             <label class="label" for="tema-nivel">Nivel</label>
             <select class="select" id="tema-nivel" name="nivel">
               <option value="bachelor">Licență</option>
               <option value="master">Master</option>
             </select>
           </div>
-          <div class="field" style="flex:1;min-width:140px">
+
+          <div class="field tema-noua__limba">
             <label class="label" for="tema-limba">Limba lucrării</label>
-            <select class="select" id="tema-limba" name="limba">
+            <select class="select" id="tema-limba" name="limba" aria-describedby="ajutor-limba">
               {Object.entries(LANGUAGE_LABELS).map(([cod, text]) => (
                 <option value={cod}>{text}</option>
               ))}
             </select>
-            <span class="hint">Tema apare doar studenților din programele cu această limbă.</span>
+            <span class="hint" id="ajutor-limba">
+              Tema apare doar studenților din programele cu această limbă.
+            </span>
           </div>
-          <div class="field" style="flex:1;min-width:100px">
+
+          <div class="field tema-noua__locuri">
             <label class="label" for="tema-locuri">Locuri</label>
             <input class="input" id="tema-locuri" name="locuri" type="number" min="1" max="20" value="2" />
           </div>
-          <div class="field" style="flex:2;min-width:200px">
+
+          {/* Descrierea este singurul loc în care un student află despre ce e
+              vorba. Catalogul o afișa și o căuta de la început, dar formularul
+              nu o cerea niciodată, așa că fiecare temă publicată din portal
+              rămânea fără ea. */}
+          <div class="field tema-noua__descriere">
+            <label class="label" for="tema-descriere">Descriere</label>
+            <textarea
+              class="textarea"
+              id="tema-descriere"
+              name="descriere"
+              rows="3"
+              maxlength="800"
+              data-autogrow
+              aria-describedby="contor-descriere"
+              placeholder="Ce problemă abordează, ce date se folosesc și ce ar trebui să obțină studentul."
+            ></textarea>
+            <span class="hint" id="contor-descriere" data-contor-pentru="tema-descriere"></span>
+          </div>
+
+          <div class="field tema-noua__metode">
             <label class="label" for="tema-metode">Metode</label>
             <input class="input" id="tema-metode" name="metode" placeholder="Ex: sondaj, analiză factorială" />
           </div>
-          <div class="field" style="flex:2;min-width:200px">
+
+          <div class="field tema-noua__prerechizite">
             <label class="label" for="tema-prerechizite">Prerechizite</label>
             <input class="input" id="tema-prerechizite" name="prerechizite" placeholder="Ex: Statistică aplicată" />
           </div>
+
           <button class="btn btn--primary tema-noua__actiune" type="submit">Publică tema</button>
         </form>
       </div>
@@ -106,21 +134,52 @@ const teme = await teacherTopics(u.id)
 </ProfesorLayout>
 
 <style>
-  /* Fiecare câmp își ține propria coloană și propriul rând de etichetă; înainte
-     era un rând flex, iar singurul câmp cu text ajutător împingea tot ce urma
-     cu o linie mai jos. */
+  /* Douăsprezece coloane, fiecare câmp cu deschiderea lui declarată.
+     `auto-fit` dădea tuturor aceeași lățime — un titlu de lucrare primea 160px,
+     la fel ca numărul de locuri — iar stilurile inline rămase de la varianta
+     flex băteau regula de mai jos și scoteau câmpurile unul peste altul. */
   .tema-noua {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-    gap: var(--s-3) var(--s-4);
+    grid-template-columns: repeat(12, minmax(0, 1fr));
+    gap: var(--s-4);
     align-items: start;
   }
   .tema-noua .field {
     min-width: 0;
   }
+
+  .tema-noua__titlu {
+    grid-column: span 12;
+  }
+  .tema-noua__nivel {
+    grid-column: span 3;
+  }
+  .tema-noua__limba {
+    grid-column: span 5;
+  }
+  .tema-noua__locuri {
+    grid-column: span 4;
+  }
+  .tema-noua__descriere {
+    grid-column: span 12;
+  }
+  .tema-noua__metode,
+  .tema-noua__prerechizite {
+    grid-column: span 6;
+  }
   .tema-noua__actiune {
     grid-column: 1 / -1;
     justify-self: start;
+  }
+
+  @media (max-width: 720px) {
+    .tema-noua__nivel,
+    .tema-noua__limba,
+    .tema-noua__locuri,
+    .tema-noua__metode,
+    .tema-noua__prerechizite {
+      grid-column: span 12;
+    }
   }
 
   .teme {

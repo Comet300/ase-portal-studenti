@@ -4,16 +4,24 @@ import { currentYearLabel } from '../lib/years'
 
 interface Props {
   title: string
+  /** Titlul din bara browserului, când cel din pagină nu e bun de semn de carte. */
+  docTitle?: string
   description?: string
 }
 
-const { title, description } = Astro.props
+const { title, docTitle, description } = Astro.props
 
 // Sesiunea se numește după anul din baza de date, nu după unul scris în cod:
 // altfel, în dimineața în care directorul deschide un an nou, fiecare titlu de
 // pagină îl contrazice.
 const sesiune = await currentYearLabel()
-const fullTitle = `${title} · Portal Studenți — Sesiunea de Finalizare a Studiilor ${sesiune}`
+
+// Sufixul rămâne scurt: cu trei file deschise, 45 de caractere identice le fac
+// imposibil de deosebit. Sesiunea se vede oricum în subsol și în bara laterală.
+const fullTitle = `${docTitle ?? title} · Portal Studenți ASE`
+const descriere =
+  description ?? `Sesiunea de Finalizare a Studiilor ${sesiune} — Facultatea de Marketing, ASE București`
+const site = Astro.site ?? new URL(Astro.url.origin)
 ---
 
 <!doctype html>
@@ -22,56 +30,56 @@ const fullTitle = `${title} · Portal Studenți — Sesiunea de Finalizare a Stu
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>{fullTitle}</title>
-    {description && <meta name="description" content={description} />}
+    <meta name="description" content={descriere} />
     <meta name="theme-color" content="#990000" />
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      rel="stylesheet"
-      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600;8..60,700&display=swap"
-    />
-    <link
-      rel="icon"
-      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='4' fill='%23990000'/%3E%3Ctext x='16' y='22' font-family='Georgia,serif' font-size='16' font-weight='700' fill='white' text-anchor='middle'%3EA%3C/text%3E%3C/svg%3E"
-    />
+    <meta name="color-scheme" content="light" />
+
+    {/* Legătura către portal se lipește în grupuri de WhatsApp și pe Teams —
+        acolo se vede cardul, nu adresa. */}
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Portal Studenți · ASE București" />
+    <meta property="og:title" content={`${docTitle ?? title} · Portal Studenți`} />
+    <meta property="og:description" content={descriere} />
+    <meta property="og:image" content={new URL('/og.png', site).href} />
+    <meta property="og:locale" content="ro_RO" />
+    <meta name="twitter:card" content="summary_large_image" />
+
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/site.webmanifest" />
   </head>
   <body>
     <a href="#continut" class="skip">Sari la conținut</a>
+
+    {/* Fiecare acțiune este un POST care reîncarcă pagina. Bara arată că cererea
+        a plecat, în intervalul în care altfel nu se schimbă nimic pe ecran. */}
+    <div class="progres-sus" aria-hidden="true"></div>
+
+    <p class="banner-offline" id="banner-offline" role="status" hidden>
+      Ești offline. Ce ai scris rămâne aici — retrimite când revine conexiunea.
+    </p>
+
     <slot />
-    <div class="toast-host" id="toast-host" aria-live="polite" aria-atomic="true"></div>
+
+    {/* Două gazde, două urgențe: confirmările sunt politicoase și pleacă singure,
+        erorile întrerup și rămân până sunt închise. */}
+    <div class="toast-host" id="toast-host" aria-live="polite" aria-atomic="false"></div>
+    <div class="toast-host toast-host--erori" id="toast-host-erori" role="alert" aria-live="assertive"></div>
 
     <script>
-      // Un singur mecanism de notificare pentru toată aplicația.
+      import { porneste as pornesteNotificari } from '../scripts/notificari'
+      import { porneste as pornesteFormulare } from '../scripts/formulare'
+      import { porneste as pornesteRetea } from '../scripts/retea'
+
       declare global {
         interface Window {
           notifica: (mesaj: string, tip?: 'info' | 'error') => void
         }
       }
 
-      window.notifica = (mesaj, tip = 'info') => {
-        const gazda = document.getElementById('toast-host')
-        if (!gazda) return
-        const el = document.createElement('div')
-        el.className = tip === 'error' ? 'toast toast--error' : 'toast'
-        el.textContent = mesaj
-        gazda.appendChild(el)
-        setTimeout(() => {
-          el.style.transition = 'opacity 200ms'
-          el.style.opacity = '0'
-          setTimeout(() => el.remove(), 220)
-        }, 4200)
-      }
-
-      // Mesajele venite prin redirect (?notificare=...) se afișează o singură dată.
-      const params = new URLSearchParams(location.search)
-      const notificare = params.get('notificare')
-      if (notificare) {
-        window.notifica(notificare, params.get('tip') === 'error' ? 'error' : 'info')
-        params.delete('notificare')
-        params.delete('tip')
-        const rest = params.toString()
-        history.replaceState({}, '', location.pathname + (rest ? `?${rest}` : ''))
-      }
+      pornesteNotificari()
+      pornesteFormulare()
+      pornesteRetea()
     </script>
 
     <style>

@@ -1,0 +1,16 @@
+{
+  "name": "Portal Studenți — Facultatea de Marketing, ASE București",
+  "short_name": "Portal Studenți",
+  "description": "Coordonatori, teme, cereri, consultații și termenele lucrării de finalizare a studiilor.",
+  "lang": "ro",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f8f9fa",
+  "theme_color": "#990000",
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml" }
+  ]
+}

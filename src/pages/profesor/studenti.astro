@@ -428,7 +428,10 @@ function deadline(expiresAt: string | null | undefined) {
                       </summary>
 
                       <form method="POST" action="/api/termene" class="jalon__editor">
-                        <input type="hidden" name="actiune" value="actualizeaza" />
+                        {/* Vezi comentariul din lib/forms.ts: butonul „Șterge” poartă
+                            propriul „actiune”, iar două câmpuri cu același nume s-ar
+                            fi anulat — ștergerea raporta succes fără să șteargă. */}
+                        <input type="hidden" name="actiune_implicita" value="actualizeaza" />
                         <input type="hidden" name="termen_id" value={j.id} />
                         <input
                           type="hidden"

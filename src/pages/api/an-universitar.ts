@@ -2,6 +2,7 @@ import type { APIRoute } from 'astro'
 import { isDepartmentHead } from '../../lib/auth'
 import { execute, queryOne } from '../../lib/db'
 import { redirectWithNotice } from '../../lib/http'
+import { formAction } from '../../lib/forms'
 import { openYear } from '../../lib/years'
 import { id as formId } from '../../lib/ids'
 
@@ -22,7 +23,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
   if (!isDepartmentHead(u)) return new Response('Pagina nu a fost găsită', { status: 404 })
 
   const form = await request.formData()
-  const action = String(form.get('actiune') ?? '')
+  const action = formAction(form)
   const back = (message: string, isError = false) => redirectWithNotice(PAGE, message, isError)
 
   if (action === 'deschide_an') {

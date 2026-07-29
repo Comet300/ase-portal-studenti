@@ -4,6 +4,7 @@ import { postEvent } from '../../lib/chat'
 import { execute, query, queryOne } from '../../lib/db'
 import { buildIcs } from '../../lib/ics'
 import { redirectWithNotice } from '../../lib/http'
+import { formAction } from '../../lib/forms'
 import { html, joinHtml, sendEmail, template } from '../../lib/mail'
 import { formatDate, formatTime } from '../../lib/repo'
 import { id as formId } from '../../lib/ids'
@@ -33,7 +34,7 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
   if (!isTeacher(u)) return new Response('Neautorizat', { status: 401 })
 
   const form = await request.formData()
-  const action = String(form.get('actiune') ?? 'publica')
+  const action = formAction(form) || 'publica'
   const base = process.env.APP_BASE_URL ?? url.origin
 
   const back = (message: string, isError = false) => redirectWithNotice(PAGE, message, isError)
