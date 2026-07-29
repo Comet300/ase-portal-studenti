@@ -647,6 +647,9 @@ await q(
  * Starea „plin" schimbă catalogul, butonul de depunere și invitațiile, dar nu
  * apărea nicăieri în datele demonstrative — nu se putea compara cu un
  * coordonator disponibil fără să strici manual alocările.
+ *
+ * Se alege cel cu cei mai puțini studenți aprobați, ca schimbarea să fie
+ * minimă, și niciodată contul demo: coada lui trebuie să rămână liberă.
  */
 await q(
   `UPDATE seat_allocations a
@@ -660,8 +663,11 @@ await q(
          JOIN users s ON s.id = r.student_id
          JOIN users t ON t.id = r.teacher_id
         WHERE r.status = 'approved' AND r.academic_year_id = $1
-          AND t.email = 'radu.stoica@ase.ro'
+          AND t.is_demo = false
         GROUP BY r.teacher_id
+        HAVING count(*) > 0
+        ORDER BY count(*), r.teacher_id
+        LIMIT 1
      ) ocupate
     WHERE a.teacher_id = ocupate.teacher_id AND a.academic_year_id = $1`,
   [currentYear.id],
