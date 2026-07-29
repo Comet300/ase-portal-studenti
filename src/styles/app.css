@@ -759,10 +759,12 @@ h4 {
 
 /* --- notificări ---------------------------------------------------------- */
 
+/* Marginile sigure ale telefonului: pe un ecran cu crestătură sau cu bara de
+ * gesturi, o notificare lipită de `bottom: 24px` stă sub indicatorul de acasă. */
 .toast-host {
   position: fixed;
-  bottom: var(--s-5);
-  right: var(--s-5);
+  bottom: calc(var(--s-5) + env(safe-area-inset-bottom));
+  right: calc(var(--s-5) + env(safe-area-inset-right));
   z-index: var(--z-toast);
   display: flex;
   flex-direction: column;
@@ -1038,7 +1040,9 @@ dialog[open]::backdrop {
   width: 100%;
   max-width: var(--container);
   margin-inline: auto;
-  padding-inline: var(--s-5);
+  /* Insetul contează în peisaj pe un telefon cu crestătură: fără el, textul
+   * intră sub ea. */
+  padding-inline: max(var(--s-5), env(safe-area-inset-left)) max(var(--s-5), env(safe-area-inset-right));
 }
 
 /* --- tranziții între pagini ---------------------------------------------- */

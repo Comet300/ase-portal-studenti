@@ -68,7 +68,11 @@ const linkuriCont = [
       <nav class="nav" aria-label="Navigație principală">
         {
           linkuri.map((l) => (
-            <a href={l.href} class:list={['nav__link', { 'is-active': active === l.cheie }]}>
+            <a
+              href={l.href}
+              class:list={['nav__link', { 'is-active': active === l.cheie }]}
+              aria-current={active === l.cheie ? 'page' : undefined}
+            >
               {l.text}
             </a>
           ))
@@ -107,7 +111,11 @@ const linkuriCont = [
     <nav class="meniu-mobil" id="meniu-mobil" aria-label="Navigație mobilă" hidden>
       {
         [...linkuri, ...(u ? linkuriCont : [])].map((l) => (
-          <a href={l.href} class:list={['meniu-mobil__link', { 'is-active': active === l.cheie }]}>
+          <a
+            href={l.href}
+            class:list={['meniu-mobil__link', { 'is-active': active === l.cheie }]}
+            aria-current={active === l.cheie ? 'page' : undefined}
+          >
             {l.text}
           </a>
         ))
@@ -314,7 +322,7 @@ const linkuriCont = [
   }
 
   main {
-    min-height: calc(100vh - var(--topbar-h) - 72px);
+    min-height: calc(100dvh - var(--topbar-h) - 72px);
     padding-block: var(--s-6) var(--s-7);
   }
 

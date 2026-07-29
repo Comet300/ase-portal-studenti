@@ -12,6 +12,22 @@
 const MAX = 15 * 1024 * 1024
 const APROAPE_DE_JOS = 200
 
+/* Aceeași listă ca pe server (lib/files.ts). E scrisă de două ori pentru că
+ * scriptul de pe client nu poate importa din modulele de server, dar verificarea
+ * care contează rămâne cea din API. */
+const EXTENSII = new Set([
+  'pdf', 'doc', 'docx', 'odt', 'rtf', 'txt', 'md',
+  'xls', 'xlsx', 'csv', 'ods',
+  'ppt', 'pptx', 'odp',
+  'png', 'jpg', 'jpeg', 'webp', 'gif',
+  'zip',
+])
+
+function extensiaAcceptata(nume: string): boolean {
+  const parte = nume.split('.').pop()
+  return !!parte && parte !== nume && EXTENSII.has(parte.toLowerCase())
+}
+
 function marime(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`
   if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`
@@ -89,6 +105,16 @@ export function porneste() {
     }
     if (f.size > MAX) {
       window.notifica?.(`„${f.name}” depășește 15 MB și nu poate fi atașat.`, 'error')
+      if (fisier) fisier.value = ''
+      if (chip) chip.hidden = true
+      return
+    }
+    // Refuzat înainte să înceapă încărcarea, nu după ce urcă 15 MB degeaba.
+    if (!extensiaAcceptata(f.name)) {
+      window.notifica?.(
+        `„${f.name}” nu este un tip acceptat. Trimite un document, o foaie de calcul, o imagine sau o arhivă.`,
+        'error',
+      )
       if (fisier) fisier.value = ''
       if (chip) chip.hidden = true
       return

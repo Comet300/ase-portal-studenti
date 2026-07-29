@@ -187,7 +187,7 @@ const cai: Record<string, string> = {
   .shell {
     display: grid;
     grid-template-columns: var(--sidebar-w) minmax(0, 1fr);
-    min-height: 100vh;
+    min-height: 100svh;
   }
 
   /* Bara laterală este al doilea strat neutru: închisă, ca să nu concureze cu conținutul. */
@@ -200,7 +200,7 @@ const cai: Record<string, string> = {
     color: #d7dbe0;
     position: sticky;
     top: 0;
-    height: 100vh;
+    height: 100dvh;
     overflow-y: auto;
   }
 
@@ -349,10 +349,10 @@ const cai: Record<string, string> = {
   }
 
   .shell--fill {
-    height: 100vh;
+    height: 100dvh;
   }
   .shell--fill .content {
-    height: 100vh;
+    height: 100dvh;
     overflow: hidden;
   }
   .shell--fill .content__body {

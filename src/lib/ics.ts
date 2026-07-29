@@ -10,6 +10,8 @@ export interface CalendarEvent {
   title: string
   description?: string
   location?: string
+  /** Adresa întâlnirii online, dacă există. Devine butonul „Participă”. */
+  meetingUrl?: string
   start: Date
   end: Date
   organizerName: string
@@ -64,6 +66,11 @@ export function buildIcs(ev: CalendarEvent): string {
     `SUMMARY:${escapeText(ev.title)}`,
     ev.description ? `DESCRIPTION:${escapeText(ev.description)}` : '',
     ev.location ? `LOCATION:${escapeText(ev.location)}` : '',
+    /* Adresa întâlnirii, ca proprietate, nu doar îngropată în descriere:
+     * Google Calendar și Outlook scot din ea butonul „Participă”, iar
+     * `X-GOOGLE-CONFERENCE` este ce citește Google anume. */
+    ev.meetingUrl ? `URL:${escapeText(ev.meetingUrl)}` : '',
+    ev.meetingUrl ? `X-GOOGLE-CONFERENCE:${escapeText(ev.meetingUrl)}` : '',
     `ORGANIZER;CN=${escapeText(ev.organizerName)}:mailto:${ev.organizerEmail}`,
     `ATTENDEE;CN=${escapeText(ev.attendeeName)};ROLE=REQ-PARTICIPANT;PARTSTAT=NEEDS-ACTION;RSVP=TRUE:mailto:${ev.attendeeEmail}`,
     `STATUS:${ev.cancelled ? 'CANCELLED' : 'CONFIRMED'}`,

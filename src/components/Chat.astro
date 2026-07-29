@@ -2,6 +2,7 @@
 import Avatar from './Avatar.astro'
 import type { Conversation, Message } from '../lib/chat'
 import { formatTime, shortMonth, timeAgo } from '../lib/repo'
+import { ACCEPT } from '../lib/files'
 
 /**
  * Events are things the portal did — a decision, an invitation, a scheduled
@@ -313,7 +314,7 @@ const INCEPUTURI = [
             {/* Butonul este un buton, nu o etichetă: o etichetă nu primește
                 focus de la tastatură, deci atașarea unui fișier era imposibilă
                 fără mouse. Câmpul rămâne în pagină, ascuns vizual dar accesibil. */}
-            <input type="file" name="file" class="visually-hidden" id="camp-fisier" />
+            <input type="file" name="file" class="visually-hidden" id="camp-fisier" accept={ACCEPT} />
             <button class="attach" type="button" id="alege-fisier">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
                 <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />

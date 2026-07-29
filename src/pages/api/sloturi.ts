@@ -274,6 +274,7 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
                 title: `Consultație — ${u!.name}`,
                 description: note || 'Consultație pentru lucrarea de finalizare a studiilor.',
                 location: place,
+                meetingUrl: meetingUrl || undefined,
                 start: new Date(slot.starts_at),
                 end: new Date(slot.ends_at),
                 organizerName: u!.name,

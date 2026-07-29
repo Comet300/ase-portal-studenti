@@ -57,11 +57,16 @@ export const GET: APIRoute = async ({ locals, url }) => {
       r.number, r.student_name, r.student_number, programLabel(r.program), r.specialization,
       r.teacher_name, r.title_ro, STATUS_LABELS[r.status] ?? r.status,
       r.submitted_at?.slice(0, 10) ?? '', r.decided_at?.slice(0, 10) ?? '',
-    ].map(cell).join(','),
+    ].map(cell).join(';'),
   )
 
-  // BOM so Excel opens the Romanian diacritics correctly.
-  const csv = '﻿' + [header.map(cell).join(','), ...body].join('\r\n') + '\r\n'
+  /* Punct și virgulă, ca la celălalt export.
+   *
+   * Cele două exporturi ale portalului foloseau separatoare diferite. Într-un
+   * Excel cu setări românești separatorul de listă este „;”, deci fișierul cu
+   * virgulă se deschidea într-o singură coloană — exact fișierul pe care îl
+   * descarcă directorul de departament. BOM-ul rămâne, pentru diacritice. */
+  const csv = '﻿' + [header.map(cell).join(';'), ...body].join('\r\n') + '\r\n'
 
   return new Response(csv, {
     headers: {

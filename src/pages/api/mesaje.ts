@@ -2,7 +2,7 @@ import type { APIRoute } from 'astro'
 import { myConversation } from '../../lib/chat'
 import { queryOne, transaction } from '../../lib/db'
 import { template, sendEmail, html, quote } from '../../lib/mail'
-import { MAX_BYTES, saveFile } from '../../lib/files'
+import { MAX_BYTES, extensiePermisa, saveFile, tipDupaExtensie } from '../../lib/files'
 import { redirect, redirectWithNotice } from '../../lib/http'
 import { id as formId } from '../../lib/ids'
 
@@ -39,6 +39,15 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
     )
   }
 
+  // Verificarea de pe client poate fi ocolită; aceasta nu.
+  if (atasament && !extensiePermisa(atasament.name)) {
+    return redirectWithNotice(
+      redirectTo,
+      `Tipul fișierului „${atasament.name}” nu este acceptat. Trimite un document, o foaie de calcul, o imagine sau o arhivă.`,
+      true,
+    )
+  }
+
   /* Mesajul și fișierul lui intră împreună sau deloc.
    *
    * Înainte, mesajul se scria primul, iar o eroare la salvarea fișierului era
@@ -63,7 +72,7 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
         await client.query(
           `INSERT INTO files (uploaded_by, conversation_id, message_id, original_name, stored_name, mime, size_bytes)
            VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-          [u.id, conversationId, id, atasament.name, stored, atasament.type || null, atasament.size],
+          [u.id, conversationId, id, atasament.name, stored, tipDupaExtensie(atasament.name), atasament.size],
         )
       }
       return id
