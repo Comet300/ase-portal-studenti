@@ -2,6 +2,7 @@
 import BaseLayout from './BaseLayout.astro'
 import Avatar from '../components/Avatar.astro'
 import Clopotel from '../components/Clopotel.astro'
+import { ECRANE } from '../lib/navigare'
 import { currentYearLabel } from '../lib/years'
 import { hasApprovedRequest } from '../lib/repo'
 
@@ -26,21 +27,21 @@ const areLucrare = u?.role === 'student' && (await hasApprovedRequest(u.id))
  * Iar odată ce cererea e aprobată, pagina nu mai este despre cereri: este despre
  * lucrare, și se numește așa. */
 const linkuri = [
-  { href: '/', text: 'Acasă', cheie: 'acasa' },
-  { href: '/coordonatori', text: 'Coordonatori & Teme', cheie: 'coordonatori' },
+  { href: '/', text: ECRANE['/'], cheie: 'acasa' },
+  { href: '/coordonatori', text: ECRANE['/coordonatori'], cheie: 'coordonatori' },
   ...(u
     ? [
         {
           href: '/cererile-mele',
-          text: areLucrare ? 'Lucrarea mea' : 'Cererile mele',
+          text: areLucrare ? 'Lucrarea mea' : ECRANE['/cererile-mele'],
           cheie: 'cereri',
         },
-        { href: '/mesaje', text: 'Mesaje', cheie: 'mesaje' },
-        { href: '/consultatii', text: 'Consultații', cheie: 'consultatii' },
-        { href: '/arhiva', text: 'Arhivă', cheie: 'arhiva' },
+        { href: '/mesaje', text: ECRANE['/mesaje'], cheie: 'mesaje' },
+        { href: '/consultatii', text: ECRANE['/consultatii'], cheie: 'consultatii' },
+        { href: '/arhiva', text: ECRANE['/arhiva'], cheie: 'arhiva' },
       ]
     : []),
-  { href: '/ghid', text: 'Ghid', cheie: 'ghid' },
+  { href: '/ghid', text: ECRANE['/ghid'], cheie: 'ghid' },
 ]
 
 /* Doar în meniul de telefon: pe ecran mic avatarul se pierde ușor, iar el este
@@ -51,7 +52,7 @@ const linkuriCont = [
   ...(u && u.role !== 'student'
     ? [{ href: '/profesor', text: 'Zona cadrelor didactice', cheie: 'profesor' }]
     : []),
-  { href: '/contul-meu', text: 'Contul meu', cheie: 'cont' },
+  { href: '/contul-meu', text: ECRANE['/contul-meu'], cheie: 'cont' },
 ]
 ---
 

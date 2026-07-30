@@ -202,7 +202,17 @@ const DOCS = [
   const tabs = [...document.querySelectorAll<HTMLButtonElement>('[role="tab"]')]
   const panels = tabs.map((t) => document.getElementById(t.getAttribute('aria-controls')!)!)
 
-  function showTab(index: number) {
+  /**
+   * Schimbarea filei, cu sau fără intrare în istoric.
+   *
+   * Era `replaceState` mereu: patru file citite pe rând nu lăsau nicio urmă, iar
+   * Înapoi ducea afară din ghid, nu la fila anterioară. Cine ajungea la
+   * „Antiplagiat” din regulament și voia să se întoarcă pierdea pagina.
+   *
+   * Un clic sau o săgeată este o navigare și intră în istoric; sincronizarea de
+   * la încărcare sau de la Înapoi doar reflectă starea, deci nu.
+   */
+  function showTab(index: number, istoric: 'push' | 'replace' | 'niciun' = 'replace') {
     tabs.forEach((t, i) => {
       const active = i === index
       t.classList.toggle('is-activ', active)
@@ -213,30 +223,42 @@ const DOCS = [
       t.setAttribute('tabindex', active ? '0' : '-1')
       panels[i].hidden = !active
     })
-    history.replaceState({}, '', `#${tabs[index].id.replace('t-', '')}`)
+    if (istoric === 'niciun') return
+    const adresa = `#${tabs[index].id.replace('t-', '')}`
+    if (istoric === 'push') history.pushState({}, '', adresa)
+    else history.replaceState({}, '', adresa)
   }
 
   tabs.forEach((t, i) => {
-    t.addEventListener('click', () => showTab(i))
+    t.addEventListener('click', () => showTab(i, 'push'))
     // Săgețile stânga/dreapta trec între file, cum se așteaptă la un tablist.
     t.addEventListener('keydown', (e) => {
       if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return
       e.preventDefault()
       const next = (i + (e.key === 'ArrowRight' ? 1 : tabs.length - 1)) % tabs.length
       tabs[next].focus()
-      showTab(next)
+      showTab(next, 'push')
     })
   })
 
-  // Linkurile din alte pagini (/ghid#antiplagiat) deschid fila potrivită.
-  const anchor = location.hash.replace('#', '')
-  if (anchor) {
-    const initialTab = tabs.findIndex((t) => t.id === `t-${anchor}`)
-    if (initialTab >= 0) showTab(initialTab)
+  function dinAdresa(avertizeaza: boolean) {
+    const anchor = location.hash.replace('#', '')
+    if (!anchor) {
+      showTab(0, 'niciun')
+      return
+    }
+    const fila = tabs.findIndex((t) => t.id === `t-${anchor}`)
+    if (fila >= 0) showTab(fila, 'niciun')
     // O ancoră care nu duce nicăieri lăsa pagina pe prima filă, fără niciun
     // semn — așa a trăit `#formulare` până acum, deși fila se numește altfel.
-    else console.warn(`[ghid] nu există fila „${anchor}”; linkul care trimite aici e vechi.`)
+    else if (avertizeaza) {
+      console.warn(`[ghid] nu există fila „${anchor}”; linkul care trimite aici e vechi.`)
+    }
   }
+
+  // Linkurile din alte pagini (/ghid#antiplagiat) deschid fila potrivită.
+  dinAdresa(true)
+  window.addEventListener('popstate', () => dinAdresa(false))
 </script>
 
 <style>

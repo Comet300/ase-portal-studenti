@@ -245,6 +245,18 @@ function deadline(expiresAt: string | null | undefined) {
             {locuri.bachelor_taken}/{locuri.bachelor_seats} · master{' '}
             {locuri.master_taken}/{locuri.master_seats}
           </span>
+          {/* Exportul propriu exista de la început în endpoint și nu era legat de
+              nicăieri: singurele butoane duceau la el din ecranele directorului,
+              deci un coordonator care avea nevoie de lista lui pe hârtie — pentru
+              procesul-verbal, care încă circulă tipărit — o copia din tabel. */}
+          {studenti.length > 0 && (
+            <a
+              class="btn btn--secondary btn--sm"
+              href="/profesor/export-coordonari?doar_ale_mele=1"
+            >
+              Descarcă lista (CSV)
+            </a>
+          )}
         </div>
 
         {studenti.length === 0 ? (

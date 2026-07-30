@@ -2,6 +2,7 @@
 import BaseLayout from './BaseLayout.astro'
 import Clopotel from '../components/Clopotel.astro'
 import { initials, DEMO_MODE } from '../lib/auth'
+import { ECRANE } from '../lib/navigare'
 import { currentYearLabel } from '../lib/years'
 
 interface Props {
@@ -35,20 +36,20 @@ const grupuri = [
   {
     titlu: 'Coordonare',
     linkuri: [
-      { href: '/profesor', cheie: 'dashboard', text: 'Panoul meu', icon: 'grid' },
-      { href: '/profesor/studenti', cheie: 'studenti', text: 'Studenți & Cereri', icon: 'users' },
-      { href: '/profesor/teme', cheie: 'teme', text: 'Teme propuse', icon: 'book' },
-      { href: '/profesor/consultatii', cheie: 'consultatii', text: 'Consultații', icon: 'clock' },
-      { href: '/profesor/mesaje', cheie: 'mesaje', text: 'Mesaje', icon: 'chat' },
+      { href: '/profesor', cheie: 'dashboard', text: ECRANE['/profesor'], icon: 'grid' },
+      { href: '/profesor/studenti', cheie: 'studenti', text: ECRANE['/profesor/studenti'], icon: 'users' },
+      { href: '/profesor/teme', cheie: 'teme', text: ECRANE['/profesor/teme'], icon: 'book' },
+      { href: '/profesor/consultatii', cheie: 'consultatii', text: ECRANE['/profesor/consultatii'], icon: 'clock' },
+      { href: '/profesor/mesaje', cheie: 'mesaje', text: ECRANE['/profesor/mesaje'], icon: 'chat' },
     ],
   },
   {
     titlu: 'Facultate',
     linkuri: [
-      { href: '/profesor/facultate', cheie: 'facultate', text: 'Studenții facultății', icon: 'list' },
-      { href: '/profesor/arhiva', cheie: 'arhiva', text: 'Arhiva mea', icon: 'archive' },
+      { href: '/profesor/facultate', cheie: 'facultate', text: ECRANE['/profesor/facultate'], icon: 'list' },
+      { href: '/profesor/arhiva', cheie: 'arhiva', text: ECRANE['/profesor/arhiva'], icon: 'archive' },
       ...(u.role === 'head'
-        ? [{ href: '/profesor/departament', cheie: 'departament', text: 'Departament', icon: 'chart' }]
+        ? [{ href: '/profesor/departament', cheie: 'departament', text: ECRANE['/profesor/departament'], icon: 'chart' }]
         : []),
     ],
   },
@@ -57,8 +58,8 @@ const grupuri = [
         {
           titlu: 'Administrare',
           linkuri: [
-            { href: '/profesor/calendar', cheie: 'calendar', text: 'Calendarul sesiunii', icon: 'calendar' },
-            { href: '/profesor/an-universitar', cheie: 'an', text: 'An universitar', icon: 'refresh' },
+            { href: '/profesor/calendar', cheie: 'calendar', text: ECRANE['/profesor/calendar'], icon: 'calendar' },
+            { href: '/profesor/an-universitar', cheie: 'an', text: ECRANE['/profesor/an-universitar'], icon: 'refresh' },
           ],
         },
       ]

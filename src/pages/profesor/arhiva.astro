@@ -84,7 +84,13 @@ const openSeatRequest = mySeatRequests.find((r) => r.status === 'pending')
   lede="Istoricul cererilor pe ani universitari, locurile alocate și datele profilului tău."
   active="arhiva"
 >
-  <AlegeAn slot="actiuni" years={years} selected={year?.id ?? ''} base="/profesor/arhiva" />
+  <div slot="actiuni" class="row" style="gap:var(--s-2)">
+    <AlegeAn years={years} selected={year?.id ?? ''} base="/profesor/arhiva" />
+    {/* Exportul urmează anul ales de pe ecran, nu sesiunea curentă. */}
+    <a class="btn btn--secondary btn--sm" href={`/profesor/export-coordonari?doar_ale_mele=1&an=${year?.id ?? ''}`}>
+      Descarcă lista (CSV)
+    </a>
+  </div>
 
   <div class="stack stack--loose">
     <section class="stack">

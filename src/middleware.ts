@@ -103,7 +103,11 @@ export const onRequest = defineMiddleware(async (context, next) => {
         'cache-control',
         strict ? 'private, no-store' : 'private, max-age=0, must-revalidate',
       )
-      response.headers.set('vary', 'cookie')
+      /* `cookie` este întotdeauna în joc; o pagină care se schimbă și după altceva
+       * și-o spune singură, iar aici se adaugă, nu se înlocuiește. Profilul își
+       * scoate butonul „Înapoi” din `Referer`, deci acela face parte din cheie. */
+      const propriu = response.headers.get('vary')
+      response.headers.set('vary', propriu ? `cookie, ${propriu}` : 'cookie')
     } catch {
       // Un răspuns cu antete imutabile este construit de noi și nu ajunge la CDN.
     }

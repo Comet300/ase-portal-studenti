@@ -2,6 +2,7 @@
 import Avatar from '../../components/Avatar.astro'
 import ProfesorLayout from '../../layouts/ProfesorLayout.astro'
 import StudentLayout from '../../layouts/StudentLayout.astro'
+import { numeleEcranului } from '../../lib/navigare'
 import { internalPath } from '../../lib/http'
 import { ROLE_LABELS } from '../../lib/auth'
 import { queryOne, query } from '../../lib/db'
@@ -113,8 +114,36 @@ const editHref = isTeacherProfile ? '/profesor/arhiva' : '/contul-meu'
  * `?de_la=` poartă drumul de întoarcere, trecut prin `internalPath` ca o adresă
  * externă strecurată acolo să nu poată scoate pe nimeni din portal. */
 const Carcasa = me.role === 'student' ? StudentLayout : ProfesorLayout
+
+/* Drumul înapoi, chiar și când cel care a trimis aici a uitat să îl scrie.
+ *
+ * `?de_la=` există, dar dintre cele opt legături către profil îl puneau două,
+ * așa că butonul „Înapoi” lipsea de pe majoritatea drumurilor — inclusiv de pe
+ * cel din coada de cereri, unde tocmai el trebuie. Când parametrul nu e dat, se
+ * ia din `Referer`, dacă e o pagină a portalului: același lucru pe care l-ar fi
+ * scris apelantul, doar că nu mai depinde de el să și-l amintească.
+ *
+ * Tot prin `internalPath`, tot cu aceeași rezervă: un `Referer` este text
+ * controlat de client. Nu se acceptă întoarcerea la profilul curent — ar fi un
+ * buton care nu face nimic. */
 const deLa = Astro.url.searchParams.get('de_la')
-const inapoi = deLa ? internalPath(deLa, '') : ''
+const trimisDe = (() => {
+  if (deLa) return internalPath(deLa, '')
+  const referer = Astro.request.headers.get('referer')
+  if (!referer) return ''
+  try {
+    const adresa = new URL(referer)
+    if (adresa.origin !== Astro.url.origin) return ''
+    if (adresa.pathname === Astro.url.pathname) return ''
+    return internalPath(adresa.pathname + adresa.search, '')
+  } catch {
+    return ''
+  }
+})()
+const inapoi = trimisDe
+
+// Pagina depinde de antetul de la care a venit, deci intră în cheia de cache.
+Astro.response.headers.set('vary', 'referer')
 ---
 
 <Carcasa title={person.name} description={`Profilul ${person.name}`} lede={undefined}>
@@ -124,7 +153,9 @@ const inapoi = deLa ? internalPath(deLa, '') : ''
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
           <path d="M19 12H5M12 19l-7-7 7-7" />
         </svg>
-        Înapoi
+        {/* Butonul știe unde duce, deci o spune: „Înapoi” singur cere să ții minte
+            de unde ai venit, exact ce nu faci după trei profiluri deschise. */}
+        {numeleEcranului(inapoi) ? `Înapoi la ${numeleEcranului(inapoi)}` : 'Înapoi'}
       </a>
     )}
     <section class="panel">
