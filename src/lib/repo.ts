@@ -388,6 +388,12 @@ export interface Slot {
   invited_name: string | null
 }
 
+/**
+ * Intervalele coordonatorului, de la ieri înainte.
+ *
+ * Fereastra scurtă este intenționată pentru ecranul de program: acolo se lucrează
+ * cu ce urmează. Istoricul se cere separat, prin `teacherSlotHistory`.
+ */
 export function teacherSlots(teacherId: string) {
   return query<Slot>(
     `SELECT s.*,
@@ -400,6 +406,49 @@ export function teacherSlots(teacherId: string) {
       WHERE s.teacher_id = $1 AND s.starts_at > now() - interval '1 day'
       ORDER BY s.starts_at`,
     [teacherId],
+  )
+}
+
+/**
+ * Consultațiile care au avut loc.
+ *
+ * Nu existau nicăieri. `teacherSlots` aduce o zi înapoi, iar arhiva nu știe
+ * despre consultații deloc — deci „când ne-am văzut ultima dată cu studentul
+ * acesta” și „câte consultații am ținut semestrul acesta” nu se puteau afla din
+ * portal, deși portalul le programase pe toate.
+ *
+ * Se numără doar cele ținute: un interval anulat nu este o întâlnire, iar unul pe
+ * care nu l-a rezervat nimeni nu s-a întâmplat. Anul universitar este cel în care
+ * cade intervalul, ca istoricul să urmeze selectorul de an al arhivei.
+ */
+export function teacherSlotHistory(teacherId: string, yearId?: string) {
+  return query<{
+    id: string
+    starts_at: string
+    ends_at: string
+    mode: string
+    location: string | null
+    note: string | null
+    student_names: string[]
+    booked: number
+  }>(
+    `SELECT s.id, s.starts_at, s.ends_at, s.mode, s.location, s.note,
+            (SELECT count(*)::int FROM bookings b
+              WHERE b.slot_id = s.id AND b.status = 'booked') AS booked,
+            COALESCE((SELECT array_agg(u.name ORDER BY u.name)
+                        FROM bookings b JOIN users u ON u.id = b.student_id
+                       WHERE b.slot_id = s.id AND b.status = 'booked'), '{}') AS student_names
+       FROM consultation_slots s
+      WHERE s.teacher_id = $1
+        AND s.ends_at < now()
+        AND s.is_cancelled = false
+        AND EXISTS (SELECT 1 FROM bookings b WHERE b.slot_id = s.id AND b.status = 'booked')
+        AND ($2::uuid IS NULL OR EXISTS (
+              SELECT 1 FROM academic_years y
+               WHERE y.id = $2 AND s.starts_at::date BETWEEN y.starts_on AND y.ends_on))
+      ORDER BY s.starts_at DESC
+      LIMIT 200`,
+    [teacherId, yearId ?? null],
   )
 }
 

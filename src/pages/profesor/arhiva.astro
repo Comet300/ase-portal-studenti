@@ -6,7 +6,8 @@ import ProfesorLayout from '../../layouts/ProfesorLayout.astro'
 import { ROLE_LABELS } from '../../lib/auth'
 import { queryOne, query } from '../../lib/db'
 import { seatRequests } from '../../lib/lifecycle'
-import { STATUS_CLASS, STATUS_LABELS, formatDate, teacherSeats, teacherStats } from '../../lib/repo'
+import { STATUS_CLASS, STATUS_LABELS, formatDate, formatTime, teacherSeats, teacherSlotHistory, teacherStats } from '../../lib/repo'
+import { numar } from '../../lib/text'
 import { allYears, LEVEL_LABELS } from '../../lib/years'
 
 /**
@@ -26,11 +27,20 @@ const selectedYear = Astro.url.searchParams.get('an') ?? ''
 const year = years.find((y) => y.id === selectedYear) ?? years.find((y) => y.is_current) ?? years[0]
 const isCurrent = Boolean(year?.is_current)
 
-const [stats, seats, mySeatRequests] = await Promise.all([
+const [stats, seats, mySeatRequests, consultatii] = await Promise.all([
   teacherStats(u.id, year?.id),
   teacherSeats(u.id, year?.id),
   seatRequests({ teacherId: u.id }),
+  teacherSlotHistory(u.id, year?.id),
 ])
+
+/* Câte ore au însemnat, nu doar câte întâlniri: o consultație de o oră cu patru
+ * studenți este o oră de lucru, nu patru. */
+const oreConsultatii = consultatii.reduce(
+  (t, c) => t + (new Date(c.ends_at).getTime() - new Date(c.starts_at).getTime()) / 3_600_000,
+  0,
+)
+const studentiVazuti = new Set(consultatii.flatMap((c) => c.student_names)).size
 
 const topics = await queryOne<{ proposed: number; taken: number }>(
   `SELECT count(*)::int AS proposed,
@@ -301,6 +311,65 @@ const openSeatRequest = mySeatRequests.find((r) => r.status === 'pending')
                     </td>
                     <td class="muted">{formatDate(r.submitted_at)}</td>
                     <td class="muted">{formatDate(r.decided_at)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )
+      }
+    </section>
+
+    {/* -------------------------------------------------- consultații ținute
+
+        Nu existau nicăieri. Ecranul de program aduce o zi înapoi, iar arhiva nu
+        știa despre consultații deloc: „când ne-am văzut ultima dată cu studentul
+        acesta” și „câte consultații am ținut în sesiunea asta” nu se puteau afla
+        din portal, deși el le programase pe toate. */}
+    <section class="panel">
+      <div class="panel__header">
+        <h2 class="section-title">Consultații ținute</h2>
+        <span class="muted text-sm">
+          {numar(consultatii.length, 'consultație', 'consultații')}
+          {consultatii.length > 0 &&
+            ` · ${numar(oreConsultatii, 'oră', 'ore')} · ${numar(studentiVazuti, 'student', 'studenți')}`}
+          {' · '}{year?.label}
+        </span>
+      </div>
+      {
+        consultatii.length === 0 ? (
+          <div class="empty">
+            <p class="empty__title">Nicio consultație încheiată în {year?.label}</p>
+            <p class="empty__text">
+              {isCurrent
+                ? 'Apar aici pe măsură ce trec: doar intervalele la care s-a prezentat cineva, nu și cele anulate sau rămase libere.'
+                : 'În acest an universitar nu ai avut consultații rezervate prin portal.'}
+            </p>
+          </div>
+        ) : (
+          <div class="table-wrap" tabindex="0" role="region" aria-label="Consultațiile ținute">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th scope="col">Când</th>
+                  <th scope="col">Interval</th>
+                  <th scope="col">Cu cine</th>
+                  <th scope="col">Unde</th>
+                  <th scope="col">Subiect</th>
+                </tr>
+              </thead>
+              <tbody>
+                {consultatii.map((c) => (
+                  <tr>
+                    <td>{formatDate(c.starts_at)}</td>
+                    <td class="numeric muted">
+                      {formatTime(c.starts_at)}–{formatTime(c.ends_at)}
+                    </td>
+                    <td>{c.student_names.join(', ')}</td>
+                    <td class="muted">
+                      {c.mode === 'online' ? 'Online' : (c.location ?? 'Cabinet')}
+                    </td>
+                    <td class="muted">{c.note ?? '—'}</td>
                   </tr>
                 ))}
               </tbody>
