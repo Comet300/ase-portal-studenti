@@ -9,6 +9,8 @@
  * Formularul rămâne un formular adevărat: fără JavaScript se trimite normal.
  */
 
+import { prezenta } from '../lib/prezenta'
+
 const MAX = 15 * 1024 * 1024
 const APROAPE_DE_JOS = 200
 
@@ -598,7 +600,16 @@ export function porneste() {
           headers: { accept: 'application/json' },
         })
         if (!r.ok) return
-        const d = (await r.json()) as { total?: number }
+        const d = (await r.json()) as { total?: number; vazut?: string | null }
+
+        /* Prezența se împrospătează la fiecare tic, indiferent dacă a apărut vreun
+         * mesaj: „în portal acum” trebuie să înceteze să fie adevărat singur. */
+        const eticheta = document.querySelector<HTMLElement>('[data-prezenta]')
+        if (eticheta) {
+          const text = prezenta(d.vazut ?? null)
+          if (text) eticheta.textContent = text
+        }
+
         if (typeof d.total !== 'number' || d.total <= cunoscute) return
 
         cunoscute = d.total

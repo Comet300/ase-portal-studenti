@@ -1,5 +1,6 @@
 import { defineMiddleware } from 'astro:middleware'
 import { SESSION_COOKIE, getUserFromSession } from './lib/auth'
+import { atingePrezenta } from './lib/chat'
 import { sweepDeadlines } from './lib/lifecycle'
 
 /**
@@ -57,6 +58,24 @@ export const onRequest = defineMiddleware(async (context, next) => {
   void sweepDeadlines(process.env.APP_BASE_URL ?? context.url.origin)
 
   const path = context.url.pathname
+
+  /* Prezența.
+   *
+   * O pagină cerută este dovada că omul e în portal. Se notează doar pentru
+   * navigări — nu pentru fișiere, exporturi sau API, care pot fi cerute de un
+   * prefetch sau de un tab lăsat deschis — și se scrie cel mult o dată pe minut,
+   * prin condiția din UPDATE. Nu ține răspunsul în loc. */
+  if (
+    user &&
+    context.request.method === 'GET' &&
+    !path.startsWith('/api/') &&
+    !path.startsWith('/fisiere/') &&
+    !path.startsWith('/documente/') &&
+    !path.startsWith('/avatare/') &&
+    !path.includes('export')
+  ) {
+    void atingePrezenta(user.id)
+  }
 
   const needsLogin =
     REQUIRES_SESSION.some((p) => path === p || path.startsWith(p + '/')) ||

@@ -2,6 +2,7 @@
 import Avatar from './Avatar.astro'
 import type { Conversation, Message } from '../lib/chat'
 import { formatTime, monthLabel, shortMonth, timeAgo } from '../lib/repo'
+import { prezenta } from '../lib/prezenta'
 import { ACCEPT } from '../lib/files'
 
 /**
@@ -196,7 +197,13 @@ const INCEPUTURI = [
             <Avatar name={active.peer_name} src={active.peer_avatar} href={`/profil/${active.peer_id}`} />
             <span class="chat__peer">
               <strong>{active.peer_name}</strong>
-              {active.peer_detail && <small class="muted">{active.peer_detail}</small>}
+              {/* Un student trimite un capitol și nu are cum să știe dacă
+                  coordonatorul e în portal acum: fie mai scrie „ați văzut?”, fie
+                  așteaptă două zile degeaba. Se scrie gros, în trei trepte —
+                  minutajul exact al altcuiva ar fi supraveghere, nu ajutor. */}
+              <small class="muted" id="prezenta-peer" data-prezenta>
+                {prezenta(active.peer_seen) ?? active.peer_detail ?? ''}
+              </small>
             </span>
 
             {/* Contextul lucrării — titlu, termene, coordonator — este a treia

@@ -1,5 +1,5 @@
 import type { APIRoute } from 'astro'
-import { firRezumat, myConversation } from '../../lib/chat'
+import { atingePrezenta, firRezumat, myConversation } from '../../lib/chat'
 import { sessionExpired } from '../../lib/http'
 import { id as formId } from '../../lib/ids'
 
@@ -27,6 +27,11 @@ export const GET: APIRoute = async ({ url, locals }) => {
   // trei lucruri — la fiecare cincisprezece secunde, pentru fiecare fir deschis.
   const rezumat = await firRezumat(u.id, conversationId)
 
+  /* Firul deschis este și dovada că cel care îl citește e în portal. Se notează
+   * aici, nu în middleware, pentru că aici se știe deja că e o pagină vie și nu
+   * un prefetch sau o descărcare. */
+  void atingePrezenta(u.id)
+
   return new Response(
     JSON.stringify({
       total: rezumat?.total ?? 0,
@@ -34,6 +39,8 @@ export const GET: APIRoute = async ({ url, locals }) => {
       // Câte sunt de la interlocutor și încă necitite: doar acelea justifică o
       // întrerupere.
       noi: rezumat?.noi ?? 0,
+      // Momentul, nu un text: pagina îl scrie în cuvinte, gros.
+      vazut: rezumat?.peer_seen ?? null,
     }),
     { headers: json },
   )

@@ -16,6 +16,8 @@ export interface Conversation {
   peer_id: string
   peer_name: string
   peer_detail: string | null
+  /** Când a fost celălalt ultima dată în portal. Doar între cei doi. */
+  peer_seen: string | null
   peer_avatar: string | null
   last_message: string | null
   unread: number
@@ -81,6 +83,7 @@ export function myConversations(userId: string, asStudent: boolean) {
             peer.id   AS peer_id,
             peer.name AS peer_name,
             COALESCE(peer.academic_title, peer.student_number) AS peer_detail,
+            peer.last_seen_at::text AS peer_seen,
             peer.avatar_path AS peer_avatar,
             /* Un mesaj care e doar un fișier nu are text, deci previzualizarea
                îl numește. Înainte se scria literal „(fișier atașat)” în corpul
@@ -118,6 +121,7 @@ export function myConversation(userId: string, conversationId: string) {
             peer.id   AS peer_id,
             peer.name AS peer_name,
             COALESCE(peer.academic_title, peer.student_number) AS peer_detail,
+            peer.last_seen_at::text AS peer_seen,
             peer.avatar_path AS peer_avatar,
             NULL::text AS last_message,
             0 AS unread,
@@ -193,15 +197,44 @@ export async function conversationMessages(
  * firul se aduce paginat, ar fi și greșit: `total` ar fi fost mărimea ferestrei.
  */
 export function firRezumat(userId: string, conversationId: string) {
-  return queryOne<{ total: number; ultim: string | null; noi: number }>(
+  return queryOne<{ total: number; ultim: string | null; noi: number; peer_seen: string | null }>(
     `SELECT count(*)::int AS total,
             max(m.created_at)::text AS ultim,
-            count(*) FILTER (WHERE m.sender_id <> $1 AND m.read_at IS NULL)::int AS noi
+            count(*) FILTER (WHERE m.sender_id <> $1 AND m.read_at IS NULL)::int AS noi,
+            /* Prezența celuilalt, luată din aceeași interogare pe care firul
+               deschis o face oricum la fiecare douăzeci de secunde: o cerere în
+               plus doar pentru asta ar fi fost o cerere degeaba. Se vede doar
+               între cei doi — apartenența e verificată chiar aici. */
+            (SELECT p.last_seen_at::text FROM users p
+              WHERE p.id = CASE WHEN c.student_id = $1 THEN c.teacher_id ELSE c.student_id END)
+              AS peer_seen
        FROM messages m
        JOIN conversations c ON c.id = m.conversation_id
-      WHERE m.conversation_id = $2 AND (c.student_id = $1 OR c.teacher_id = $1)`,
+      WHERE m.conversation_id = $2 AND (c.student_id = $1 OR c.teacher_id = $1)
+      GROUP BY c.student_id, c.teacher_id`,
     [userId, conversationId],
   )
+}
+
+/**
+ * „Am mai fost pe aici acum un minut.”
+ *
+ * Se scrie cel mult o dată pe minut, printr-un `WHERE` care compară ce e deja în
+ * rând: altfel fiecare cerere a fiecărui utilizator ar fi un UPDATE. Nu aruncă —
+ * un portal nu are voie să se oprească pentru că nu a putut nota o prezență.
+ */
+export async function atingePrezenta(userId: string): Promise<void> {
+  try {
+    await execute(
+      `UPDATE users
+          SET last_seen_at = now()
+        WHERE id = $1
+          AND (last_seen_at IS NULL OR last_seen_at < now() - interval '1 minute')`,
+      [userId],
+    )
+  } catch (err) {
+    console.error('[prezență] nu a putut fi notată', err)
+  }
 }
 
 /** Marks incoming messages as read — never the user's own. */
