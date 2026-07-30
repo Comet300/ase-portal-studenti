@@ -64,7 +64,7 @@ function numeSigur(nume: string, rezerva: string): string {
  * student îl trimite de două ori: într-o arhivă ar fi două intrări cu un nume,
  * iar dezarhivarea ar păstra una. Al doilea primește un indice.
  */
-export function numeUnice(nume: string[]): string[] {
+function numeUnice(nume: string[]): string[] {
   const vazute = new Map<string, number>()
   return nume.map((n) => {
     const cheie = n.toLowerCase()
