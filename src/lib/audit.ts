@@ -18,6 +18,13 @@ export type AccesTip =
   | 'descarca_arhiva'
   | 'descarca_document'
   | 'export_date_proprii'
+  /* Schimbări asupra identității altcuiva: cine a fost adăugat, cui i s-a închis
+     accesul, cui i s-a schimbat adresa. Sunt exact categoria pentru care există
+     jurnalul — mai mult decât citirile, acestea schimbă cine poate intra. */
+  | 'adauga_cont'
+  | 'dezactiveaza_cont'
+  | 'reactiveaza_cont'
+  | 'schimba_email'
 
 export async function noteazaAcces(e: {
   userId: string

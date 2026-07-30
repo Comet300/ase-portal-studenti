@@ -1,0 +1,533 @@
+---
+import Avatar from '../../components/Avatar.astro'
+import Metrica from '../../components/Metrica.astro'
+import ProfesorLayout from '../../layouts/ProfesorLayout.astro'
+import Taburi from '../../components/Taburi.astro'
+import { query } from '../../lib/db'
+import { COLOANE_CONTURI } from '../../lib/conturi'
+import { formatDate } from '../../lib/repo'
+import { numar } from '../../lib/text'
+import { LANGUAGE_LABELS, LEVEL_LABELS, currentYear, programmes } from '../../lib/years'
+
+/**
+ * Conturile portalului.
+ *
+ * Ecranul care lipsea. Portalul putea muta un student între programe, îi putea
+ * schimba grupa și anul — dar nu îl putea aduce în ființă: singurul
+ * `INSERT INTO users` din tot proiectul era într-un script de seed. O promoție se
+ * popula rulând acel script pe producție, iar cine avea o literă greșită în adresă
+ * rămânea închis pe dinafară pentru totdeauna.
+ *
+ * Aici se adaugă unul câte unul sau cu lista lipită din foaia secretariatului, se
+ * corectează adresele, și se închide accesul celor care pleacă — fără să se
+ * șteargă nimic din ce au făcut, fiindcă asta este un registru academic.
+ */
+
+const SECTIUNI = ['toti', 'adauga'] as const
+const cerut = Astro.url.searchParams.get('sectiune') ?? ''
+const sectiune = (SECTIUNI as readonly string[]).includes(cerut) ? cerut : 'toti'
+
+const cauta = (Astro.url.searchParams.get('q') ?? '').trim().toLowerCase()
+const rolFiltru = Astro.url.searchParams.get('rol') ?? ''
+const araraInactivi = Astro.url.searchParams.get('inactivi') === '1'
+
+const conturi = await query<{
+  id: string
+  name: string
+  email: string
+  role: 'student' | 'teacher' | 'head'
+  student_number: string | null
+  specialization: string | null
+  study_year: number | null
+  study_group: string | null
+  avatar_path: string | null
+  is_active: boolean
+  deactivated_at: string | null
+  created_at: string
+  coordonari: number
+}>(
+  `SELECT u.id, u.name, u.email, u.role, u.student_number, u.specialization,
+          u.study_year, u.study_group, u.avatar_path, u.is_active,
+          u.deactivated_at::text, u.created_at::text,
+          (SELECT count(*)::int FROM requests r
+            WHERE (r.student_id = u.id OR r.teacher_id = u.id) AND r.status = 'approved') AS coordonari
+     FROM users u
+    ORDER BY u.is_active DESC, u.role, u.name`,
+)
+
+const vizibili = conturi.filter((o) => {
+  if (!araraInactivi && !o.is_active) return false
+  if (rolFiltru && o.role !== rolFiltru) return false
+  if (cauta) {
+    const tot = `${o.name} ${o.email} ${o.student_number ?? ''} ${o.specialization ?? ''}`
+    if (!tot.toLowerCase().includes(cauta)) return false
+  }
+  return true
+})
+
+const activi = conturi.filter((o) => o.is_active)
+const total = {
+  studenti: activi.filter((o) => o.role === 'student').length,
+  cadre: activi.filter((o) => o.role !== 'student').length,
+  inchisi: conturi.length - activi.length,
+  faraCoordonare: activi.filter((o) => o.role === 'student' && o.coordonari === 0).length,
+}
+
+const an = await currentYear()
+const programeleAnului = an ? (await programmes(an.id)).filter((p) => p.is_active) : []
+
+const ROL_TEXT: Record<string, string> = {
+  student: 'Student',
+  teacher: 'Cadru didactic',
+  head: 'Director de departament',
+}
+
+const inapoi = Astro.url.pathname + Astro.url.search
+
+const sectiuni = [
+  { cheie: 'toti', text: 'Toate conturile', contor: vizibili.length },
+  { cheie: 'adauga', text: 'Adaugă', contor: null },
+]
+---
+
+<ProfesorLayout
+  title="Conturi"
+  lede="Cine are acces la portal și cu ce adresă. Aici se deschid conturi pentru o promoție nouă, se corectează adresele greșite și se închide accesul celor care pleacă."
+  active="conturi"
+>
+  <Taburi
+    taburi={sectiuni.map((s) => ({ ...s, href: `/profesor/conturi?sectiune=${s.cheie}` }))}
+    activ={sectiune}
+    eticheta="Secțiuni"
+  />
+
+  {
+    sectiune === 'toti' && (
+      <div class="stack stack--loose">
+        <div class="grid-auto">
+          <Metrica valoare={total.studenti} eticheta="studenți cu acces" />
+          <Metrica valoare={total.cadre} eticheta="cadre didactice" />
+          <Metrica
+            valoare={total.faraCoordonare}
+            eticheta="studenți fără coordonare"
+            alerta={total.faraCoordonare > 0}
+          />
+          <Metrica valoare={total.inchisi} eticheta="conturi închise" />
+        </div>
+
+        <form method="GET" class="panel">
+          <input type="hidden" name="sectiune" value="toti" />
+          <div class="panel__body row row--wrap" style="gap:var(--s-3);align-items:flex-end">
+            <div class="field" style="flex:2;min-width:220px">
+              <label class="label" for="q">Caută</label>
+              <input class="input" id="q" name="q" type="search" value={cauta}
+                placeholder="Nume, adresă sau număr matricol…" />
+            </div>
+            <div class="field" style="min-width:180px">
+              <label class="label" for="rol">Rol</label>
+              <select class="select" id="rol" name="rol">
+                <option value="">Toate rolurile</option>
+                {Object.entries(ROL_TEXT).map(([v, t]) => (
+                  <option value={v} selected={rolFiltru === v}>{t}</option>
+                ))}
+              </select>
+            </div>
+            <label class="doar-libere">
+              <input type="checkbox" name="inactivi" value="1" checked={araraInactivi} />
+              <span>Arată și conturile închise</span>
+            </label>
+            <button class="btn btn--secondary" type="submit">Filtrează</button>
+          </div>
+        </form>
+
+        <section class="panel">
+          <div class="panel__header">
+            <h2 class="section-title">Conturi</h2>
+            <span class="muted text-sm">{numar(vizibili.length, 'persoană', 'persoane')}</span>
+          </div>
+
+          {vizibili.length === 0 ? (
+            <div class="empty">
+              <p class="empty__title">Niciun cont pentru filtrele alese</p>
+              <p class="empty__text">
+                Schimbă rolul sau golește căutarea. Dacă portalul e gol, adaugă prima listă din
+                secțiunea „Adaugă”.
+              </p>
+              <a class="btn btn--primary btn--sm" href="/profesor/conturi?sectiune=adauga">
+                Deschide primele conturi
+              </a>
+            </div>
+          ) : (
+            <div class="table-wrap" tabindex="0" role="region" aria-label="Conturile portalului">
+              <table class="table">
+                <thead>
+                  <tr>
+                    <th scope="col">Persoană</th>
+                    <th scope="col">Adresă</th>
+                    <th scope="col">Rol</th>
+                    <th scope="col">Grupă</th>
+                    <th scope="col">Stare</th>
+                    <th scope="col"><span class="visually-hidden">Acțiuni</span></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {vizibili.map((o) => (
+                    <>
+                    <tr id={`cont-${o.id}`} class:list={{ 'is-inchis': !o.is_active }}>
+                      <td>
+                        <div class="row" style="gap:var(--s-3)">
+                          <Avatar name={o.name} src={o.avatar_path} size="xs" href={`/profil/${o.id}`} />
+                          <div class="stack stack--tight" style="gap:0">
+                            <strong>{o.name}</strong>
+                            {o.student_number && <span class="muted text-xs">{o.student_number}</span>}
+                          </div>
+                        </div>
+                      </td>
+                      <td class="muted celula-email">{o.email}</td>
+                      <td class="muted">{ROL_TEXT[o.role]}</td>
+                      <td class="muted text-xs">
+                        {o.role === 'student'
+                          ? [o.specialization, o.study_group, o.study_year ? `anul ${o.study_year}` : null]
+                              .filter(Boolean).join(' · ') || '—'
+                          : '—'}
+                      </td>
+                      <td>
+                        {o.is_active ? (
+                          <span class="badge badge--aprobata">Acces</span>
+                        ) : (
+                          <span class="badge badge--neutru" title={`Închis ${formatDate(o.deactivated_at)}`}>
+                            Închis
+                          </span>
+                        )}
+                      </td>
+                      <td style="text-align:right">
+                        <button class="btn btn--ghost btn--sm" type="button"
+                          data-editeaza={o.id} aria-expanded="false">
+                          Editează
+                        </button>
+                      </td>
+                    </tr>
+
+                    {/* Rândul de editare, ca la „Studenții facultății”: pe toată
+                        lățimea, deschis doar când e nevoie. Adresa și accesul stau
+                        împreună, fiindcă amândouă hotărăsc dacă omul poate intra. */}
+                    <tr class="editor-rand" id={`editor-${o.id}`} hidden>
+                      <td colspan="6">
+                        <div class="editor">
+                          <form method="POST" action="/api/conturi" class="editor__adresa">
+                            <input type="hidden" name="actiune" value="schimba_email" />
+                            <input type="hidden" name="utilizator_id" value={o.id} />
+                            <input type="hidden" name="redirect" value={`${inapoi}#cont-${o.id}`} />
+                            <div class="field" style="flex:1;min-width:240px">
+                              <label class="label" for={`email-${o.id}`}>Adresă de email</label>
+                              <input class="input" id={`email-${o.id}`} name="email" type="email"
+                                value={o.email} required />
+                              <span class="hint">
+                                Autentificarea trece exclusiv prin ea. Schimbarea invalidează
+                                linkurile de acces trimise până acum.
+                              </span>
+                            </div>
+                            <button class="btn btn--primary btn--sm" type="submit">Salvează adresa</button>
+                          </form>
+
+                          <form method="POST" action="/api/conturi" class="editor__acces">
+                            <input type="hidden" name="actiune"
+                              value={o.is_active ? 'dezactiveaza' : 'reactiveaza'} />
+                            <input type="hidden" name="utilizator_id" value={o.id} />
+                            <input type="hidden" name="redirect" value={`${inapoi}#cont-${o.id}`} />
+                            <p class="hint" style="margin:0">
+                              {o.is_active
+                                ? `Închiderea accesului nu șterge nimic: cele ${o.coordonari} coordonări și tot ce a scris rămân în arhivă.`
+                                : 'Redeschiderea accesului îi permite din nou să ceară un link de intrare.'}
+                            </p>
+                            <button
+                              class:list={['btn', 'btn--sm', o.is_active ? 'btn--danger' : 'btn--secondary']}
+                              type="submit"
+                            >
+                              {o.is_active ? 'Închide accesul' : 'Redeschide accesul'}
+                            </button>
+                          </form>
+                        </div>
+                      </td>
+                    </tr>
+                    </>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+      </div>
+    )
+  }
+
+  {
+    sectiune === 'adauga' && (
+      <div class="stack stack--loose">
+        <section class="panel">
+          <div class="panel__header">
+            <h2 class="section-title">Un singur cont</h2>
+          </div>
+          <form method="POST" action="/api/conturi" class="panel__body stack">
+            <input type="hidden" name="actiune" value="adauga" />
+            <input type="hidden" name="redirect" value="/profesor/conturi?sectiune=toti" />
+
+            <div class="row row--wrap" style="gap:var(--s-3)">
+              <div class="field" style="flex:2;min-width:220px">
+                <label class="label" for="nume">Nume complet</label>
+                <input class="input" id="nume" name="nume" required placeholder="Ex: Ioana Dumitru" />
+              </div>
+              <div class="field" style="flex:2;min-width:240px">
+                <label class="label" for="email">Adresă de email</label>
+                <input class="input" id="email" name="email" type="email" required
+                  placeholder="ioana.dumitru@stud.ase.ro" />
+              </div>
+              <div class="field" style="min-width:190px">
+                <label class="label" for="rol">Rol</label>
+                <select class="select" id="rol" name="rol">
+                  <option value="student">Student</option>
+                  <option value="teacher">Cadru didactic</option>
+                  <option value="head">Director de departament</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="row row--wrap" style="gap:var(--s-3)">
+              <div class="field" style="min-width:180px">
+                <label class="label" for="numar_matricol">Număr matricol</label>
+                <input class="input" id="numar_matricol" name="numar_matricol" placeholder="MK-2025-0142" />
+                <span class="hint">Doar pentru studenți.</span>
+              </div>
+              <div class="field" style="flex:1;min-width:200px">
+                <label class="label" for="program">Program de studiu</label>
+                <select class="select" id="program" name="program">
+                  <option value="">—</option>
+                  {programeleAnului.map((p) => (
+                    <option value={p.name}>
+                      {LEVEL_LABELS[p.level]} · {p.name} · {LANGUAGE_LABELS[p.language]}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div class="field" style="min-width:110px">
+                <label class="label" for="an">An</label>
+                <input class="input input--num" id="an" name="an" type="number" min="1" max="6" />
+              </div>
+              <div class="field" style="min-width:140px">
+                <label class="label" for="grupa">Grupa</label>
+                <input class="input" id="grupa" name="grupa" placeholder="RO-1503" />
+              </div>
+            </div>
+
+            <div class="row row--end">
+              <button class="btn btn--primary" type="submit">Deschide contul</button>
+            </div>
+          </form>
+        </section>
+
+        <section class="panel">
+          <div class="panel__header">
+            <h2 class="section-title">O promoție întreagă</h2>
+          </div>
+          <form method="POST" action="/api/conturi" class="panel__body stack">
+            <input type="hidden" name="actiune" value="importa" />
+            <input type="hidden" name="redirect" value="/profesor/conturi?sectiune=toti" />
+
+            <p class="hint">
+              Se lipesc coloanele din fișierul secretariatului. Un rând pe persoană, câmpuri
+              separate prin <strong>;</strong> — sau prin tab, dacă lipești direct din Excel.
+              Numele și adresa sunt obligatorii; restul se completează dacă există.
+              Cine e deja în portal este sărit, deci o listă retrimisă nu dublează pe nimeni.
+            </p>
+
+            <div class="field">
+              <label class="label" for="randuri">Rânduri</label>
+              <textarea class="textarea" id="randuri" name="randuri" rows="6" required spellcheck="false"
+                placeholder={`${COLOANE_CONTURI.join(';')}
+Ioana Dumitru;ioana.dumitru@stud.ase.ro;student;MK-2025-0142;Marketing;3;RO-1503
+Prof. univ. dr. Elena Radu;elena.radu@ase.ro;cadru didactic;;;;`}
+                data-autogrow />
+            </div>
+
+            <div id="previzualizare" hidden>
+              <div class="row row--between row--wrap" style="gap:var(--s-3);align-items:baseline">
+                <h3 class="section-title" style="font-size:var(--t-md)">Ce conturi se vor deschide</h3>
+                <span class="muted text-sm" id="previzualizare-sumar"></span>
+              </div>
+              <div class="table-wrap" tabindex="0" role="region" aria-label="Rândurile citite">
+                <table class="table">
+                  <thead><tr id="previzualizare-cap"></tr></thead>
+                  <tbody id="previzualizare-corp"></tbody>
+                </table>
+              </div>
+              <div id="respinse" hidden>
+                <p class="respinse__titlu">Rânduri care nu se pot citi</p>
+                <ul class="respinse__lista" id="respinse-lista"></ul>
+              </div>
+            </div>
+
+            <div class="row row--end" style="gap:var(--s-2)">
+              <button class="btn btn--secondary" type="button" id="verifica-randuri">
+                Verifică rândurile
+              </button>
+              <button class="btn btn--primary" type="submit">Deschide conturile</button>
+            </div>
+          </form>
+        </section>
+      </div>
+    )
+  }
+</ProfesorLayout>
+
+<script>
+  import { COLOANE_CONTURI, citesteRanduriConturi } from '../../lib/conturi'
+
+  /* --- rândul de editare, unul singur odată -------------------------------- */
+  document.querySelectorAll<HTMLButtonElement>('[data-editeaza]').forEach((b) => {
+    b.addEventListener('click', () => {
+      const rand = document.getElementById(`editor-${b.dataset.editeaza}`)
+      if (!rand) return
+      const deschis = !rand.hidden
+      document.querySelectorAll<HTMLElement>('.editor-rand').forEach((r) => (r.hidden = true))
+      document.querySelectorAll<HTMLButtonElement>('[data-editeaza]')
+        .forEach((x) => x.setAttribute('aria-expanded', 'false'))
+      if (deschis) return
+      rand.hidden = false
+      b.setAttribute('aria-expanded', 'true')
+      rand.querySelector<HTMLInputElement>('input[name="email"]')?.focus()
+    })
+  })
+
+  /* --- previzualizarea listei lipite ---------------------------------------
+   *
+   * Aceeași funcție care citește rândurile în rută le citește și aici, deci
+   * tabelul arătat și cel scris nu pot să difere. O listă de la secretariat are
+   * întotdeauna două rânduri stricate, iar ele trebuie văzute înainte de a crea
+   * două sute de conturi. */
+  const caseta = document.getElementById('randuri') as HTMLTextAreaElement | null
+  const zona = document.getElementById('previzualizare')
+  const cap = document.getElementById('previzualizare-cap')
+  const corp = document.getElementById('previzualizare-corp')
+  const sumar = document.getElementById('previzualizare-sumar')
+  const zonaRespinse = document.getElementById('respinse')
+  const listaRespinse = document.getElementById('respinse-lista')
+
+  if (caseta && zona && cap && corp && sumar && zonaRespinse && listaRespinse) {
+    const deseneaza = () => {
+      const { bune, respinse } = citesteRanduriConturi(caseta.value)
+      const celule = caseta.value
+        .split('\n').map((l) => l.trim()).filter(Boolean)
+        .map((l) => l.split(l.includes('\t') && !l.includes(';') ? '\t' : ';').map((c) => c.trim()))
+
+      zona.hidden = celule.length === 0
+
+      cap.textContent = ''
+      for (const nume of COLOANE_CONTURI) {
+        const th = document.createElement('th')
+        th.scope = 'col'
+        th.textContent = nume
+        cap.appendChild(th)
+      }
+
+      corp.textContent = ''
+      celule.forEach((rand, i) => {
+        const tr = document.createElement('tr')
+        if (respinse.find((r) => r.numar === i + 1)) tr.className = 'rand-respins'
+        COLOANE_CONTURI.forEach((_, col) => {
+          const td = document.createElement('td')
+          td.textContent = rand[col] ?? ''
+          tr.appendChild(td)
+        })
+        corp.appendChild(tr)
+      })
+
+      const studenti = bune.filter((b) => b.role === 'student').length
+      sumar.textContent =
+        `${bune.length} de adăugat` +
+        (studenti ? ` · ${studenti} studenți` : '') +
+        (respinse.length ? ` · ${respinse.length} de corectat` : '')
+
+      zonaRespinse.hidden = respinse.length === 0
+      listaRespinse.textContent = ''
+      for (const r of respinse) {
+        const li = document.createElement('li')
+        li.textContent = `Rândul ${r.numar}: ${r.motiv}`
+        listaRespinse.appendChild(li)
+      }
+    }
+
+    document.getElementById('verifica-randuri')?.addEventListener('click', deseneaza)
+    caseta.addEventListener('paste', () => setTimeout(deseneaza, 0))
+  }
+</script>
+
+<style>
+  /* Un cont închis rămâne lizibil — este parte din registru — dar nu mai cere
+     atenție ca unul activ. */
+  .is-inchis td {
+    color: var(--ink-muted);
+  }
+  .is-inchis strong {
+    font-weight: 500;
+  }
+
+  .celula-email {
+    font-size: var(--t-xs);
+    word-break: break-all;
+  }
+
+  .editor-rand td {
+    background: var(--surface-sunken);
+  }
+
+  /* Adresa și accesul, unul lângă altul: amândouă hotărăsc dacă omul poate intra. */
+  .editor {
+    display: grid;
+    grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+    gap: var(--s-5);
+    padding: var(--s-4) 0;
+    align-items: start;
+  }
+  .editor__adresa,
+  .editor__acces {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: var(--s-3);
+  }
+  .editor__acces {
+    flex-direction: column;
+    align-items: flex-start;
+    border-left: 1px solid var(--border);
+    padding-left: var(--s-5);
+  }
+
+  .respinse__titlu {
+    margin-top: var(--s-3);
+    font-size: var(--t-sm);
+    font-weight: 600;
+    color: var(--warn);
+  }
+  .respinse__lista {
+    margin: var(--s-2) 0 0;
+    padding-left: var(--s-5);
+    font-size: var(--t-xs);
+    color: var(--ink-soft);
+  }
+  .rand-respins td {
+    background: var(--warn-tint);
+  }
+
+  @media (max-width: 900px) {
+    .editor {
+      grid-template-columns: minmax(0, 1fr);
+      gap: var(--s-4);
+    }
+    .editor__acces {
+      border-left: 0;
+      padding-left: 0;
+      border-top: 1px solid var(--border);
+      padding-top: var(--s-4);
+    }
+  }
+</style>

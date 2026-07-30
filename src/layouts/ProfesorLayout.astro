@@ -51,6 +51,9 @@ const grupuri = [
       ...(u.role === 'head'
         ? [{ href: '/profesor/departament', cheie: 'departament', text: ECRANE['/profesor/departament'], icon: 'chart' }]
         : []),
+      ...(u.role === 'head'
+        ? [{ href: '/profesor/conturi', cheie: 'conturi', text: ECRANE['/profesor/conturi'], icon: 'users' }]
+        : []),
     ],
   },
   ...(u.role === 'head'

@@ -18,7 +18,7 @@ const REQUIRES_SESSION = [
   '/profil',
 ]
 const TEACHER_AREA = '/profesor'
-const HEAD_ONLY = ['/profesor/departament', '/profesor/calendar', '/profesor/an-universitar']
+const HEAD_ONLY = ['/profesor/departament', '/profesor/calendar', '/profesor/an-universitar', '/profesor/conturi']
 
 const UNSAFE = new Set(['POST', 'PUT', 'PATCH', 'DELETE'])
 

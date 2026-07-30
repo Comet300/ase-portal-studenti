@@ -28,6 +28,7 @@ export const ECRANE: Record<string, string> = {
   '/profesor/facultate': 'Studenții facultății',
   '/profesor/arhiva': 'Arhiva mea',
   '/profesor/departament': 'Departament',
+  '/profesor/conturi': 'Conturi',
   '/profesor/calendar': 'Calendarul sesiunii',
   '/profesor/an-universitar': 'An universitar',
 }

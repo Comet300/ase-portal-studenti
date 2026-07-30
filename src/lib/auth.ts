@@ -72,7 +72,7 @@ export async function consumeMagicLink(
   if (!row) return null
 
   const user = await queryOne<User>(
-    `SELECT ${USER_FIELDS} FROM users WHERE lower(email) = lower($1)`,
+    `SELECT ${USER_FIELDS} FROM users WHERE lower(email) = lower($1) AND is_active`,
     [row.email],
   )
   if (!user) return null
@@ -96,7 +96,7 @@ export function getUserFromSession(sessionId: string | undefined): Promise<User 
     `SELECT ${USER_FIELDS.split(',').map((c) => `u.${c.trim()}`).join(', ')}
        FROM sessions s
        JOIN users u ON u.id = s.user_id
-      WHERE s.id = $1 AND s.expires_at > now()`,
+      WHERE s.id = $1 AND s.expires_at > now() AND u.is_active`,
     [sessionId],
   )
 }
@@ -106,10 +106,19 @@ export async function destroySession(sessionId: string | undefined): Promise<voi
   await execute('DELETE FROM sessions WHERE id = $1', [sessionId])
 }
 
+/**
+ * Contul după adresă — doar dacă mai e deschis.
+ *
+ * Un cont dezactivat nu primește link de acces, iar sesiunile lui nu mai
+ * validează (vezi `getUserFromSession`). Răspunsul rutei de autentificare rămâne
+ * identic pentru o adresă necunoscută și pentru una închisă: altfel formularul ar
+ * spune cine a fost cândva în portal.
+ */
 export function findUserByEmail(email: string): Promise<User | null> {
-  return queryOne<User>(`SELECT ${USER_FIELDS} FROM users WHERE lower(email) = lower($1)`, [
-    email.trim(),
-  ])
+  return queryOne<User>(
+    `SELECT ${USER_FIELDS} FROM users WHERE lower(email) = lower($1) AND is_active`,
+    [email.trim()],
+  )
 }
 
 export interface DemoAccount extends User {
