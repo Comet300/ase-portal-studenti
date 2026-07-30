@@ -1,7 +1,7 @@
 import type { APIRoute } from 'astro'
 import { isDepartmentHead } from '../../lib/auth'
-import { execute, queryOne } from '../../lib/db'
-import { deadEnd, redirectWithNotice } from '../../lib/http'
+import { execute, query, queryOne } from '../../lib/db'
+import { deadEnd, internalPath, redirectWithNotice } from '../../lib/http'
 import { id as formId } from '../../lib/ids'
 
 /**
@@ -22,18 +22,37 @@ export const POST: APIRoute = async ({ request, locals }) => {
   }
 
   const form = await request.formData()
-  const studentId = formId(form.get('student_id'))
   const programmeId = formId(form.get('program_id'))
   const anBrut = form.get('an_studiu')
   const studyGroup = String(form.get('grupa') ?? '').trim()
 
-  const back = (message: string, isError = false) => redirectWithNotice(PAGE, message, isError)
+  /* Unul sau mai mulți.
+   *
+   * Un an întreg se corectează după listele de la secretariat: treizeci de
+   * studenți din aceeași grupă, aceeași mutare de treizeci de ori. `getAll`, nu
+   * `get`: cu bifele din tabel vin mai multe câmpuri cu același nume, iar `get`
+   * ar întoarce doar primul. */
+  const studentIds = [...form.getAll('student_id'), ...form.getAll('studenti')]
+    .map((v) => formId(v))
+    .filter((v): v is string => v !== null)
 
-  const student = await queryOne<{ name: string; programme_id: string | null }>(
-    `SELECT name, programme_id FROM users WHERE id = $1 AND role = 'student'`,
-    [studentId],
+  /* Filtrele și locul din pagină se păstrează.
+   *
+   * Se întorcea la `/profesor/facultate` curat: după fiecare salvare, directorul
+   * care lucra pe „master, fără cerere depusă” primea din nou toată facultatea și
+   * capul listei. Adresa vine din pagină și trece prin `internalPath`, ca un
+   * parametru scris de mână să nu poată trimite pe nimeni în altă parte. */
+  const inapoi = internalPath(String(form.get('redirect') ?? ''), PAGE)
+
+  const back = (message: string, isError = false) => redirectWithNotice(inapoi, message, isError)
+
+  if (studentIds.length === 0) return back('Niciun student selectat.', true)
+
+  const studenti = await query<{ id: string; name: string; programme_id: string | null }>(
+    `SELECT id, name, programme_id FROM users WHERE id = ANY($1::uuid[]) AND role = 'student'`,
+    [studentIds],
   )
-  if (!student) return back('Studentul nu a fost găsit.', true)
+  if (studenti.length === 0) return back('Studentul nu a fost găsit.', true)
 
   // A programme from another academic year would put the student in a cohort
   // that is not running, so the lookup is scoped to the current one.
@@ -64,8 +83,10 @@ export const POST: APIRoute = async ({ request, locals }) => {
   }
 
   // Ce s-a schimbat de fapt, ca mesajul să nu anunțe o mutare care nu a avut loc.
-  const aMutat = student.programme_id !== programme.id
+  const mutati = studenti.filter((s) => s.programme_id !== programme.id).length
 
+  /* O singură instrucțiune pentru toți: treizeci de UPDATE-uri într-o buclă ar
+   * lăsa jumătatea dintâi mutată și restul nu, dacă a doua jumătate eșuează. */
   await execute(
     `UPDATE users
         SET programme_id   = $2,
@@ -73,17 +94,25 @@ export const POST: APIRoute = async ({ request, locals }) => {
             specialization = $4,
             study_language = $5,
             study_year     = COALESCE($6, study_year),
-            study_group    = NULLIF($7, '')
-      WHERE id = $1 AND role = 'student'`,
-    [studentId, programme.id, programme.level, programme.name, programme.language, year, studyGroup],
+            study_group    = COALESCE(NULLIF($7, ''), study_group)
+      WHERE id = ANY($1::uuid[]) AND role = 'student'`,
+    [studenti.map((s) => s.id), programme.id, programme.level, programme.name, programme.language, year, studyGroup],
   )
 
   /* Mesajul spunea „a fost mutat la X” la fiecare salvare, chiar când programul
    * nu se schimbase și se corectase doar grupa — și punea participiul la
    * masculin pentru oricine. Formularea neutră evită și una, și alta. */
+  if (studenti.length === 1) {
+    return back(
+      mutati === 1
+        ? `${studenti[0].name}: program schimbat în ${programme.name}.`
+        : `Datele lui ${studenti[0].name} au fost salvate.`,
+    )
+  }
+
   return back(
-    aMutat
-      ? `${student.name}: program schimbat în ${programme.name}.`
-      : `Datele lui ${student.name} au fost salvate.`,
+    mutati > 0
+      ? `${studenti.length} studenți salvați, dintre care ${mutati} mutați la ${programme.name}.`
+      : `${studenti.length} studenți salvați.`,
   )
 }

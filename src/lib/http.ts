@@ -34,13 +34,21 @@ export function redirect(path: string, status: 302 | 303 = 303): Response {
   return new Response(null, { status, headers: { location: internalPath(path) } })
 }
 
-/** Redirect back to a path, carrying a Romanian toast message. */
+/**
+ * Redirect back to a path, carrying a Romanian toast message.
+ *
+ * Fragmentul se desprinde înainte de a atinge `URLSearchParams` și se lipește la
+ * urmă. Altfel `#student-<id>` ajungea *în* ultimul parametru și era codat ca
+ * `%23student-…`: adresa rămânea valabilă, dar ancora nu mai exista, deci
+ * salvarea nu se mai întorcea la rândul pe care lucrai.
+ */
 export function redirectWithNotice(path: string, message: string, isError = false): Response {
-  const [base, existing] = path.split('?')
+  const [faraFragment, fragment] = path.split('#')
+  const [base, existing] = faraFragment.split('?')
   const params = new URLSearchParams(existing ?? '')
   params.set('notificare', message)
   if (isError) params.set('tip', 'error')
-  return redirect(`${base}?${params.toString()}`)
+  return redirect(`${base}?${params.toString()}${fragment ? `#${fragment}` : ''}`)
 }
 
 /**

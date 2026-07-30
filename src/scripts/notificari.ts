@@ -78,5 +78,14 @@ export function porneste() {
   params.delete('notificare')
   params.delete('tip')
   const rest = params.toString()
-  history.replaceState({}, '', location.pathname + (rest ? `?${rest}` : ''))
+  /* Fragmentul rămâne.
+   *
+   * Curățarea rescria adresa fără el, iar el este exact rândul la care se
+   * întorcea salvarea: mesajul apărea, iar pagina rămânea în capul listei, cu
+   * inelul de țintă stins înainte de a fi văzut. */
+  history.replaceState(
+    {},
+    '',
+    location.pathname + (rest ? `?${rest}` : '') + location.hash,
+  )
 }
