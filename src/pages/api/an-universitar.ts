@@ -2,6 +2,7 @@ import type { APIRoute } from 'astro'
 import { isDepartmentHead } from '../../lib/auth'
 import { execute, queryOne, transaction } from '../../lib/db'
 import { deadEnd, redirectWithNotice } from '../../lib/http'
+import { citesteRanduriArhiva, nivelArhiva } from '../../lib/arhiva'
 import { formAction } from '../../lib/forms'
 import { openYear } from '../../lib/years'
 import { id as formId } from '../../lib/ids'
@@ -121,67 +122,16 @@ export const POST: APIRoute = async ({ request, locals }) => {
     if (!year) return back('Alege anul universitar în care se importă.', true)
     if (!raw) return back('Lipsesc rândurile de importat.', true)
 
-    // Deliberately a paste box, not a file upload: the source is almost always a
-    // spreadsheet column selection, and a paste skips the export-and-upload
-    // round trip. Separator is the semicolon, because Romanian names and titles
-    // contain commas far more often than semicolons.
-    const rows = raw
-      .split('\n')
-      .map((line) => line.trim())
-      .filter(Boolean)
-      .map((line) => line.split(';').map((cell) => cell.trim()))
-
-    /* Totul se verifică înainte ca ceva să se scrie.
+    /* Aceeași citire ca în previzualizare.
      *
-     * Rândurile intrau unul câte unul, fără tranzacție, iar data trecea direct
-     * prin `::date` fără nicio validare: un „iulie 2024” într-un rând de la
-     * mijloc arunca o eroare 500 cu corp gol, după ce rândurile de dinaintea lui
-     * erau deja definitive — și rămâneau vizibile în arhiva publică. Directorul
-     * nu primea nici mesaj, nici număr, nici vreun fel de a ști ce a intrat. */
-    const bune: {
-      studentName: string
-      studentNumber: string
-      programme: string
-      level: string
-      language: string
-      teacherName: string
-      title: string
-      defended: string
-    }[] = []
-    const respinse: string[] = []
-
-    for (const [index, cells] of rows.entries()) {
-      const [studentName, studentNumber, programme, level, language, teacherName, title, defended] = cells
-      const nr = index + 1
-
-      if (!studentName || !teacherName || !title) {
-        respinse.push(`rândul ${nr}: lipsește studentul, coordonatorul sau titlul`)
-        continue
-      }
-
-      const data = (defended ?? '').trim()
-      // Doar ISO: „iulie 2024” nu este o dată pentru Postgres, iar `::date`
-      // ridica excepția abia în mijlocul importului.
-      if (data && !/^\d{4}-\d{2}-\d{2}$/.test(data)) {
-        respinse.push(`rândul ${nr}: data „${data}” nu este în formatul AAAA-LL-ZZ`)
-        continue
-      }
-      if (data && Number.isNaN(new Date(data).getTime())) {
-        respinse.push(`rândul ${nr}: data „${data}” nu există în calendar`)
-        continue
-      }
-
-      bune.push({
-        studentName,
-        studentNumber: studentNumber ?? '',
-        programme: programme ?? '',
-        level: level ?? '',
-        language: language ?? '',
-        teacherName,
-        title,
-        defended: data,
-      })
-    }
+     * Lipirea este intenționat o casetă de text, nu un fișier: sursa este aproape
+     * întotdeauna o selecție de coloane din foaia de calcul, iar lipirea scutește
+     * drumul export–încărcare.
+     *
+     * Ce a arătat previzualizarea nu este de încredere — se recitește aici textul
+     * trimis, cu aceeași funcție, deci cele două nu pot să se despartă. */
+    const { bune, respinse: respinseCitite } = citesteRanduriArhiva(raw)
+    const respinse = respinseCitite.map((r) => `rândul ${r.numar}: ${r.motiv}`)
 
     if (bune.length === 0) {
       return back(
@@ -199,14 +149,14 @@ export const POST: APIRoute = async ({ request, locals }) => {
           `INSERT INTO archive_entries (academic_year_id, student_name, student_number, programme,
                                         level, language, teacher_name, title_ro, defended_on, created_by)
            SELECT $1, $2, NULLIF($3, ''), NULLIF($4, ''),
-                  CASE WHEN lower($5) IN ('master', 'm') THEN 'master' ELSE 'bachelor' END,
+                  $5,
                   NULLIF($6, ''), $7, $8, NULLIF($9, '')::date, $10
             WHERE NOT EXISTS (
               SELECT 1 FROM archive_entries
                WHERE academic_year_id = $1 AND student_name = $2 AND title_ro = $8
             )`,
           [
-            yearId, r.studentName, r.studentNumber, r.programme, r.level, r.language,
+            yearId, r.studentName, r.studentNumber, r.programme, nivelArhiva(r.level), r.language,
             r.teacherName, r.title, r.defended, u!.id,
           ],
         )

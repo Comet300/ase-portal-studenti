@@ -308,8 +308,39 @@ Ana Petre;MK-2021-0142;Marketing strategic;master;ro;Conf. univ. dr. Cristian Va
           </span>
         </div>
 
-        <div class="row row--end">
-          <button class="btn btn--primary" type="submit">Importă</button>
+        {/* Previzualizarea, înainte de a scrie în arhiva publică.
+            Se lipesc patruzeci de rânduri dintr-un fișier de evidență ținut de
+            mână de mai multe persoane: două vor avea coloanele inversate, una data
+            scrisă „iulie 2022”. Până acum se afla după import, dintr-un mesaj care
+            spunea „37 importate, 3 respinse” — cu arhiva deja modificată. */}
+        <div id="previzualizare" hidden>
+          <div class="row row--between row--wrap" style="gap:var(--s-3);align-items:baseline">
+            <h3 class="section-title" style="font-size:var(--t-md)">Ce se va importa</h3>
+            <span class="muted text-sm" id="previzualizare-sumar"></span>
+          </div>
+
+          <div class="table-wrap" tabindex="0" role="region" aria-label="Rândurile citite">
+            <table class="table">
+              <thead>
+                <tr id="previzualizare-cap"></tr>
+              </thead>
+              <tbody id="previzualizare-corp"></tbody>
+            </table>
+          </div>
+
+          {/* Rândurile respinse se pot corecta pe loc: altfel trebuie găsite în
+              caseta de text, printre celelalte treizeci și nouă. */}
+          <div id="respinse" hidden>
+            <p class="respinse__titlu">Rânduri care nu se pot citi</p>
+            <ul class="respinse__lista" id="respinse-lista"></ul>
+          </div>
+        </div>
+
+        <div class="row row--end" style="gap:var(--s-2)">
+          <button class="btn btn--secondary" type="button" id="verifica-randuri">
+            Verifică rândurile
+          </button>
+          <button class="btn btn--primary" type="submit" id="importa">Importă</button>
         </div>
       </form>
     </section>
@@ -317,6 +348,99 @@ Ana Petre;MK-2021-0142;Marketing strategic;master;ro;Conf. univ. dr. Cristian Va
 </ProfesorLayout>
 
 <script>
+  import { COLOANE_ARHIVA, citesteRanduriArhiva, nivelArhiva } from '../../lib/arhiva'
+
+  /* --- previzualizarea importului -------------------------------------------
+   *
+   * Aceeași funcție care citește rândurile în rută le citește și aici, deci
+   * tabelul arătat și cel importat nu pot să difere. Ce se trimite rămâne textul
+   * din casetă: previzualizarea nu este o sursă de date, este o oglindă.
+   *
+   * Celulele sunt editabile, iar o modificare se scrie înapoi în casetă — acolo
+   * unde ruta va citi oricum. Așa se corectează rândul al treizeci și șaptelea
+   * fără să fie găsit printre celelalte.
+   */
+  const caseta = document.getElementById('randuri') as HTMLTextAreaElement | null
+  const zona = document.getElementById('previzualizare')
+  const cap = document.getElementById('previzualizare-cap')
+  const corp = document.getElementById('previzualizare-corp')
+  const sumar = document.getElementById('previzualizare-sumar')
+  const zonaRespinse = document.getElementById('respinse')
+  const listaRespinse = document.getElementById('respinse-lista')
+
+  if (caseta && zona && cap && corp && sumar && zonaRespinse && listaRespinse) {
+    /** Rândurile, ca matrice de celule — forma în care se scriu înapoi în casetă. */
+    let celule: string[][] = []
+
+    /* Funcție-expresie, nu declarație: o declarație se ridică în afara blocului
+     * în care TypeScript a stabilit că elementele nu sunt null, iar tot ce e
+     * dinăuntru redevine „posibil null”. */
+    const deseneaza = () => {
+      const { bune, respinse } = citesteRanduriArhiva(caseta.value)
+      celule = caseta.value
+        .split('\n')
+        .map((l) => l.trim())
+        .filter(Boolean)
+        .map((l) => l.split(';').map((c) => c.trim()))
+
+      zona.hidden = celule.length === 0
+
+      cap.textContent = ''
+      for (const nume of COLOANE_ARHIVA) {
+        const th = document.createElement('th')
+        th.scope = 'col'
+        th.textContent = nume
+        cap.appendChild(th)
+      }
+
+      corp.textContent = ''
+      celule.forEach((rand, i) => {
+        const tr = document.createElement('tr')
+        // Un rând respins se marchează, nu se ascunde: el este cel de corectat.
+        const respins = respinse.find((r) => r.numar === i + 1)
+        if (respins) tr.className = 'rand-respins'
+
+        COLOANE_ARHIVA.forEach((nume, col) => {
+          const td = document.createElement('td')
+          const camp = document.createElement('input')
+          camp.className = 'input input--celula'
+          camp.value = rand[col] ?? ''
+          camp.setAttribute('aria-label', `${nume}, rândul ${i + 1}`)
+          camp.addEventListener('change', () => {
+            celule[i][col] = camp.value.trim()
+            scrieCaseta()
+          })
+          td.appendChild(camp)
+          tr.appendChild(td)
+        })
+        corp.appendChild(tr)
+      })
+
+      const n = bune.length
+      sumar.textContent =
+        `${n} ${n === 1 ? 'rând se importă' : 'rânduri se importă'}` +
+        (respinse.length > 0 ? ` · ${respinse.length} de corectat` : '') +
+        (n > 0 ? ` · ${bune.filter((b) => nivelArhiva(b.level) === 'master').length} la master` : '')
+
+      zonaRespinse.hidden = respinse.length === 0
+      listaRespinse.textContent = ''
+      for (const r of respinse) {
+        const li = document.createElement('li')
+        li.textContent = `Rândul ${r.numar}: ${r.motiv}`
+        listaRespinse.appendChild(li)
+      }
+    }
+
+    const scrieCaseta = () => {
+      caseta.value = celule.map((r) => r.join(';')).join('\n')
+      deseneaza()
+    }
+
+    document.getElementById('verifica-randuri')?.addEventListener('click', deseneaza)
+    // Se redesenează la lipire, care este felul obișnuit în care ajung datele.
+    caseta.addEventListener('paste', () => setTimeout(deseneaza, 0))
+  }
+
   /* Butonul rămâne închis până confirmarea e scrisă exact.
    *
    * Verificarea adevărată este pe server, comparată cu anul curent din baza de
@@ -392,6 +516,36 @@ Ana Petre;MK-2021-0142;Marketing strategic;master;ro;Conf. univ. dr. Cristian Va
     list-style: none;
     margin: 0;
     padding: 0;
+  }
+
+  /* Celulele de previzualizare sunt câmpuri, dar nu trebuie să arate ca un
+     formular de completat: fără chenar până la focus, doar text într-un tabel. */
+  .input--celula {
+    min-width: 8ch;
+    padding: var(--s-1) var(--s-2);
+    border-color: transparent;
+    background: none;
+    font-size: var(--t-xs);
+  }
+  .input--celula:hover {
+    border-color: var(--border);
+  }
+
+  .rand-respins td {
+    background: var(--warn-tint);
+  }
+
+  .respinse__titlu {
+    margin-top: var(--s-3);
+    font-size: var(--t-sm);
+    font-weight: 600;
+    color: var(--warn);
+  }
+  .respinse__lista {
+    margin: var(--s-2) 0 0;
+    padding-left: var(--s-5);
+    font-size: var(--t-xs);
+    color: var(--ink-soft);
   }
 
   /* Confirmarea stă despărțită de restul formularului: nu este un câmp printre
