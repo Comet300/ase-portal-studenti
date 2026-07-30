@@ -20,7 +20,10 @@ const EVENT_LABELS: Record<string, string> = {
   invitation_declined: 'Propunere refuzată',
   consultation_scheduled: 'Consultație programată',
   consultation_cancelled: 'Consultație anulată',
-  seats_granted: 'Locuri alocate',
+  /* „Locuri alocate” a fost scos: nimic nu îl scrie niciodată. Locurile se
+     acordă între director și coordonator, iar firele de discuție ale portalului
+     sunt (student, coordonator) — evenimentul nu ar avea unde să existe. Anunțul
+     rămâne pe email și pe ecranul de locuri. */
 }
 
 const EVENT_TONE: Record<string, string> = {

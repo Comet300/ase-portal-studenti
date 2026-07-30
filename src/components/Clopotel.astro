@@ -34,7 +34,40 @@ const ETICHETE: Record<string, string> = {
   invitation_declined: 'Propunere refuzată',
   consultation_scheduled: 'Consultație programată',
   consultation_cancelled: 'Consultație anulată',
-  seats_granted: 'Locuri alocate',
+}
+
+/**
+ * Unde duce o notificare.
+ *
+ * Toate duceau în firul de discuție, pentru că asta e tot ce știa un eveniment
+ * despre sine. Dar „Cerere aprobată” înseamnă o decizie cu un motiv scris, iar
+ * ea se citește în „Cererile mele”, nu în chat; „Consultație programată”
+ * înseamnă un interval din program.
+ *
+ * Subiectul e păstrat ca tip și id, nu ca adresă, tocmai pentru că răspunsul
+ * depinde de cine citește: același interval e pe două ecrane diferite pentru
+ * student și pentru coordonator. Când nu se știe, rămâne firul — care conține
+ * oricum evenimentul, scris în el la momentul deciziei.
+ */
+const eStudent = u.role === 'student'
+
+function destinatie(e: { subject_kind: string | null; subject_id: string | null; conversation_id: string }) {
+  const fir = `${baseMesaje}?conversatie=${e.conversation_id}`
+  switch (e.subject_kind) {
+    case 'request':
+      return eStudent
+        ? `/cererile-mele${e.subject_id ? `#cerere-${e.subject_id}` : ''}`
+        : `/profesor/studenti?sectiune=cereri${e.subject_id ? `#cerere-${e.subject_id}` : ''}`
+    /* Fără ancoră: propunerile se afișează doar cât sunt deschise, în capul
+       paginii. Una acceptată sau refuzată nu mai are rând, iar un fragment către
+       el ar fi o legătură care nu duce nicăieri. */
+    case 'invitation':
+      return eStudent ? '/cererile-mele' : '/profesor/studenti?sectiune=invitatii'
+    case 'slot':
+      return eStudent ? '/consultatii' : '/profesor/consultatii'
+    default:
+      return fir
+  }
 }
 ---
 
@@ -60,7 +93,7 @@ const ETICHETE: Record<string, string> = {
             <li>
               <a
                 class:list={['notificare', { 'is-necitit': !e.read_at }]}
-                href={`${baseMesaje}?conversatie=${e.conversation_id}`}
+                href={destinatie(e)}
               >
                 <span class="notificare__eticheta">
                   {ETICHETE[e.event_type ?? ''] ?? 'Actualizare'}

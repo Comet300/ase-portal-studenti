@@ -26,6 +26,7 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
   // Ownership and state travel with the write, so a request belonging to
   // somebody else — or already decided — simply does not match.
   const withdrawn = await queryOne<{
+    id: string
     number: string
     title_ro: string
     teacher_id: string
@@ -36,7 +37,7 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
         SET status = 'withdrawn', decided_at = now(), updated_at = now(), expires_at = NULL
        FROM users t
       WHERE r.id = $2 AND r.student_id = $1 AND r.status = 'pending' AND t.id = r.teacher_id
-      RETURNING r.number, r.title_ro, t.id AS teacher_id, t.email AS teacher_email, t.name AS teacher_name`,
+      RETURNING r.id, r.number, r.title_ro, t.id AS teacher_id, t.email AS teacher_email, t.name AS teacher_name`,
     [u.id, requestId],
   )
 
@@ -56,6 +57,8 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
     body:
       `${u.name} a retras cererea ${withdrawn.number}.` + (reason ? `\n\nMotiv: ${reason}` : ''),
     createConversation: false,
+    subjectKind: 'request',
+    subjectId: withdrawn.id,
   })
 
   const base = process.env.APP_BASE_URL ?? url.origin

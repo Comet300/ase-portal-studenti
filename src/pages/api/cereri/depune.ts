@@ -150,6 +150,8 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
         eventType: 'request_approved',
         body: `Cererea ${number} a fost aprobată automat, pe baza propunerii de coordonare acceptate. Termenele lucrării sunt disponibile în portal.`,
         createConversation: true,
+        subjectKind: 'request',
+        subjectId: created.id,
       })
 
       await sendEmail({

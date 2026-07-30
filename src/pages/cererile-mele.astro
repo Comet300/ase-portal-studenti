@@ -202,7 +202,7 @@ const shouldOpenForm = Boolean(openWith.teacher) && !hasActiveRequest
           </div>
           <ul class="cereri">
             {requests.map((c) => (
-              <li class="cerere">
+              <li class="cerere" id={`cerere-${c.id}`} tabindex="-1">
                 <div class="row row--between row--wrap" style="gap:var(--s-3)">
                   <span class="numeric muted text-xs">
                     {c.number} · depusă {formatDate(c.submitted_at)}

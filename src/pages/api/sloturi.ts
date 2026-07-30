@@ -307,6 +307,8 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
           `Consultație${grup ? ' de grup' : ''} programată pentru ${formatDate(slot.starts_at)}, ${formatTime(slot.starts_at)}–${formatTime(slot.ends_at)}.\n${place}` +
           (note ? `\n\nSubiect: ${note}` : ''),
         createConversation: true,
+        subjectKind: 'slot',
+        subjectId: slot.id,
       })
     }
 
@@ -365,6 +367,8 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
         eventType: 'consultation_cancelled',
         body: `${u!.name} a anulat consultația din ${cand}.`,
         createConversation: false,
+        subjectKind: 'slot',
+        subjectId: slotId,
       })
 
       const anulare = buildIcs({

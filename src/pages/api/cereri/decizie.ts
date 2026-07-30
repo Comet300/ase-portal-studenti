@@ -105,6 +105,8 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
     // A rejection may be the pair's only exchange; the thread is created so the
     // reason has somewhere to live.
     createConversation: true,
+    subjectKind: 'request',
+    subjectId: cerere.id,
   })
 
   const student = await queryOne<{ email: string; name: string }>(

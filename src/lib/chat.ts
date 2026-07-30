@@ -159,6 +159,15 @@ export async function postEvent(e: {
   body: string
   /** Open the thread if the pair has none yet. Off for events that may precede one. */
   createConversation?: boolean
+  /**
+   * Ce anume s-a întâmplat, ca notificarea să poată duce acolo.
+   *
+   * Se scrie subiectul, nu o adresă: aceeași consultație are alt ecran pentru
+   * student și pentru coordonator, iar o cale salvată acum ar fi îmbătrânit
+   * odată cu rutele. Fără el, notificarea deschide firul de discuție.
+   */
+  subjectKind?: 'request' | 'invitation' | 'slot'
+  subjectId?: string | null
 }): Promise<string | null> {
   // Never rejects. Every caller reaches this *after* committing the decision it
   // describes, so throwing here would turn a successful approval into a 500 —
@@ -178,6 +187,8 @@ async function writeEvent(e: {
   eventType: string
   body: string
   createConversation?: boolean
+  subjectKind?: 'request' | 'invitation' | 'slot'
+  subjectId?: string | null
 }): Promise<string | null> {
   const conversation = e.createConversation
     ? await queryOne<{ id: string }>(
@@ -196,9 +207,10 @@ async function writeEvent(e: {
   if (!conversation) return null
 
   await execute(
-    `INSERT INTO messages (conversation_id, sender_id, body, kind, event_type)
-     VALUES ($1, $2, $3, 'event', $4)`,
-    [conversation.id, e.senderId, e.body, e.eventType],
+    `INSERT INTO messages (conversation_id, sender_id, body, kind, event_type,
+                           subject_kind, subject_id)
+     VALUES ($1, $2, $3, 'event', $4, $5, $6)`,
+    [conversation.id, e.senderId, e.body, e.eventType, e.subjectKind ?? null, e.subjectId ?? null],
   )
   await execute(`UPDATE conversations SET last_message_at = now() WHERE id = $1`, [conversation.id])
 
@@ -227,6 +239,8 @@ export interface Notificare {
   created_at: string
   read_at: string | null
   conversation_id: string
+  subject_kind: 'request' | 'invitation' | 'slot' | null
+  subject_id: string | null
   /** Cine a produs evenimentul — celălalt din conversație, nu cititorul. */
   peer_name: string
 }
@@ -245,7 +259,7 @@ export interface Notificare {
 export function recentEvents(userId: string, limit = 20) {
   return query<Notificare>(
     `SELECT m.id, m.event_type, m.body, m.created_at, m.read_at, m.conversation_id,
-            peer.name AS peer_name
+            m.subject_kind, m.subject_id, peer.name AS peer_name
        FROM messages m
        JOIN conversations c ON c.id = m.conversation_id
        JOIN users peer ON peer.id = CASE WHEN c.student_id = $1 THEN c.teacher_id ELSE c.student_id END

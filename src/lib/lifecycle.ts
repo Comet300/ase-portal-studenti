@@ -213,6 +213,8 @@ export async function sweepDeadlines(
         eventType: 'request_expired',
         body: `Cererea ${r.number} a expirat după ${DECISION_WINDOW_DAYS} zile fără răspuns și a fost respinsă automat. Poți depune o cerere nouă către alt coordonator.`,
         createConversation: false,
+        subjectKind: 'request',
+        subjectId: r.id,
       })
 
       await sendEmail({
@@ -260,6 +262,8 @@ export async function sweepDeadlines(
         eventType: 'invitation_declined',
         body: `Propunerea de coordonare de la ${i.teacher_name} a expirat după ${INVITATION_WINDOW_DAYS} zile fără răspuns. Locul rezervat a fost eliberat.`,
         createConversation: false,
+        subjectKind: 'invitation',
+        subjectId: i.id,
       })
 
       await sendEmail({

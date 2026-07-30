@@ -1111,6 +1111,41 @@ dialog[open]::backdrop {
   }
 }
 
+/* --- ținta unei legături ------------------------------------------------- */
+
+/* Care dintre ele.
+ *
+ * O notificare sau o legătură din panou aduce la un rând anume dintr-o listă de
+ * douăzeci. Browserul îl derulează în ecran și acolo se oprește ajutorul: rândul
+ * arată exact ca vecinii lui, iar cititorul trebuie să ghicească pe care a fost
+ * trimis. Un inel care se stinge singur spune „acesta”, fără să lase pagina
+ * marcată permanent.
+ *
+ * `scroll-margin-top` este necesar oriunde: antetul de tabel și bara de secțiuni
+ * sunt lipicioase, iar fără marjă ținta ajunge exact sub ele. */
+:target {
+  scroll-margin-top: calc(var(--s-8) + var(--tap));
+}
+
+:where(li, section, article, tr, div)[id]:target {
+  animation: tinta 2.4s var(--ease) 1;
+  border-radius: var(--r-md);
+}
+
+@keyframes tinta {
+  0%,
+  55% {
+    box-shadow:
+      0 0 0 2px var(--surface),
+      0 0 0 4px var(--focus);
+  }
+  100% {
+    box-shadow:
+      0 0 0 2px transparent,
+      0 0 0 4px transparent;
+  }
+}
+
 /* --- utilitare ----------------------------------------------------------- */
 
 .stack {
@@ -1299,5 +1334,15 @@ details > summary {
   dialog,
   dialog::backdrop {
     transition-duration: 80ms !important;
+  }
+
+  /* Aceeași distincție pentru ținta unei legături: inelul care se stinge singur
+     devine un inel care rămâne. Fără el, cine a cerut mișcare redusă ar ajunge
+     într-o listă de douăzeci de rânduri fără să afle pe care a fost trimis. */
+  :where(li, section, article, tr, div)[id]:target {
+    animation: none !important;
+    box-shadow:
+      0 0 0 2px var(--surface),
+      0 0 0 4px var(--focus);
   }
 }

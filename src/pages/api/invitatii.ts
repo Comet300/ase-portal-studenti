@@ -76,11 +76,14 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
       )
     }
 
+    // Notificarea are nevoie de rândul creat, ca să poată duce exact la el.
+    let created: { id: string } | null = null
     try {
-      await execute(
+      created = await queryOne<{ id: string }>(
         `INSERT INTO invitations (academic_year_id, teacher_id, student_id, topic_id, message, expires_at)
          VALUES ((SELECT id FROM academic_years WHERE is_current), $1, $2, $3, $4,
-                 now() + ($5 || ' days')::interval)`,
+                 now() + ($5 || ' days')::interval)
+         RETURNING id`,
         [u.id, studentId, topicId, message, String(INVITATION_WINDOW_DAYS)],
       )
     } catch (err) {
@@ -97,6 +100,8 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
       eventType: 'invitation_sent',
       body: `${u.name} îți propune să îți coordoneze lucrarea. Răspunde din „Cererile mele”.\n\n${message}`,
       createConversation: true,
+      subjectKind: 'invitation',
+      subjectId: created?.id ?? null,
     })
 
     await sendEmail({
@@ -164,6 +169,8 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
         ? `${u.name} a acceptat propunerea de coordonare. Urmează depunerea cererii.`
         : `${u.name} a refuzat propunerea de coordonare.\n\nMotiv: ${reason}`,
       createConversation: true,
+      subjectKind: 'invitation',
+      subjectId: invitation.id,
     })
 
     const teacher = await queryOne<{ email: string; name: string }>(

@@ -67,6 +67,8 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
       eventType: 'consultation_cancelled',
       body: `${anulata.student_name} a anulat consultația din ${cand}. Locul este din nou liber.`,
       createConversation: false,
+      subjectKind: 'slot',
+      subjectId: slotId,
     })
 
     // Anularea din calendar: același UID, `SEQUENCE` mai mare, `METHOD:CANCEL`.
