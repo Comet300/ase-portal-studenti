@@ -8,3 +8,6 @@ dist
 # un atașament dintr-o conversație privată nu are ce căuta în istoricul codului.
 uploads
 .playwright-mcp
+
+# Cutia poștală locală: mailurile scrise ca .eml de adaptorul de dezvoltare.
+outbox

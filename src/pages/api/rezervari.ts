@@ -85,6 +85,10 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
       cancelled: true,
     })
 
+    const atasament = [
+      { filename: 'anulare.ics', content: Buffer.from(anulare), contentType: 'text/calendar; method=CANCEL' },
+    ]
+
     void sendEmail({
       to: anulata.teacher_email,
       subject: `Consultație anulată — ${cand}`,
@@ -94,10 +98,31 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
          <p>Intervalul este din nou disponibil pentru ceilalți studenți pe care îi coordonezi.</p>`,
         { text: 'Vezi programul', url: `${process.env.APP_BASE_URL ?? url.origin}/profesor/consultatii` },
       ),
-      attachments: [
-        { filename: 'anulare.ics', content: Buffer.from(anulare), contentType: 'text/calendar; method=CANCEL' },
-      ],
+      attachments: atasament,
     }).catch((err) => console.error('[rezervari] anularea nu a fost anunțată', err))
+
+    /* Și către cel care a anulat.
+     *
+     * Rezervarea trimite invitația în calendar amândurora; anularea o retrăgea
+     * doar de la coordonator. Studentul care își anula propria consultație rămânea
+     * cu evenimentul acceptat în calendarul lui, pentru totdeauna — știa că a
+     * anulat, dar calendarul lui nu, și tocmai calendarul îl anunță marți la 14:00.
+     *
+     * Același UID și același `SEQUENCE`, deci este exact evenimentul lui, retras. */
+    void sendEmail({
+      to: anulata.student_email,
+      subject: `Consultația din ${cand} a fost anulată`,
+      html: template(
+        'Consultația a fost anulată',
+        html`<p>
+           Bună, ${anulata.student_name.split(' ')[0]}. Ai anulat consultația din ${cand} cu
+           <strong>${anulata.teacher_name}</strong>.
+         </p>
+         <p>Am retras și invitația din calendar. Poți rezerva un alt interval oricând.</p>`,
+        { text: 'Vezi intervalele libere', url: `${process.env.APP_BASE_URL ?? url.origin}/consultatii` },
+      ),
+      attachments: atasament,
+    }).catch((err) => console.error('[rezervari] confirmarea anulării nu a plecat', err))
 
     return back('Rezervarea a fost anulată. Coordonatorul a fost anunțat.')
   }

@@ -1,6 +1,7 @@
 import { join } from 'node:path'
 import { createDiskFileStore } from './adapters/disk-files'
 import { createPostgresDatabase } from './adapters/postgres'
+import { createDiskMailer } from './adapters/disk-mailer'
 import { createResendMailer } from './adapters/resend-mailer'
 import type { Database, FileStore, Mailer } from './ports'
 
@@ -22,11 +23,32 @@ if (!connectionString) {
 
 export const database: Database = createPostgresDatabase(connectionString)
 
-export const mailer: Mailer = createResendMailer({
-  apiKey: process.env.RESEND_API_KEY,
-  from: process.env.MAIL_FROM ?? 'Portal Studenți ASE <noreply@stargrid.dev>',
-  redirectTo: process.env.MAIL_REDIRECT_TO,
-})
+/**
+ * Care poștaș.
+ *
+ * `MAIL_TRANSPORT=disk`, sau lipsa cheii Resend, scrie mailurile ca fișiere
+ * `.eml` în `outbox/` în loc să nu trimită nimic. Se deschid cu dublu clic în
+ * orice client de mail, deci se vede exact ce vede destinatarul — inclusiv dacă
+ * invitația din calendar se importă. Înainte, un mail netrimis local era o linie
+ * de `console.warn`, așa că fiecare schimbare de conținut se verifica pe oameni.
+ *
+ * Pe producție rămâne Resend. `MAIL_REDIRECT_TO` este cealaltă cale de verificare
+ * cu cheie adevărată: totul ajunge într-o singură cutie reală, cu destinatarul
+ * intenționat scris în subiect.
+ */
+const from = process.env.MAIL_FROM ?? 'Portal Studenți ASE <noreply@stargrid.dev>'
+const peDisc = process.env.MAIL_TRANSPORT === 'disk' || !process.env.RESEND_API_KEY
+
+export const mailer: Mailer = peDisc
+  ? createDiskMailer({
+      from,
+      dir: process.env.MAIL_OUTBOX ?? join(process.cwd(), 'outbox'),
+    })
+  : createResendMailer({
+      apiKey: process.env.RESEND_API_KEY,
+      from,
+      redirectTo: process.env.MAIL_REDIRECT_TO,
+    })
 
 export const fileStore: FileStore = createDiskFileStore(
   process.env.UPLOADS_DIR ?? join(process.cwd(), 'uploads'),
