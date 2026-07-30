@@ -88,67 +88,156 @@ export function porneste() {
   pilulaNoi?.addEventListener('click', () => laJos(true))
   arataPilula()
 
-  /* --- atașamentul --------------------------------------------------------- */
-  const chip = document.getElementById('atasament')
-  const chipNume = document.getElementById('atasament-nume')
-  const chipMarime = document.getElementById('atasament-marime')
-  const chipBara = document.getElementById('atasament-bara')
-  const scoate = document.getElementById('scoate-atasament')
+  /* --- atașamentele --------------------------------------------------------
+   *
+   * Mai multe, nu unul. Un capitol vine cu chestionarul și cu fișierul de date,
+   * iar înainte însemna trei mesaje pentru un singur gând — și trei emailuri
+   * către celălalt.
+   *
+   * Lista se ține aici, nu în `input.files`: un `drop` sau un `paste` trebuie să
+   * *adauge*, iar atribuirea către `files` înlocuiește tot. `input.files` se
+   * rescrie din listă la fiecare schimbare, ca trimiterea fără JavaScript să
+   * rămână corectă. */
+  const strat = document.getElementById('atasamente')
+  const lista = document.getElementById('atasamente-lista')
+  const chipBara = document.getElementById('atasamente-bara')
 
+  const MAX_FISIERE = 10
+  let alese: File[] = []
   let inZbor: XMLHttpRequest | null = null
 
-  function arataAtasament() {
-    const f = fisier?.files?.[0]
-    if (!f) {
-      if (chip) chip.hidden = true
-      return
-    }
-    if (f.size > MAX) {
-      window.notifica?.(`„${f.name}” depășește 15 MB și nu poate fi atașat.`, 'error')
-      if (fisier) fisier.value = ''
-      if (chip) chip.hidden = true
-      return
-    }
-    // Refuzat înainte să înceapă încărcarea, nu după ce urcă 15 MB degeaba.
-    if (!extensiaAcceptata(f.name)) {
-      window.notifica?.(
-        `„${f.name}” nu este un tip acceptat. Trimite un document, o foaie de calcul, o imagine sau o arhivă.`,
-        'error',
-      )
-      if (fisier) fisier.value = ''
-      if (chip) chip.hidden = true
-      return
-    }
-    if (chipNume) chipNume.textContent = f.name
-    if (chipMarime) chipMarime.textContent = marime(f.size)
-    if (chipBara) chipBara.style.width = '0%'
-    if (chip) chip.hidden = false
-  }
+  /** Două fișiere sunt „același” dacă au nume, mărime și dată identice. */
+  const cheia = (f: File) => `${f.name}|${f.size}|${f.lastModified}`
 
-  /** Un fișier venit din altă parte decât selectorul: tras, lipit, oricum. */
-  function preia(f: File) {
+  function scrieInCamp() {
     if (!fisier) return
     const dt = new DataTransfer()
-    dt.items.add(f)
+    for (const f of alese) dt.items.add(f)
     fisier.files = dt.files
-    arataAtasament()
+  }
+
+  function deseneaza() {
+    if (!lista || !strat) return
+    lista.textContent = ''
+
+    for (const [i, f] of alese.entries()) {
+      const li = document.createElement('li')
+      li.className = 'atasament'
+
+      const icoana = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
+      icoana.setAttribute('viewBox', '0 0 24 24')
+      icoana.setAttribute('fill', 'none')
+      icoana.setAttribute('stroke', 'currentColor')
+      icoana.setAttribute('stroke-width', '1.6')
+      icoana.setAttribute('aria-hidden', 'true')
+      const cale = document.createElementNS('http://www.w3.org/2000/svg', 'path')
+      cale.setAttribute('d', 'M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6')
+      icoana.appendChild(cale)
+
+      const corp = document.createElement('span')
+      corp.className = 'atasament__corp'
+      const nume = document.createElement('strong')
+      nume.textContent = f.name
+      nume.title = f.name
+      const dim = document.createElement('small')
+      dim.className = 'muted'
+      dim.textContent = marime(f.size)
+      corp.append(nume, dim)
+
+      const scoate = document.createElement('button')
+      scoate.className = 'atasament__scoate'
+      scoate.type = 'button'
+      scoate.setAttribute('aria-label', `Elimină ${f.name}`)
+      scoate.textContent = '✕'
+      scoate.addEventListener('click', () => {
+        // Cât urcă, același buton oprește încărcarea în loc să scoată un fișier.
+        if (inZbor) {
+          inZbor.abort()
+          return
+        }
+        alese.splice(i, 1)
+        scrieInCamp()
+        deseneaza()
+        input?.focus()
+      })
+
+      li.append(icoana, corp, scoate)
+      lista.appendChild(li)
+    }
+
+    strat.hidden = alese.length === 0
+    if (chipBara) chipBara.style.width = '0%'
+  }
+
+  /**
+   * Adaugă fișiere la cele deja alese, refuzând ce nu are ce căuta acolo.
+   *
+   * Refuzul vine înainte de încărcare, nu după ce urcă 15 MB degeaba, iar
+   * duplicatele se opresc aici: același fișier tras de două ori ar ajunge de două
+   * ori în conversație, cu două rânduri în sertar.
+   */
+  function adauga(fisiereNoi: File[]) {
+    const respinse: string[] = []
+    let plin = false
+
+    for (const f of fisiereNoi) {
+      if (alese.length >= MAX_FISIERE) {
+        plin = true
+        break
+      }
+      if (f.size > MAX) {
+        window.notifica?.(`„${f.name}” depășește 15 MB și nu poate fi atașat.`, 'error')
+        continue
+      }
+      if (!extensiaAcceptata(f.name)) {
+        respinse.push(f.name)
+        continue
+      }
+      if (alese.some((g) => cheia(g) === cheia(f))) continue
+      alese.push(f)
+    }
+
+    if (respinse.length === 1) {
+      window.notifica?.(
+        `„${respinse[0]}” nu este un tip acceptat. Trimite un document, o foaie de calcul, o imagine sau o arhivă.`,
+        'error',
+      )
+    } else if (respinse.length > 1) {
+      window.notifica?.(
+        `${respinse.length} fișiere nu au un tip acceptat: ${respinse.join(', ')}.`,
+        'error',
+      )
+    }
+    if (plin) {
+      window.notifica?.(
+        `Cel mult ${MAX_FISIERE} fișiere la un mesaj. Restul se trimit într-un al doilea mesaj.`,
+        'error',
+      )
+    }
+
+    scrieInCamp()
+    deseneaza()
+  }
+
+  /** Fișiere venite din altă parte decât selectorul: trase, lipite, oricum. */
+  function preia(...noi: File[]) {
+    adauga(noi)
     input?.focus()
   }
 
-  fisier?.addEventListener('change', arataAtasament)
+  /* Selectorul înlocuiește, nu adaugă: ce a rămas de la o alegere anterioară e
+   * deja în listă, iar `input.files` este rescris din ea imediat după. */
+  fisier?.addEventListener('change', () => {
+    const dinSelector = [...(fisier.files ?? [])]
+    adauga(dinSelector.filter((f) => !alese.some((g) => cheia(g) === cheia(f))))
+  })
 
   document.getElementById('alege-fisier')?.addEventListener('click', () => fisier?.click())
 
-  scoate?.addEventListener('click', () => {
-    // Cât urcă fișierul, același buton oprește încărcarea.
-    if (inZbor) {
-      inZbor.abort()
-      return
-    }
-    if (fisier) fisier.value = ''
-    if (chip) chip.hidden = true
-    input?.focus()
-  })
+  /* Unele browsere restaurează câmpurile la Înapoi, inclusiv fișierele: lista se
+   * ia de la ce este deja în câmp, altfel stratul rămâne ascuns peste fișiere pe
+   * care formularul le-ar trimite oricum. */
+  if (fisier?.files?.length) adauga([...fisier.files])
 
   /* --- tras și lăsat peste fir ---------------------------------------------
    *
@@ -178,8 +267,9 @@ export function porneste() {
       opreste(e)
       adancime = 0
       delete fir.dataset.drop
-      const f = e.dataTransfer?.files?.[0]
-      if (f) preia(f)
+      // Toate, nu primul: cine trage trei fișiere le-a ales pe trei.
+      const noi = [...(e.dataTransfer?.files ?? [])]
+      if (noi.length) preia(...noi)
     })
   }
 
@@ -189,13 +279,22 @@ export function porneste() {
 
   /* --- lipit din clipboard -------------------------------------------------- */
   input.addEventListener('paste', (e) => {
-    const item = [...(e.clipboardData?.items ?? [])].find((i) => i.kind === 'file')
-    if (!item) return
-    const brut = item.getAsFile()
-    if (!brut) return
+    const itemi = [...(e.clipboardData?.items ?? [])].filter((i) => i.kind === 'file')
+    if (!itemi.length) return
+    const noi = itemi
+      .map((i) => i.getAsFile())
+      .filter((f): f is File => f !== null)
+      .map((brut, idx) => {
+        const ext = (brut.type.split('/')[1] || 'png').replace('jpeg', 'jpg')
+        // Numele lipsește la o captură de ecran; două lipite deodată nu au voie
+        // să primească același nume inventat.
+        return brut.name
+          ? brut
+          : new File([brut], `captura-${Date.now()}-${idx + 1}.${ext}`, { type: brut.type })
+      })
+    if (!noi.length) return
     e.preventDefault()
-    const ext = (brut.type.split('/')[1] || 'png').replace('jpeg', 'jpg')
-    preia(new File([brut], brut.name || `captura-${Date.now()}.${ext}`, { type: brut.type }))
+    preia(...noi)
   })
 
   /* --- tastatura ------------------------------------------------------------ */
@@ -209,9 +308,11 @@ export function porneste() {
 
     // Escape desface pe rând: întâi atașamentul, apoi textul, apoi focusul.
     e.stopPropagation()
-    if (fisier?.files?.length) {
-      fisier.value = ''
-      if (chip) chip.hidden = true
+    // Escape scoate ultimul atașament, nu toate: pe rând, ca orice desfacere.
+    if (alese.length) {
+      alese.pop()
+      scrieInCamp()
+      deseneaza()
       return
     }
     if (input.value) {
@@ -232,7 +333,7 @@ export function porneste() {
    * XMLHttpRequest, nu fetch: numai el raportează progresul unei încărcări, iar
    * un capitol de 12 MB fără niciun semn este exact momentul în care omul apasă
    * a doua oară. */
-  function bulaProvizorie(text: string, numeFisier: string | null): HTMLElement {
+  function bulaProvizorie(text: string, numeFisiere: string[]): HTMLElement {
     const el = document.createElement('article')
     el.className = 'bubble bubble--mine is-pending'
 
@@ -242,10 +343,10 @@ export function porneste() {
       p.textContent = text
       el.appendChild(p)
     }
-    if (numeFisier) {
+    for (const nume of numeFisiere) {
       const f = document.createElement('span')
       f.className = 'bubble__file'
-      f.textContent = numeFisier
+      f.textContent = nume
       el.appendChild(f)
     }
 
@@ -259,9 +360,8 @@ export function porneste() {
 
   form.addEventListener('submit', (e) => {
     const text = input.value.trim()
-    const f = fisier?.files?.[0] ?? null
 
-    if (!text && !f) {
+    if (!text && alese.length === 0) {
       e.preventDefault()
       window.notifica?.('Scrie un mesaj sau atașează un fișier.', 'error')
       return
@@ -271,7 +371,9 @@ export function porneste() {
     if (inZbor) return
 
     const date = new FormData(form)
-    const bula = bulaProvizorie(text, f ? f.name : null)
+    const numeAlese = alese.map((f) => f.name)
+    const octetiTotal = alese.reduce((n, f) => n + f.size, 0)
+    const bula = bulaProvizorie(text, numeAlese)
     scroller.appendChild(bula)
     laJos(true)
 
@@ -284,20 +386,25 @@ export function porneste() {
     xhr.open('POST', form.action)
     xhr.setRequestHeader('accept', 'application/json')
 
-    if (f && chipBara) {
+    /* Progresul este al cererii, deci al tuturor fișierelor împreună — de aceea
+     * bara este una, sub strat, iar mărimea scrisă este suma lor. */
+    if (alese.length > 0 && chipBara) {
+      const primaDimensiune = lista?.querySelector<HTMLElement>('.atasament__corp small')
       xhr.upload.addEventListener('progress', (ev) => {
         if (!ev.lengthComputable) return
         const pct = Math.round((ev.loaded / ev.total) * 100)
         chipBara.style.width = `${pct}%`
-        if (chipMarime) chipMarime.textContent = `${pct}% din ${marime(f.size)}`
+        if (primaDimensiune && alese.length === 1) {
+          primaDimensiune.textContent = `${pct}% din ${marime(octetiTotal)}`
+        }
       })
     }
 
     const gata = () => {
       inZbor = null
+      alese = []
       if (fisier) fisier.value = ''
-      if (chip) chip.hidden = true
-      if (chipBara) chipBara.style.width = '0%'
+      deseneaza()
     }
 
     xhr.addEventListener('load', () => {

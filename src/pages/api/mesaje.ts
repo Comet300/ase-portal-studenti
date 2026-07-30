@@ -15,7 +15,16 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
   const conversationId = formId(form.get('conversation_id'))
   const body = String(form.get('body') ?? '').trim()
   const redirectTo = String(form.get('redirect') ?? '/mesaje')
-  const file = form.get('file')
+
+  /* Mai multe fișiere, nu unul.
+   *
+   * Un capitol vine cu chestionarul și cu fișierul de date; erau trei mesaje
+   * pentru un singur gând, fiecare cu propriul email către celălalt. `getAll`
+   * pentru că `get` întoarce doar prima intrare — exact greșeala care a ascuns
+   * două butoane de ștergere mai devreme în auditul acesta. */
+  const alese = form
+    .getAll('file')
+    .filter((f): f is File => f instanceof File && f.size > 0)
 
   if (!conversationId) return deadEnd(400, 'Conversație neidentificată', 'Deschide conversația din lista de mesaje și încearcă din nou.')
 
@@ -37,27 +46,41 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
     )
   }
 
-  if (!body && !(file instanceof File && file.size > 0)) {
+  if (!body && alese.length === 0) {
     return redirect(redirectTo)
   }
 
-  const atasament = file instanceof File && file.size > 0 ? file : null
+  /* Câte fișiere pot însoți un mesaj.
+   *
+   * Nu o limită tehnică, ci una a memoriei: octeții tuturor se citesc înainte de
+   * tranzacție, ca o eroare de scriere să nu lase mesajul fără ele. Zece × 15 MB
+   * este plafonul, și el se spune. */
+  const MAX_FISIERE = 10
+  if (alese.length > MAX_FISIERE) {
+    return redirectWithNotice(
+      redirectTo,
+      `Poți atașa cel mult ${MAX_FISIERE} fișiere la un mesaj. Trimite restul într-un al doilea mesaj.`,
+      true,
+    )
+  }
 
   // Verificat înainte de a citi octeții în memorie: altfel un fișier de 200 MB
   // este încărcat integral doar ca să fie refuzat la scriere.
-  if (atasament && atasament.size > MAX_BYTES) {
+  const preaMare = alese.find((f) => f.size > MAX_BYTES)
+  if (preaMare) {
     return redirectWithNotice(
       redirectTo,
-      `„${atasament.name}” depășește ${Math.round(MAX_BYTES / (1024 * 1024))} MB. Mesajul nu a fost trimis.`,
+      `„${preaMare.name}” depășește ${Math.round(MAX_BYTES / (1024 * 1024))} MB. Mesajul nu a fost trimis.`,
       true,
     )
   }
 
   // Verificarea de pe client poate fi ocolită; aceasta nu.
-  if (atasament && !extensiePermisa(atasament.name)) {
+  const nepermis = alese.find((f) => !extensiePermisa(f.name))
+  if (nepermis) {
     return redirectWithNotice(
       redirectTo,
-      `Tipul fișierului „${atasament.name}” nu este acceptat. Trimite un document, o foaie de calcul, o imagine sau o arhivă.`,
+      `Tipul fișierului „${nepermis.name}” nu este acceptat. Trimite un document, o foaie de calcul, o imagine sau o arhivă.`,
       true,
     )
   }
@@ -70,7 +93,9 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
    * sosit ceva. Nimeni nu afla că încărcarea a eșuat. */
   let messageId: string
   try {
-    const octeti = atasament ? Buffer.from(await atasament.arrayBuffer()) : null
+    const cuOcteti = await Promise.all(
+      alese.map(async (f) => ({ fisier: f, octeti: Buffer.from(await f.arrayBuffer()) })),
+    )
 
     messageId = await transaction(async (client) => {
       const { rows } = await client.query<{ id: string }>(
@@ -83,12 +108,15 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
       const id = rows[0].id
       await client.query(`UPDATE conversations SET last_message_at = now() WHERE id = $1`, [conversationId])
 
-      if (atasament && octeti) {
-        const stored = await saveFile(conversationId, atasament.name, octeti)
+      // Poziția se scrie explicit: `now()` este fix într-o tranzacție, deci
+      // toate rândurile ar avea același `created_at` și ordinea ar cădea pe uuid.
+      for (const [pozitie, { fisier, octeti }] of cuOcteti.entries()) {
+        const stored = await saveFile(conversationId, fisier.name, octeti)
         await client.query(
-          `INSERT INTO files (uploaded_by, conversation_id, message_id, original_name, stored_name, mime, size_bytes)
-           VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-          [u.id, conversationId, id, atasament.name, stored, tipDupaExtensie(atasament.name), atasament.size],
+          `INSERT INTO files (uploaded_by, conversation_id, message_id, original_name,
+                              stored_name, mime, size_bytes, position)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+          [u.id, conversationId, id, fisier.name, stored, tipDupaExtensie(fisier.name), fisier.size, pozitie],
         )
       }
       return id
@@ -97,8 +125,10 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
     console.error('[messages] mesajul nu a putut fi salvat', err)
     return redirectWithNotice(
       redirectTo,
-      atasament
-        ? 'Fișierul nu a putut fi salvat, așa că mesajul nu a fost trimis. Încearcă din nou.'
+      alese.length > 0
+        ? alese.length === 1
+          ? 'Fișierul nu a putut fi salvat, așa că mesajul nu a fost trimis. Încearcă din nou.'
+          : 'Fișierele nu au putut fi salvate, așa că mesajul nu a fost trimis. Încearcă din nou.'
         : 'Mesajul nu a putut fi trimis. Încearcă din nou.',
       true,
     )
@@ -135,7 +165,12 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
       html: template(
         'Ai primit un mesaj',
         html`<p><strong>${u.name}</strong> ți-a scris în portal:</p>
-         ${quote(body.slice(0, 500) || `A trimis un fișier: ${atasament?.name ?? 'document'}`)}`,
+         ${quote(
+           body.slice(0, 500) ||
+             (alese.length > 1
+               ? `A trimis ${alese.length} fișiere: ${alese.map((f) => f.name).join(', ')}`
+               : `A trimis un fișier: ${alese[0]?.name ?? 'document'}`),
+         )}`,
         { text: 'Răspunde în portal', url: `${base}${redirectTo}` },
       ),
     }).catch((err) => console.error('[messages] notificarea nu a plecat', err))

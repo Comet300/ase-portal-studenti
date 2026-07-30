@@ -257,21 +257,25 @@ const INCEPUTURI = [
                         vechiul text de umplutură; nu are ce căuta într-o bulă. */}
                     {m.body && m.body !== '(fișier atașat)' && <p class="bubble__body">{m.body}</p>}
 
-                    {m.file_id &&
-                      (PREVIZUALIZABILE.includes(m.file_mime ?? '') ? (
+                    {/* Un mesaj poate purta mai multe fișiere: un capitol vine cu
+                        chestionarul și cu fișierul de date. Imaginile se arată,
+                        restul se numesc. */}
+                    {(m.files ?? []).map((f) =>
+                      PREVIZUALIZABILE.includes(f.mime ?? '') ? (
                         /* O imagine numită prin fișierul ei este o imagine pe care
                            nu o vezi. Se arată; clic o deschide întreagă. */
-                        <a class="bubble__imagine" href={`/fisiere/${m.file_id}?inline=1`} target="_blank" rel="noopener">
-                          <img src={`/fisiere/${m.file_id}?inline=1`} alt={m.file_name ?? 'Imagine atașată'} loading="lazy" />
+                        <a class="bubble__imagine" href={`/fisiere/${f.id}?inline=1`} target="_blank" rel="noopener">
+                          <img src={`/fisiere/${f.id}?inline=1`} alt={f.name ?? 'Imagine atașată'} loading="lazy" />
                         </a>
                       ) : (
-                        <a class="bubble__file" href={`/fisiere/${m.file_id}`}>
+                        <a class="bubble__file" href={`/fisiere/${f.id}`}>
                           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
                             <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
                           </svg>
-                          {m.file_name}
+                          {f.name}
                         </a>
-                      ))}
+                      ),
+                    )}
 
                     {m.ultimulDinGrup && (
                       <span class="bubble__time numeric">
@@ -388,28 +392,25 @@ const INCEPUTURI = [
             {/* Butonul este un buton, nu o etichetă: o etichetă nu primește
                 focus de la tastatură, deci atașarea unui fișier era imposibilă
                 fără mouse. Câmpul rămâne în pagină, ascuns vizual dar accesibil. */}
-            <input type="file" name="file" class="visually-hidden" id="camp-fisier" accept={ACCEPT} />
+            <input type="file" name="file" class="visually-hidden" id="camp-fisier" accept={ACCEPT} multiple />
             <button class="attach" type="button" id="alege-fisier">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
                 <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
               </svg>
-              <span class="visually-hidden">Atașează un fișier</span>
+              <span class="visually-hidden">Atașează fișiere</span>
             </button>
 
             <div class="chat__camp">
-              {/* Fișierul ales se vede înainte de trimitere: altfel nu ai cum să
-                  știi că s-a atașat, nici cum să te răzgândești. Bara de jos
-                  arată cât a urcat, iar „✕” devine „oprește” cât timp urcă. */}
-              <div class="atasament" id="atasament" hidden>
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
-                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6" />
-                </svg>
-                <span class="atasament__corp">
-                  <strong id="atasament-nume"></strong>
-                  <small class="muted" id="atasament-marime"></small>
-                </span>
-                <button class="atasament__scoate" type="button" id="scoate-atasament" aria-label="Elimină fișierul">✕</button>
-                <span class="atasament__bara" id="atasament-bara"></span>
+              {/* Fișierele alese se văd înainte de trimitere: altfel nu ai cum să
+                  știi ce s-a atașat, nici cum să te răzgândești. Bara de jos arată
+                  cât a urcat totul, iar „✕” de pe strat oprește încărcarea.
+
+                  Lista se construiește din JavaScript, un rând pe fișier: un
+                  capitol vine cu chestionarul și cu fișierul de date, iar înainte
+                  însemna trei mesaje pentru un singur gând. */}
+              <div class="atasamente" id="atasamente" hidden>
+                <ul class="atasamente__lista" id="atasamente-lista"></ul>
+                <span class="atasamente__bara" id="atasamente-bara"></span>
               </div>
 
               <textarea class="chat__input" name="body" rows="1" placeholder="Scrie un mesaj…" aria-label="Mesaj" data-autogrow></textarea>
@@ -1073,29 +1074,43 @@ const INCEPUTURI = [
     min-width: 0;
   }
 
-  .atasament {
+  /* Stratul cu fișierele alese: un rând per fișier, cu bara de încărcare comună
+     dedesubt — progresul raportat de browser este al cererii întregi, nu al
+     fiecărui fișier, deci o bară pe fișier ar minți. */
+  .atasamente {
     position: relative;
-    display: flex;
-    align-items: center;
-    gap: var(--s-2);
-    align-self: flex-start;
-    max-width: 100%;
-    padding: var(--s-2) var(--s-2) var(--s-2) var(--s-3);
-    border: 1px solid var(--border-strong);
-    border-radius: var(--r-md);
-    background: var(--surface-sunken);
-    overflow: hidden;
+    padding-bottom: 3px;
   }
 
-  /* Cât urcă fișierul, chipul îl arată: un capitol de 12 MB fără niciun semn
-     este exact momentul în care omul apasă a doua oară. */
-  .atasament__bara {
+  .atasamente__lista {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--s-2);
+  }
+
+  .atasamente__bara {
     position: absolute;
     inset: auto 0 0 0;
     height: 3px;
     width: 0;
     background: var(--red);
     transition: width 120ms linear;
+  }
+
+  .atasament {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: var(--s-2);
+    max-width: 100%;
+    padding: var(--s-2) var(--s-2) var(--s-2) var(--s-3);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--r-md);
+    background: var(--surface-sunken);
+    overflow: hidden;
   }
   .atasament svg {
     width: 15px;

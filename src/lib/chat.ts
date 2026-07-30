@@ -23,6 +23,12 @@ export interface Conversation {
   is_active: boolean
 }
 
+export interface MesajFisier {
+  id: string
+  name: string
+  mime: string | null
+}
+
 export interface Message {
   id: string
   sender_id: string
@@ -33,9 +39,15 @@ export interface Message {
   created_at: string
   read_at: string | null
   sender_name: string
-  file_id: string | null
-  file_name: string | null
-  file_mime: string | null
+  /**
+   * Atașamentele mesajului, în ordinea încărcării.
+   *
+   * Un `LEFT JOIN` pe `files` a fost de ajuns cât un mesaj avea cel mult un
+   * fișier. De când poate avea mai multe, aceeași îmbinare ar întoarce mesajul de
+   * trei ori — adică trei bule identice în fir, cu același text. Se adună în
+   * interogare, nu în pagină.
+   */
+  files: MesajFisier[]
 }
 
 /**
@@ -77,7 +89,14 @@ export function myConversations(userId: string, asStudent: boolean) {
                producție. */
             (SELECT COALESCE(
                       NULLIF(m.body, ''),
-                      (SELECT f.original_name FROM files f WHERE f.message_id = m.id LIMIT 1),
+                      /* Un mesaj poate purta mai multe fișiere: previzualizarea
+                         numește primul și spune câte mai vin după el, în loc să
+                         pretindă că a fost trimis unul singur. */
+                      (SELECT CASE WHEN count(*) > 1
+                                   THEN (array_agg(f.original_name ORDER BY f.position, f.created_at))[1]
+                                        || ' + ' || (count(*) - 1) || ' altele'
+                                   ELSE min(f.original_name) END
+                         FROM files f WHERE f.message_id = m.id),
                       '(fără text)')
                FROM messages m WHERE m.conversation_id = c.id
               ORDER BY m.created_at DESC LIMIT 1) AS last_message,
@@ -115,11 +134,15 @@ export function conversationMessages(userId: string, conversationId: string) {
   return query<Message>(
     `SELECT m.id, m.sender_id, m.body, m.kind, m.event_type, m.created_at, m.read_at,
             u.name AS sender_name,
-            f.id AS file_id, f.original_name AS file_name, f.mime AS file_mime
+            COALESCE(
+              (SELECT jsonb_agg(jsonb_build_object('id', f.id, 'name', f.original_name, 'mime', f.mime)
+                                ORDER BY f.position, f.created_at, f.id)
+                 FROM files f WHERE f.message_id = m.id),
+              '[]'::jsonb
+            ) AS files
        FROM messages m
        JOIN conversations c ON c.id = m.conversation_id
        JOIN users u ON u.id = m.sender_id
-       LEFT JOIN files f ON f.message_id = m.id
       WHERE m.conversation_id = $2
         AND (c.student_id = $1 OR c.teacher_id = $1)
       ORDER BY m.created_at`,

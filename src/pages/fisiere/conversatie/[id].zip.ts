@@ -54,7 +54,7 @@ export const GET: APIRoute = async ({ params, locals, request }) => {
        FROM files f
        JOIN conversations c ON c.id = f.conversation_id
       WHERE f.conversation_id = $2 AND (c.student_id = $1 OR c.teacher_id = $1)
-      ORDER BY f.created_at`,
+      ORDER BY f.created_at, f.position`,
     [u.id, conversationId],
   )
 
