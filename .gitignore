@@ -3,3 +3,8 @@ dist
 .astro
 .env
 .DS_Store
+
+# Fișierele încărcate de utilizatori. Volumul de producție este montat aici, iar
+# un atașament dintr-o conversație privată nu are ce căuta în istoricul codului.
+uploads
+.playwright-mcp
