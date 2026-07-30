@@ -569,9 +569,12 @@ function deadline(expiresAt: string | null | undefined) {
             <form method="POST" action="/api/invitatii" class="panel__body stack">
               <input type="hidden" name="actiune" value="trimite" />
 
-              <div class="row row--wrap" style="gap:var(--s-3)">
-                <div class="field" style="flex:2;min-width:260px">
-                  <label class="label" for="student_id">Student</label>
+              {/* Două coloane egale, aliniate sus. Într-un rând flex, textul
+                  ajutător de sub un câmp împingea doar coloana lui, iar cele două
+                  controale nu mai stăteau pe aceeași linie. */}
+              <div class="invitatie__rand">
+                <div class="field">
+                  <label class="label" for="student_nume">Student</label>
                   {/* Un `<datalist>` face lista căutabilă fără să înceteze să fie
                       o listă: se poate scrie ca să filtrezi, sau se poate răsfoi.
                       Cu douăzeci și cinci de nume, derularea era singura opțiune. */}
@@ -594,14 +597,11 @@ function deadline(expiresAt: string | null | undefined) {
                   <input type="hidden" id="student_id" name="student_id" required />
                   <span class="hint" id="ajutor-invitabili">
                     {invitabili.length}{' '}
-                    {invitabili.length === 1 ? 'student disponibil' : 'studenți disponibili'} —
-                    doar cei fără coordonator confirmat.
-                  </span>
-                  <span class="hint">
-                    Apar doar studenții care nu au încă un coordonator confirmat.
+                    {invitabili.length === 1 ? 'student disponibil' : 'studenți disponibili'} — doar
+                    cei fără coordonator confirmat.
                   </span>
                 </div>
-                <div class="field" style="flex:2;min-width:240px">
+                <div class="field">
                   <label class="label" for="tema_id">Temă propusă <span class="muted">(opțional)</span></label>
                   <select class="select" id="tema_id" name="tema_id">
                     <option value="">Fără temă anume</option>
@@ -611,6 +611,7 @@ function deadline(expiresAt: string | null | undefined) {
                         <option value={t.id}>{t.title}</option>
                       ))}
                   </select>
+                  <span class="hint">Studentul o vede în propunere, dar nu este obligată.</span>
                 </div>
               </div>
 
@@ -833,6 +834,21 @@ function deadline(expiresAt: string | null | undefined) {
 </script>
 
 <style>
+  /* Câmpurile își încep eticheta pe aceeași linie și își încheie controlul pe
+     aceeași linie; textul ajutător crește în jos, nu împinge vecinul. */
+  .invitatie__rand {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: var(--s-4);
+    align-items: start;
+  }
+
+  @media (max-width: 720px) {
+    .invitatie__rand {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+
   .taburi {
     display: flex;
     gap: var(--s-1);

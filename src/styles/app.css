@@ -1077,6 +1077,19 @@ dialog[open]::backdrop {
   align-items: center;
   gap: var(--s-3);
 }
+
+/* Un rând de câmpuri se aliniază sus, nu pe mijloc.
+ *
+ * Centrat, coloana cu text ajutător este mai înaltă, deci vecina ei coboară ca
+ * să se centreze față de ea: două controale care ar trebui să stea pe aceeași
+ * linie apar decalate. Se vedea pe fiecare formular cu două coloane din portal,
+ * pentru că fiecare al doilea câmp are un „(opțional)” sau o explicație sub el.
+ *
+ * Regula rămâne slabă intenționat: un rând care aliniază altfel — un buton lângă
+ * un câmp, de pildă — își pune `align-items` pe el și câștigă. */
+.row:has(> .field) {
+  align-items: flex-start;
+}
 .row--between {
   justify-content: space-between;
 }

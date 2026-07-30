@@ -141,6 +141,25 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
       return deadEnd(400, 'Decizie neînțeleasă', 'Decizia trimisă nu este una dintre cele posibile. Reia din coada de cereri.')
     }
 
+    /* Directorul nu își decide propria cerere.
+     *
+     * `isTeacher(head)` este adevărat, deci ramura „cere” accepta și o cerere a
+     * directorului către el însuși, iar „decide” nu verifica nimic: se putea
+     * cere două locuri și aproba singur, iar rândul rezultat era imposibil de
+     * deosebit de o decizie a departamentului. Condiția stă în interogare, ca
+     * peste tot în portal, ca să nu poată fi ocolită cu un POST. */
+    const aSa = await queryOne<{ da: boolean }>(
+      `SELECT (teacher_id = $1) AS da FROM seat_requests WHERE id = $2`,
+      [u!.id, seatRequestId],
+    )
+    if (aSa?.da) {
+      return redirectWithNotice(
+        HEAD_PAGE,
+        'Nu îți poți decide propria cerere de locuri. Alocă-ți direct locurile din tabelul de mai sus, unde decizia rămâne vizibilă ca alocare.',
+        true,
+      )
+    }
+
     const decided =
       decision === 'approved'
         ? await grantSeats(u!.id, seatRequestId, note)

@@ -23,6 +23,20 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
   const conversation = await myConversation(u.id, conversationId)
   if (!conversation) return deadEnd(404, 'Conversația nu a fost găsită', 'Fie nu există, fie nu face parte din conversațiile tale.')
 
+  /* Apartenența nu este de ajuns.
+   *
+   * Un fir deschis la aprobarea unei cereri rămânea funcțional și după ce cererea
+   * era retrasă sau respinsă, iar POST-ul îl accepta pentru că verifica doar dacă
+   * ești una dintre cele două părți. Firul rămâne de citit; scrisul cere o
+   * legătură vie. */
+  if (!conversation.is_active) {
+    return redirectWithNotice(
+      redirectTo,
+      'Conversația este închisă: nu mai există o coordonare activă între voi. O poți citi, dar nu mai poți scrie în ea.',
+      true,
+    )
+  }
+
   if (!body && !(file instanceof File && file.size > 0)) {
     return redirect(redirectTo)
   }

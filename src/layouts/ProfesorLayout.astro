@@ -298,7 +298,7 @@ const cai: Record<string, string> = {
   .user {
     display: flex;
     align-items: center;
-    gap: var(--s-2);
+    gap: var(--s-1);
     padding: var(--s-3) var(--s-2);
     border-top: 1px solid rgba(255, 255, 255, 0.1);
   }
@@ -330,9 +330,14 @@ const cai: Record<string, string> = {
     text-overflow: ellipsis;
     white-space: nowrap;
   }
+  /* Rolul se scrie pe un rând: cu avatarul, clopoțelul și deconectarea în
+     aceeași bară de 260px, „Cadru didactic” se rupea în două. */
   .user__meta small {
     font-size: var(--t-xs);
     color: #9aa2ab;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .user .btn--ghost {

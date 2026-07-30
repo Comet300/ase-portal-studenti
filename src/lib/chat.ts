@@ -19,6 +19,8 @@ export interface Conversation {
   peer_avatar: string | null
   last_message: string | null
   unread: number
+  /** Se mai poate scrie? Un fir fără o legătură vie rămâne doar de citit. */
+  is_active: boolean
 }
 
 export interface Message {
@@ -35,6 +37,27 @@ export interface Message {
   file_name: string | null
   file_mime: string | null
 }
+
+/**
+ * Mai există o legătură vie între cei doi?
+ *
+ * Un fir se deschidea la aprobarea unei cereri și rămânea deschis pentru
+ * totdeauna — inclusiv dacă cererea era retrasă sau respinsă după. Rezultatul:
+ * un student fără coordonator avea o conversație funcțională cu un cadru
+ * didactic care nu îl coordona, iar POST-ul o accepta, pentru că autoriza doar
+ * pe apartenența la conversație.
+ *
+ * Firul nu se ascunde — un motiv de respingere poate fi tot ce s-a spus vreodată
+ * între ei, iar acolo trebuie să rămână găsibil. Devine doar de citit.
+ */
+const PAIRING_LIVE = `(
+  EXISTS (SELECT 1 FROM requests r
+           WHERE r.student_id = c.student_id AND r.teacher_id = c.teacher_id
+             AND r.status IN ('approved', 'pending'))
+  OR EXISTS (SELECT 1 FROM invitations i
+              WHERE i.student_id = c.student_id AND i.teacher_id = c.teacher_id
+                AND i.status IN ('pending', 'accepted'))
+)`
 
 /** Threads the user takes part in, most recently active first. */
 export function myConversations(userId: string, asStudent: boolean) {
@@ -59,7 +82,8 @@ export function myConversations(userId: string, asStudent: boolean) {
                FROM messages m WHERE m.conversation_id = c.id
               ORDER BY m.created_at DESC LIMIT 1) AS last_message,
             (SELECT count(*)::int FROM messages m
-              WHERE m.conversation_id = c.id AND m.sender_id <> $1 AND m.read_at IS NULL) AS unread
+              WHERE m.conversation_id = c.id AND m.sender_id <> $1 AND m.read_at IS NULL) AS unread,
+            ${PAIRING_LIVE} AS is_active
        FROM conversations c
        JOIN users peer ON peer.id = c.${theirs}
       WHERE c.${mine} = $1
@@ -77,7 +101,8 @@ export function myConversation(userId: string, conversationId: string) {
             COALESCE(peer.academic_title, peer.student_number) AS peer_detail,
             peer.avatar_path AS peer_avatar,
             NULL::text AS last_message,
-            0 AS unread
+            0 AS unread,
+            ${PAIRING_LIVE} AS is_active
        FROM conversations c
        JOIN users peer
          ON peer.id = CASE WHEN c.student_id = $1 THEN c.teacher_id ELSE c.student_id END
