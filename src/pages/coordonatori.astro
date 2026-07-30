@@ -126,6 +126,10 @@ const freeTeachers = teachers.filter((t) => !t.is_full).length
           <input type="checkbox" id="doar-libere" />
           <span>Doar cu locuri libere</span>
         </label>
+        {/* Ca să vezi tot trebuia să duci înapoi, manual, trei liste derulante. */}
+        <button class="btn btn--ghost btn--sm" type="button" id="goleste-filtre" hidden>
+          Golește filtrele
+        </button>
       </div>
     </div>
 
@@ -359,10 +363,20 @@ const freeTeachers = teachers.filter((t) => !t.is_full).length
       })
     }
 
-    <p class="empty__text" id="fara-rezultate" hidden>
-      Nimic nu corespunde filtrelor. Încearcă un alt cuvânt-cheie, altă limbă, sau debifează „doar
-      cu locuri libere”.
-    </p>
+    {/* Era un paragraf simplu, stilat altfel decât orice altă stare goală din
+        portal, care sfătuia să debifezi o casetă fără să ți-o pună la îndemână. */}
+    <section class="panel" id="fara-rezultate" hidden>
+      <div class="empty">
+        <p class="empty__title">Nimic nu corespunde filtrelor</p>
+        <p class="empty__text">
+          Încearcă un alt cuvânt-cheie sau altă limbă. Dacă ai bifat „doar cu locuri libere”, s-ar
+          putea să fie deja toate ocupate — coordonatorii plini rămân în listă.
+        </p>
+        <button class="btn btn--secondary btn--sm" type="button" id="goleste-filtre-gol">
+          Golește filtrele
+        </button>
+      </div>
+    </section>
   </div>
 </StudentLayout>
 
@@ -415,9 +429,97 @@ const freeTeachers = teachers.filter((t) => !t.is_full).length
     emptyLabel.hidden = visibleCount > 0
   }
 
-  for (const el of [search, level, language, dep, onlyFree]) {
-    el?.addEventListener('input', filter)
+  /* --- filtrele trăiesc în adresă -----------------------------------------
+   *
+   * Pagina cea mai folosită din portal era singura ale cărei filtre nu ajungeau
+   * niciodată în URL: nu puteai trimite unui coleg „cei patru coordonatori de
+   * master în engleză cu locuri libere”, deschiderea unui profil și Back te
+   * întorceau la o listă nefiltrată, iar o reîncărcare ștergea tot. Ecranul
+   * vecin, /profesor/facultate, face exact aceeași treabă cu parametri GET.
+   *
+   * `replaceState` la fiecare tastă ar umple istoricul; se scrie după o pauză
+   * scurtă, iar Back/Forward reașază controalele. */
+  const CAMPURI: [string, HTMLInputElement | HTMLSelectElement | null][] = [
+    ['q', search],
+    ['nivel', level],
+    ['limba', language],
+    ['departament', dep],
+  ]
+
+  let ceas: ReturnType<typeof setTimeout> | undefined
+
+  function scrieAdresa() {
+    const p = new URLSearchParams(location.search)
+    for (const [cheie, el] of CAMPURI) {
+      if (el?.value) p.set(cheie, el.value)
+      else p.delete(cheie)
+    }
+    if (onlyFree.checked) p.set('libere', '1')
+    else p.delete('libere')
+
+    const q = p.toString()
+    history.replaceState({}, '', q ? `${location.pathname}?${q}` : location.pathname)
   }
+
+  function citesteAdresa() {
+    const p = new URLSearchParams(location.search)
+    for (const [cheie, el] of CAMPURI) {
+      if (el && p.has(cheie)) el.value = p.get(cheie) ?? ''
+    }
+    onlyFree.checked = p.get('libere') === '1'
+  }
+
+  for (const el of [search, level, language, dep, onlyFree]) {
+    el?.addEventListener('input', () => {
+      filter()
+      clearTimeout(ceas)
+      ceas = setTimeout(scrieAdresa, 250)
+    })
+  }
+
+  // O adresă lipită în bară trebuie să arate exact lista pe care o descrie.
+  citesteAdresa()
+
+  window.addEventListener('popstate', () => {
+    citesteAdresa()
+    filter()
+  })
+
+  /* --- golirea filtrelor ---------------------------------------------------
+   *
+   * Ca să vezi tot trebuia să duci înapoi, manual, trei liste derulante. */
+  const reset = document.getElementById('goleste-filtre')
+  const resetGol = document.getElementById('goleste-filtre-gol')
+
+  function aratăReset() {
+    const active =
+      Boolean(search.value) ||
+      Boolean(level.value) ||
+      Boolean(language.value) ||
+      Boolean(dep?.value) ||
+      onlyFree.checked
+    if (reset) reset.hidden = !active
+  }
+
+  const goleste = () => {
+    search.value = ''
+    level.value = ''
+    language.value = ''
+    if (dep) dep.value = ''
+    onlyFree.checked = false
+    filter()
+    scrieAdresa()
+    aratăReset()
+    search.focus()
+  }
+
+  reset?.addEventListener('click', goleste)
+  resetGol?.addEventListener('click', goleste)
+
+  for (const el of [search, level, language, dep, onlyFree]) {
+    el?.addEventListener('input', aratăReset)
+  }
+  aratăReset()
 
   /* --- lista completă a studenților unui coordonator --------------------- */
 
