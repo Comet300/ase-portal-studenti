@@ -312,7 +312,9 @@ function deadline(expiresAt: string | null | undefined) {
                       {/* Sesiunea susținerii nu este neapărat cea în care a
                           început coordonarea, iar arhiva o folosește pe prima. */}
                       <td>
-                        <form method="POST" action="/api/sustinere" class="row" style="gap:var(--s-2)">
+                        {/* Valoarea se tipărește separat, mai jos: selectorul ar
+                            lăți tabelul dincolo de foaie fără să adauge nimic. */}
+                        <form method="POST" action="/api/sustinere" class="row" style="gap:var(--s-2)" data-tipar="fără">
                           <input type="hidden" name="cerere_id" value={s.id} />
                           <label class="visually-hidden" for={`sus-${s.id}`}>
                             Sesiunea susținerii pentru {s.student_name}
@@ -337,6 +339,13 @@ function deadline(expiresAt: string | null | undefined) {
                             <button class="btn btn--ghost btn--sm" type="submit">Salvează</button>
                           </noscript>
                         </form>
+                        {/* Pe hârtie formularul dispare; sesiunea rămâne. */}
+                        <span class="doar-tipar numeric">
+                          {ani.find((a) =>
+                            (s.graduation_year_id ?? '') === a.id ||
+                            (!s.graduation_year_id && a.is_current),
+                          )?.label ?? ''}
+                        </span>
                       </td>
                       <td>
                         {s.unread > 0 ? (

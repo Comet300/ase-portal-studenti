@@ -305,6 +305,15 @@ h4 {
  * derulare și lățește documentul. Etichetele pentru cititoarele de ecran
  * împingeau așa pagina cu 276px pe telefon. Marginea negativă îl scoate din
  * calculul de lățime, iar `clip-path` îl ascunde fără să îl mute. */
+/* Valoarea unui control, pentru foaie.
+ *
+ * Regula de tipar ascunde formularele — pe hârtie nu se apasă nimic — dar o
+ * coloană a cărei celulă este un `<select>` rămâne atunci goală. Ce se pierde
+ * astfel se scrie o dată, aici, și apare doar la tipărire. */
+.doar-tipar {
+  display: none;
+}
+
 .visually-hidden {
   position: absolute;
   width: 1px;
@@ -1108,6 +1117,209 @@ dialog[open]::backdrop {
 @starting-style {
   dialog[open]::backdrop {
     opacity: 0;
+  }
+}
+
+/* --- tipar --------------------------------------------------------------- */
+
+/* Ce se întâmplă la Ctrl+P.
+ *
+ * O sesiune de finalizare se desfășoară pe hârtie în tot atâtea locuri câte în
+ * portal: lista studenților coordonați merge la secretariat, calendarul se pune
+ * pe ușa cabinetului, cererea se semnează. Portalul nu avea nicio regulă de
+ * tipar, deci pagina tipărită era ecranul: bara laterală bleumarin pe două
+ * coloane, butoane care nu se pot apăsa, iar tabelele tăiate în dreapta pentru
+ * că nimic nu le spunea că foaia are 21 de centimetri.
+ *
+ * Regula este simplă: rămâne conținutul, pleacă mobilierul și controalele, iar
+ * legăturile care duc undeva își spun adresa — pe hârtie nu se dă clic. */
+@media print {
+  :root {
+    /* Cerneala costă și fundalurile mari nu se tipăresc oricum la fel pe două
+       imprimante: totul devine text negru pe alb. */
+    --bg: #fff;
+    --surface: #fff;
+    --surface-sunken: #fff;
+    --ink: #000;
+    --ink-soft: #1a1a1a;
+    --ink-muted: #333;
+    --border: #999;
+    --border-strong: #666;
+    --shadow-card: none;
+    --shadow-raised: none;
+    --shadow-overlay: none;
+  }
+
+  body {
+    background: #fff;
+    font-size: 10.5pt;
+    line-height: 1.4;
+  }
+
+  /* Ce se vede doar pe hârtie: valoarea unui control, acolo unde controlul
+     dispare. Un `<select>` ascuns lasă o coloană goală, iar coloana aceea este
+     tocmai sesiunea de susținere. */
+  .doar-tipar {
+    display: revert !important;
+  }
+
+  /* Mobilierul, controalele și tot ce e temporar. */
+  .sidebar,
+  .topbar,
+  .hamburger,
+  .clopotel,
+  .toast-host,
+  .banner-offline,
+  .progres-sus,
+  .chat__drop,
+  .vederi,
+  .taburi,
+  .filtre,
+  .btn,
+  button,
+  .inapoi,
+  dialog,
+  [data-tipar='fără'] {
+    display: none !important;
+  }
+
+  /* Câmpurile rămân, butoanele pleacă.
+   *
+   * Prima variantă ascundea `form` întreg — și odată cu el lista de teme a
+   * coordonatorului și tot calendarul sesiunii, pentru că acolo fiecare rând
+   * *este* un formular: pe hârtie rămâneau titlurile secțiunilor și nimic sub
+   * ele. Un `<input>` însă își tipărește valoarea, așa că el rămâne; doar
+   * ambalajul de control dispare, ca să arate ca text, nu ca o casetă goală. */
+  input,
+  select,
+  textarea {
+    border: 0 !important;
+    border-bottom: 1px solid var(--border) !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    padding: 0 !important;
+    min-height: 0 !important;
+    appearance: none !important;
+    resize: none !important;
+    /* Un textarea de două rânduri taie restul motivației; pe hârtie crește. */
+    height: auto !important;
+    overflow: visible !important;
+  }
+
+  /* Caseta de bifat fără bifă nu spune nimic: rămâne desenată. */
+  input[type='checkbox'],
+  input[type='radio'] {
+    appearance: auto !important;
+    border-bottom: 0 !important;
+  }
+
+  input[type='hidden'] {
+    display: none !important;
+  }
+
+  label,
+  .label {
+    color: var(--ink-muted);
+  }
+
+  .content,
+  .content__body,
+  main,
+  .container {
+    display: block !important;
+    max-width: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  .panel,
+  .metrica,
+  .table {
+    border: 1px solid var(--border);
+    break-inside: avoid;
+  }
+
+  /* Nimic tăiat pe hârtie.
+   *
+   * Pe ecran un titlu prea lung se scurtează cu „…” și se citește întreg la
+   * hover. Pe foaie nu există hover: „Fidelizarea clienților prin programe de …”
+   * este pur și simplu o informație pierdută. Textul se rupe pe mai multe rânduri
+   * și tabelul se lasă în lățimea foii. */
+  .table,
+  .table td,
+  .table th,
+  .celula-title,
+  .celula-student > * {
+    white-space: normal !important;
+    overflow: visible !important;
+    text-overflow: clip !important;
+    max-width: none !important;
+    min-width: 0 !important;
+  }
+
+  .table {
+    width: 100% !important;
+    table-layout: auto !important;
+  }
+
+  /* Un rând de tabel rupt în două pagini pierde jumătate din date; antetul se
+     repetă pe fiecare foaie, ceea ce browserul face doar dacă i se cere. */
+  .table thead {
+    display: table-header-group;
+  }
+  .table tr {
+    break-inside: avoid;
+  }
+  .table th {
+    position: static !important;
+    background: #fff !important;
+  }
+
+  h1,
+  h2,
+  h3 {
+    break-after: avoid;
+  }
+
+  .page-title {
+    font-size: 16pt;
+  }
+
+  /* Pe hârtie o legătură fără adresă este un cuvânt subliniat degeaba. Doar cele
+     din proză: un tabel cu 40 de nume ar deveni de necitit. */
+  .prose a[href^='/']::after,
+  .prose a[href^='http']::after,
+  .page-lede a[href^='http']::after {
+    content: ' (' attr(href) ')';
+    font-size: 9pt;
+    color: #333;
+  }
+
+  /* Ghidul are patru file și se tipăresc toate.
+   *
+   * Bara de file dispare (nu se apasă pe hârtie), deci ce rămâne pe foaie ar fi
+   * fost doar fila deschisă în momentul tipăririi — un sfert din regulament,
+   * fără nimic care să spună că restul există. Fiecare panou are propriile
+   * titluri, așa că deschise la rând se citesc ca un document. */
+  [role='tabpanel'][hidden] {
+    display: block !important;
+  }
+
+  /* Tot ce era ascuns în spatele unui rezumat se tipărește deschis: pe hârtie nu
+     se poate da clic pe „arată mai mult”. */
+  details {
+    display: block;
+  }
+  details > summary {
+    list-style: none;
+  }
+  details:not([open]) > *:not(summary) {
+    display: revert !important;
+  }
+
+  @page {
+    margin: 15mm;
   }
 }
 

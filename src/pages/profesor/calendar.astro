@@ -13,6 +13,51 @@ import { currentStage, formatDate, stages } from '../../lib/repo'
 const [list, current] = await Promise.all([stages(), currentStage()])
 const today = new Date().toISOString().slice(0, 10)
 const anCurent = new Date().getFullYear()
+
+/**
+ * Ce se poate citi dintr-un rând fără să îl deschizi.
+ *
+ * Rândul arăta titlul și „intervalul afișat” — un text liber, scris de mână, pe
+ * care nimeni nu îl verifică — și nimic altceva. Datele reale, cele care ajung în
+ * fișierul de calendar și care hotărăsc ce etapă e „în curs”, se vedeau doar
+ * după ce deschideai formularul, etapă cu etapă. O etapă fără date arăta exact ca
+ * una completă, deși nu apare în .ics și nu poate fi niciodată cea curentă.
+ *
+ * Se calculează aici, o dată, ce trebuie să se vadă: în ce stare e etapa, dacă
+ * are date, și dacă ordinea manuală (săgețile) contrazice ordinea datelor.
+ */
+type Stare = 'fara-date' | 'trecuta' | 'curenta' | 'viitoare'
+
+const ETICHETE_STARE: Record<Stare, { text: string; clasa: string }> = {
+  'fara-date': { text: 'Fără date', clasa: 'badge--urgent' },
+  trecuta: { text: 'Încheiată', clasa: 'badge--neutru' },
+  curenta: { text: 'În curs', clasa: 'badge--asteptare' },
+  viitoare: { text: 'Urmează', clasa: 'badge--info' },
+}
+
+const etape = list.map((s, i) => {
+  const inceput = s.starts_on?.slice(0, 10) ?? ''
+  const sfarsit = s.ends_on?.slice(0, 10) ?? ''
+  const stare: Stare = !inceput || !sfarsit
+    ? 'fara-date'
+    : current?.id === s.id
+      ? 'curenta'
+      : sfarsit < today
+        ? 'trecuta'
+        : 'viitoare'
+
+  // Două contradicții pe care poziția în listă nu le arată singură.
+  const inversata = Boolean(inceput && sfarsit && inceput > sfarsit)
+  const anterioara = i > 0 ? list[i - 1] : null
+  const dupaUrmatoarea = Boolean(
+    inceput && anterioara?.starts_on && inceput < anterioara.starts_on.slice(0, 10),
+  )
+
+  return { ...s, inceput, sfarsit, stare, inversata, dupaUrmatoarea }
+})
+
+const fara = etape.filter((e) => e.stare === 'fara-date').length
+const contraziceri = etape.filter((e) => e.inversata || e.dupaUrmatoarea).length
 ---
 
 <ProfesorLayout
@@ -33,7 +78,11 @@ const anCurent = new Date().getFullYear()
     <section class="panel">
       <div class="panel__header">
         <h2 class="section-title">Etape</h2>
-        <span class="muted text-sm">{list.length} etape</span>
+        <span class="muted text-sm">
+          {list.length} etape
+          {fara > 0 && ` · ${fara} fără date`}
+          {contraziceri > 0 && ` · ${contraziceri} cu date contradictorii`}
+        </span>
       </div>
 
       {
@@ -47,8 +96,8 @@ const anCurent = new Date().getFullYear()
           </div>
         ) : (
           <ol class="stages">
-            {list.map((s, i) => (
-              <li class:list={['stage', { 'is-current': current?.id === s.id }]}>
+            {etape.map((s, i) => (
+              <li class:list={['stage', `is-${s.stare}`]}>
                 <div class="stage__order">
                   <span class="numeric">{String(i + 1).padStart(2, '0')}</span>
                   <div class="stage__move">
@@ -62,17 +111,38 @@ const anCurent = new Date().getFullYear()
                       <input type="hidden" name="actiune" value="muta" />
                       <input type="hidden" name="etapa_id" value={s.id} />
                       <input type="hidden" name="directie" value="jos" />
-                      <button class="btn btn--ghost btn--sm" type="submit" aria-label="Mută mai jos" disabled={i === list.length - 1}>↓</button>
+                      <button class="btn btn--ghost btn--sm" type="submit" aria-label="Mută mai jos" disabled={i === etape.length - 1}>↓</button>
                     </form>
                   </div>
                 </div>
 
                 <details class="stage__body">
                   <summary>
-                    <span class="stage__title">{s.title}</span>
+                    <span class="stage__ident">
+                      <span class="stage__title">{s.title}</span>
+                      {/* Eticheta scrisă de mână și datele reale, una lângă alta:
+                          sunt lucruri diferite și pot să nu se potrivească. */}
+                      <span class="stage__zile numeric">
+                        {s.inceput && s.sfarsit
+                          ? `${formatDate(s.inceput)} – ${formatDate(s.sfarsit)}`
+                          : 'nicio dată — nu intră în calendarul descărcabil'}
+                      </span>
+                    </span>
                     <span class="stage__meta">
-                      <span class="muted numeric">{s.interval_label}</span>
-                      {current?.id === s.id && <span class="badge badge--asteptare">În curs</span>}
+                      <span class="muted">{s.interval_label}</span>
+                      <span class:list={['badge', ETICHETE_STARE[s.stare].clasa]}>
+                        {ETICHETE_STARE[s.stare].text}
+                      </span>
+                      {s.inversata && (
+                        <span class="badge badge--urgent" title="Data de început este după cea de sfârșit">
+                          Interval inversat
+                        </span>
+                      )}
+                      {!s.inversata && s.dupaUrmatoarea && (
+                        <span class="badge badge--urgent" title="Începe înaintea etapei de deasupra ei">
+                          Înaintea celei de sus
+                        </span>
+                      )}
                     </span>
                   </summary>
 
@@ -180,8 +250,18 @@ const anCurent = new Date().getFullYear()
   .stage:last-child {
     border-bottom: 0;
   }
-  .stage.is-current {
+  .stage.is-curenta {
     background: var(--red-tint);
+  }
+
+  /* O etapă încheiată rămâne în listă — ordinea e informația — dar nu mai cere
+     atenție. O etapă fără date o cere: nu apare în fișierul descărcabil. */
+  .stage.is-trecuta .stage__title,
+  .stage.is-trecuta .stage__zile {
+    color: var(--ink-muted);
+  }
+  .stage.is-fara-date {
+    background: var(--warn-tint);
   }
 
   .stage__order {
@@ -197,7 +277,7 @@ const anCurent = new Date().getFullYear()
     font-size: var(--t-lg);
     color: var(--border-strong);
   }
-  .stage.is-current .stage__order .numeric {
+  .stage.is-curenta .stage__order .numeric {
     color: var(--red);
   }
 
@@ -234,15 +314,30 @@ const anCurent = new Date().getFullYear()
     background: var(--surface-sunken);
   }
 
+  .stage__ident {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+  }
+
+  /* Titlul este conținutul rândului, nu o etichetă a lui: era scris la 14px,
+     adică mai mic decât textul obișnuit al portalului. */
   .stage__title {
-    font-size: var(--t-sm);
+    font-size: var(--t-base);
     font-weight: 600;
+  }
+
+  .stage__zile {
+    font-size: var(--t-xs);
+    color: var(--ink-soft);
   }
 
   .stage__meta {
     display: flex;
     align-items: center;
-    gap: var(--s-3);
+    flex-wrap: wrap;
+    gap: var(--s-2);
     font-size: var(--t-xs);
   }
 
