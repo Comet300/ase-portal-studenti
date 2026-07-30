@@ -199,8 +199,8 @@ const cai: Record<string, string> = {
     flex-direction: column;
     gap: var(--s-6);
     padding: var(--s-5) var(--s-4);
-    background: var(--navy);
-    color: #d7dbe0;
+    background: var(--dark-surface);
+    color: var(--dark-ink-soft);
     position: sticky;
     top: 0;
     height: 100dvh;
@@ -240,7 +240,7 @@ const cai: Record<string, string> = {
   }
   .brand__text small {
     font-size: var(--t-xs);
-    color: #9aa2ab;
+    color: var(--dark-ink-muted);
   }
 
   .nav {
@@ -255,7 +255,7 @@ const cai: Record<string, string> = {
     gap: var(--s-3);
     padding: var(--s-3);
     border-radius: var(--r-md);
-    color: #c3c9d1;
+    color: var(--dark-ink-quiet);
     text-decoration: none;
     font-size: var(--t-sm);
     font-weight: 500;
@@ -270,23 +270,23 @@ const cai: Record<string, string> = {
   }
 
   .nav__link:hover {
-    background: rgba(255, 255, 255, 0.07);
+    background: var(--dark-hover);
     color: #fff;
   }
 
   .nav__link.is-active {
-    background: rgba(255, 255, 255, 0.1);
+    background: var(--dark-active);
     color: #fff;
     font-weight: 600;
   }
   .nav__link.is-active svg {
-    color: #ff8a80;
+    color: var(--dark-accent);
     opacity: 1;
   }
 
   .nav__link--quiet {
     font-size: var(--t-xs);
-    color: #9aa2ab;
+    color: var(--dark-ink-muted);
   }
 
   .sidebar__end {
@@ -301,7 +301,7 @@ const cai: Record<string, string> = {
     align-items: center;
     gap: var(--s-1);
     padding: var(--s-3) var(--s-2);
-    border-top: 1px solid rgba(255, 255, 255, 0.1);
+    border-top: 1px solid var(--dark-line);
   }
 
   .user__avatar {
@@ -310,7 +310,7 @@ const cai: Record<string, string> = {
     width: 32px;
     height: 32px;
     border-radius: 50%;
-    background: rgba(255, 255, 255, 0.12);
+    background: var(--dark-active);
     color: #fff;
     font-size: var(--t-xs);
     font-weight: 600;
@@ -335,18 +335,18 @@ const cai: Record<string, string> = {
      aceeași bară de 260px, „Cadru didactic” se rupea în două. */
   .user__meta small {
     font-size: var(--t-xs);
-    color: #9aa2ab;
+    color: var(--dark-ink-muted);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
   .user .btn--ghost {
-    color: #9aa2ab;
+    color: var(--dark-ink-muted);
     padding: 0 var(--s-2);
   }
   .user .btn--ghost:hover {
-    background: rgba(255, 255, 255, 0.08);
+    background: var(--dark-hover);
     color: #fff;
   }
 
@@ -414,10 +414,10 @@ const cai: Record<string, string> = {
      ar cădea sub marginea ecranului, iar iconița ia cerneala suprafeței închise.
      Stilurile lui sunt scoped în componentă, deci ajung la el prin `:global`. */
   .user :global(.clopotel summary) {
-    color: #c3c9d1;
+    color: var(--dark-ink-quiet);
   }
   .user :global(.clopotel summary:hover) {
-    background: rgba(255, 255, 255, 0.08);
+    background: var(--dark-hover);
     color: #fff;
   }
   .user :global(.clopotel__panou) {
@@ -442,7 +442,7 @@ const cai: Record<string, string> = {
     font-weight: 700;
     letter-spacing: 0.08em;
     text-transform: uppercase;
-    color: var(--dark-ink-muted, #7d848d);
+    color: var(--dark-ink-muted);
   }
 
   .hamburger {

@@ -1,6 +1,7 @@
 ---
 import Avatar from '../../components/Avatar.astro'
 import ProfesorLayout from '../../layouts/ProfesorLayout.astro'
+import Taburi from '../../components/Taburi.astro'
 import { query, queryOne } from '../../lib/db'
 import { seatRequests } from '../../lib/lifecycle'
 import { STATUS_CLASS, STATUS_LABELS, formatDate, programLabel, timeAgo } from '../../lib/repo'
@@ -152,20 +153,11 @@ const sectiuni = [
     <a class="btn btn--ghost btn--sm" href={exportUrl}>Export cereri</a>
   </div>
 
-  <nav class="taburi" aria-label="Secțiuni">
-    {
-      sectiuni.map((s) => (
-        <a
-          href={`/profesor/departament?sectiune=${s.cheie}`}
-          class:list={['tab', { 'is-activ': sectiune === s.cheie }]}
-          aria-current={sectiune === s.cheie ? 'page' : undefined}
-        >
-          {s.text}
-          {s.contor !== null && s.contor > 0 && <span class="tab__contor numeric">{s.contor}</span>}
-        </a>
-      ))
-    }
-  </nav>
+  <Taburi
+    taburi={sectiuni.map((s) => ({ ...s, href: `/profesor/departament?sectiune=${s.cheie}` }))}
+    activ={sectiune}
+    eticheta="Secțiuni"
+  />
 
   {/* ---------------------------------------------------------- situație */}
   {

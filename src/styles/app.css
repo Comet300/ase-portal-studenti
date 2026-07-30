@@ -122,6 +122,34 @@
   /* Ținta minimă de atingere. Niciun control din portal nu ajungea la ea. */
   --tap: 44px;
 
+  /* Stratul închis — bara laterală a cadrelor didactice.
+   *
+   * Erau douăsprezece valori scrise de mână în ProfesorLayout, deci nimeni nu
+   * putea spune care sunt culorile temei închise fără să le adune de prin
+   * fișier. Numite aici, ele devin și baza de la care se poate porni o temă
+   * întunecată pentru tot portalul: perechile de contrast sunt deja verificate
+   * în practică, pe bara care există. */
+  --dark-surface: #1a1e23;
+  --dark-ink: #ffffff;
+  --dark-ink-soft: #d7dbe0;
+  --dark-ink-muted: #9aa2ab;
+  --dark-ink-quiet: #c3c9d1;
+  --dark-hover: rgba(255, 255, 255, 0.07);
+  --dark-active: rgba(255, 255, 255, 0.1);
+  --dark-line: rgba(255, 255, 255, 0.1);
+  --dark-accent: color-mix(in srgb, var(--red) 55%, white);
+
+  /* Puncte de rupere, o dată pentru tot portalul.
+   *
+   * Erau șase valori diferite — 1200, 900, 860, 820, 720, 640 — puse fiecare
+   * unde a fost nevoie, deci două ecrane vecine se rearanjau la lățimi diferite.
+   * CSS nu acceptă variabile în interogări media, așa că acestea sunt o
+   * convenție documentată, nu un mecanism: 640 telefon, 900 tabletă, 1200 lat.
+   *   --bp-telefon:  640px
+   *   --bp-tableta:  900px
+   *   --bp-lat:     1200px
+   */
+
   /* scară z semantică */
   --z-sticky: 100;
   --z-drawer: 200;

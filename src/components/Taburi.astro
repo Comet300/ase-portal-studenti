@@ -1,0 +1,90 @@
+---
+/**
+ * O bară de secțiuni, ca legături.
+ *
+ * Patru ecrane aveau fiecare bara lui, cu patru variante de stil și una singură
+ * care marca pagina curentă pentru un cititor de ecran. Legături, nu butoane:
+ * o secțiune este o adresă pe care cineva o poate trimite unui coleg, și
+ * funcționează fără JavaScript.
+ */
+interface Tab {
+  cheie: string
+  text: string
+  href: string
+  /** Numărul din dreapta etichetei; ascuns când e zero, ca să nu adauge zgomot. */
+  contor?: number | null
+}
+
+interface Props {
+  taburi: Tab[]
+  activ: string
+  eticheta: string
+}
+
+const { taburi, activ, eticheta } = Astro.props
+---
+
+<nav class="taburi" aria-label={eticheta}>
+  {
+    taburi.map((t) => (
+      <a
+        href={t.href}
+        class:list={['tab', { 'is-activ': activ === t.cheie }]}
+        aria-current={activ === t.cheie ? 'page' : undefined}
+      >
+        {t.text}
+        {t.contor != null && t.contor > 0 && <span class="tab__contor numeric">{t.contor}</span>}
+      </a>
+    ))
+  }
+</nav>
+
+<style>
+  .taburi {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--s-1);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .tab {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--s-2);
+    min-height: var(--tap);
+    padding: 0 var(--s-4);
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+    font-size: var(--t-sm);
+    font-weight: 500;
+    color: var(--ink-muted);
+    text-decoration: none;
+    white-space: nowrap;
+    transition:
+      color var(--fast) var(--ease),
+      border-color var(--fast) var(--ease);
+  }
+
+  .tab:hover {
+    color: var(--ink);
+  }
+
+  .tab.is-activ {
+    color: var(--red);
+    font-weight: 600;
+    border-bottom-color: var(--red);
+  }
+
+  .tab__contor {
+    padding: 1px 6px;
+    border-radius: 999px;
+    background: var(--surface-sunken);
+    font-size: var(--t-xs);
+    font-weight: 600;
+    color: var(--ink-soft);
+  }
+  .tab.is-activ .tab__contor {
+    background: var(--red-tint);
+    color: var(--red);
+  }
+</style>

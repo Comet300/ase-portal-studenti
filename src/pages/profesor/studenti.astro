@@ -1,6 +1,7 @@
 ---
 import Avatar from '../../components/Avatar.astro'
 import ProfesorLayout from '../../layouts/ProfesorLayout.astro'
+import Taburi from '../../components/Taburi.astro'
 import { INVITATION_WINDOW_DAYS, teacherInvitations } from '../../lib/lifecycle'
 import {
   STATUS_CLASS,
@@ -83,20 +84,11 @@ function deadline(expiresAt: string | null | undefined) {
   lede="Triajul cererilor primite, studenții pe care îi coordonezi și termenele lucrărilor lor."
   active="studenti"
 >
-  <nav class="taburi" aria-label="Secțiuni">
-    {
-      sectiuni.map((s) => (
-        <a
-          href={`/profesor/studenti?sectiune=${s.cheie}`}
-          class:list={['tab', { 'is-activ': sectiune === s.cheie }]}
-          aria-current={sectiune === s.cheie ? 'page' : undefined}
-        >
-          {s.text}
-          {s.contor !== null && s.contor > 0 && <span class="tab__contor numeric">{s.contor}</span>}
-        </a>
-      ))
-    }
-  </nav>
+  <Taburi
+    taburi={sectiuni.map((s) => ({ ...s, href: `/profesor/studenti?sectiune=${s.cheie}` }))}
+    activ={sectiune}
+    eticheta="Secțiuni"
+  />
 
   {/* ---------------------------------------------------------------- cereri */}
   {
@@ -908,7 +900,7 @@ function deadline(expiresAt: string | null | undefined) {
     align-items: start;
   }
 
-  @media (max-width: 720px) {
+  @media (max-width: 640px) {
     .invitatie__rand {
       grid-template-columns: minmax(0, 1fr);
     }
