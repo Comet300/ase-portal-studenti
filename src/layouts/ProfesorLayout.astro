@@ -367,6 +367,23 @@ const cai: Record<string, string> = {
     height: 100dvh;
     overflow: hidden;
   }
+  /* `main` stă între `.content` și `.content__body`, iar el lipsea din lanț.
+   *
+   * Fiind `display: block` cu `min-height: auto`, creștea cu conținutul: la un fir
+   * de patruzeci de mesaje ajungea 3904px într-o fereastră de 900, iar
+   * `.content` — mărginit și cu `overflow: hidden` — tăia restul. Mesajele de
+   * dedesubt nu erau doar sub linie: nu se putea ajunge la ele nici derulând
+   * pagina, nici derulând firul, pentru că firul nu mai avea o înălțime de la
+   * care să deruleze.
+   *
+   * Nu se vedea, pentru că firele din datele de test au șase mesaje. */
+  .shell--fill main {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+  }
   .shell--fill .content__body {
     flex: 1;
     min-height: 0;
@@ -464,6 +481,24 @@ const cai: Record<string, string> = {
   .hamburger svg {
     width: 18px;
     height: 18px;
+  }
+
+  /* Sub 900px firul nu mai umple ecranul, deci carcasa nu are voie să îl taie.
+   *
+   * `shell--fill` mărginește totul la 100dvh cu `overflow: hidden`, iar regula de
+   * telefon a conversației îi dă `height: auto` cu `min-height: 70vh`: cele două
+   * se băteau, deci un fir de patruzeci de mesaje avea zona de scris sub linia de
+   * tăiere și nimic nu derula până la ea — nici pagina, nici firul. Pe ecran mic
+   * derulează pagina, cum face oriunde altundeva în portal. */
+  @media (max-width: 900px) {
+    .shell--fill,
+    .shell--fill .content,
+    .shell--fill main,
+    .shell--fill .content__body {
+      height: auto;
+      min-height: 0;
+      overflow: visible;
+    }
   }
 
   /* Tabletă în portret: bara se strânge, nu dispare.

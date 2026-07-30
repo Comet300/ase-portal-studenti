@@ -3,6 +3,7 @@ import Chat from '../components/Chat.astro'
 import StudentLayout from '../layouts/StudentLayout.astro'
 import {
   conversationMessages,
+  MESAJE_PE_PAGINA,
   ensureSupervisorConversation,
   markRead,
   myConversation,
@@ -22,7 +23,20 @@ const requested = Astro.url.searchParams.get('conversatie')
 const active = requested ? await myConversation(u.id, requested) : (conversations[0] ?? null)
 
 if (active) await markRead(u.id, active.id)
-const messages = active ? await conversationMessages(u.id, active.id) : []
+/* Câte mesaje se cer.
+ *
+ * Firul se deschide pe ultimele; „mai vechi” dublează fereastra și ancorează la
+ * mesajul care era primul, ca să nu se piardă locul din citire. Plafonat, ca un
+ * parametru scris de mână să nu poată cere toată baza. */
+const cerute = Number(Astro.url.searchParams.get('mesaje') ?? '')
+const cateMesaje = Number.isFinite(cerute)
+  ? Math.min(Math.max(cerute, MESAJE_PE_PAGINA), MESAJE_PE_PAGINA * 16)
+  : MESAJE_PE_PAGINA
+
+const fir = active
+  ? await conversationMessages(u.id, active.id, cateMesaje)
+  : { mesaje: [], maiVechi: 0 }
+const messages = fir.mesaje
 
 /** Everything exchanged in the open thread, newest first — the files drawer. */
 const files = active
@@ -64,6 +78,8 @@ function fileSize(bytes: string | null): string {
         conversations={conversations}
         active={active}
         messages={messages}
+        maiVechi={fir.maiVechi}
+        cateMesaje={cateMesaje}
         userId={u.id}
         base="/mesaje"
         files={files}

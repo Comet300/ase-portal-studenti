@@ -130,22 +130,76 @@ export function myConversation(userId: string, conversationId: string) {
   )
 }
 
-export function conversationMessages(userId: string, conversationId: string) {
-  return query<Message>(
-    `SELECT m.id, m.sender_id, m.body, m.kind, m.event_type, m.created_at, m.read_at,
-            u.name AS sender_name,
-            COALESCE(
-              (SELECT jsonb_agg(jsonb_build_object('id', f.id, 'name', f.original_name, 'mime', f.mime)
-                                ORDER BY f.position, f.created_at, f.id)
-                 FROM files f WHERE f.message_id = m.id),
-              '[]'::jsonb
-            ) AS files
+/** Câte mesaje se aduc implicit — de la coadă, ca într-o aplicație de mesaje. */
+export const MESAJE_PE_PAGINA = 40
+
+/**
+ * Firul, de la coadă înainte.
+ *
+ * Se aduceau toate. O coordonare ține nouă luni, iar un fir de trei sute de
+ * mesaje însemna trei sute de bule randate ca să se citească ultimele cinci —
+ * cu tot cu fișierele lor și cu derularea la final, deci munca era vizibil
+ * degeaba. Se aduc ultimele `limita`, în ordine crescătoare; restul rămâne la un
+ * clic distanță.
+ *
+ * `maiVechi` spune dacă a rămas ceva înaintea lor, ca pagina să nu ofere un buton
+ * care nu aduce nimic.
+ */
+export async function conversationMessages(
+  userId: string,
+  conversationId: string,
+  limita = MESAJE_PE_PAGINA,
+): Promise<{ mesaje: Message[]; maiVechi: number }> {
+  const [mesaje, total] = await Promise.all([
+    query<Message>(
+      `SELECT * FROM (
+         SELECT m.id, m.sender_id, m.body, m.kind, m.event_type, m.created_at, m.read_at,
+                u.name AS sender_name,
+                COALESCE(
+                  (SELECT jsonb_agg(jsonb_build_object('id', f.id, 'name', f.original_name, 'mime', f.mime)
+                                    ORDER BY f.position, f.created_at, f.id)
+                     FROM files f WHERE f.message_id = m.id),
+                  '[]'::jsonb
+                ) AS files
+           FROM messages m
+           JOIN conversations c ON c.id = m.conversation_id
+           JOIN users u ON u.id = m.sender_id
+          WHERE m.conversation_id = $2
+            AND (c.student_id = $1 OR c.teacher_id = $1)
+          ORDER BY m.created_at DESC
+          LIMIT $3
+       ) recente
+       ORDER BY created_at`,
+      [userId, conversationId, limita],
+    ),
+    queryOne<{ n: number }>(
+      `SELECT count(*)::int AS n
+         FROM messages m
+         JOIN conversations c ON c.id = m.conversation_id
+        WHERE m.conversation_id = $2 AND (c.student_id = $1 OR c.teacher_id = $1)`,
+      [userId, conversationId],
+    ),
+  ])
+
+  return { mesaje, maiVechi: Math.max(0, (total?.n ?? 0) - mesaje.length) }
+}
+
+/**
+ * Cât de departe a ajuns firul, fără să îl aducă.
+ *
+ * Sondajul care întreabă „a apărut ceva?” chema `conversationMessages`, deci
+ * aducea tot firul — cu fișierele agregate pentru fiecare mesaj — la fiecare
+ * cincisprezece secunde, ca să numere trei lucruri. Se numără în SQL. De când
+ * firul se aduce paginat, ar fi și greșit: `total` ar fi fost mărimea ferestrei.
+ */
+export function firRezumat(userId: string, conversationId: string) {
+  return queryOne<{ total: number; ultim: string | null; noi: number }>(
+    `SELECT count(*)::int AS total,
+            max(m.created_at)::text AS ultim,
+            count(*) FILTER (WHERE m.sender_id <> $1 AND m.read_at IS NULL)::int AS noi
        FROM messages m
        JOIN conversations c ON c.id = m.conversation_id
-       JOIN users u ON u.id = m.sender_id
-      WHERE m.conversation_id = $2
-        AND (c.student_id = $1 OR c.teacher_id = $1)
-      ORDER BY m.created_at`,
+      WHERE m.conversation_id = $2 AND (c.student_id = $1 OR c.teacher_id = $1)`,
     [userId, conversationId],
   )
 }

@@ -581,7 +581,14 @@ export function porneste() {
   const pilula = document.getElementById('mesaje-primite')
 
   if (idConversatie && pilula) {
-    const start = scroller.querySelectorAll('.bubble, .eveniment').length
+    /* Reperul este câte mesaje avea firul, nu câte s-au randat: fereastra e de
+     * patruzeci, iar un fir de trei sute ar fi părut brusc plin de mesaje noi. */
+    const dinPagina = Number(
+      document.querySelector<HTMLElement>('.chat')?.dataset.total ?? '',
+    )
+    const start = Number.isFinite(dinPagina) && dinPagina > 0
+      ? dinPagina
+      : scroller.querySelectorAll('.bubble, .eveniment').length
     let cunoscute = start
 
     const verifica = async () => {

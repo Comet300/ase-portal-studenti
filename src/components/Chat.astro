@@ -52,6 +52,10 @@ interface Props {
   userId: string
   base: string
   emptyText: string
+  /** Câte mesaje au rămas înaintea celor aduse. Zero ascunde butonul. */
+  maiVechi?: number
+  /** Fereastra cerută acum; butonul o dublează. */
+  cateMesaje?: number
   /** Renders a third column when the caller provides `slot="context"`. */
   hasContext?: boolean
 }
@@ -64,6 +68,8 @@ const {
   userId,
   base,
   emptyText,
+  maiVechi = 0,
+  cateMesaje = 40,
   hasContext = false,
 } = Astro.props
 
@@ -134,7 +140,14 @@ const INCEPUTURI = [
 ]
 ---
 
-<div class:list={['chat', { 'chat--cu-context': hasContext }]} data-has-thread={active ? '' : undefined}>
+<!-- `data-total` este reperul pentru sondaj: câte mesaje avea firul la încărcare,
+     nu câte s-au randat. De când firul e paginat cele două nu mai coincid, iar
+     pilula ar anunța „260 de mesaje noi” la deschiderea unei conversații vechi. -->
+<div
+  class:list={['chat', { 'chat--cu-context': hasContext }]}
+  data-has-thread={active ? '' : undefined}
+  data-total={active ? String(messages.length + maiVechi) : undefined}
+>
   <aside class="chat__list" aria-label="Conversații">
     {
       conversations.length === 0 ? (
@@ -210,6 +223,23 @@ const INCEPUTURI = [
           </header>
 
           <div class="chat__messages" id="chat-messages">
+            {/* Ce a rămas înainte.
+                Firul se aducea întreg: o coordonare de nouă luni randa trei sute
+                de bule ca să se citească ultimele cinci. Butonul dublează
+                fereastra și ancorează la mesajul care era primul, ca locul din
+                citire să nu se piardă la reîncărcare. */}
+            {maiVechi > 0 && (
+              <a
+                class="chat__mai-vechi"
+                href={`${base}?conversatie=${active.id}&mesaje=${cateMesaje * 2}#mesaj-${messages[0]?.id ?? ''}`}
+              >
+                Arată mesajele mai vechi
+                <span class="muted">
+                  ({maiVechi} {maiVechi === 1 ? 'mesaj' : 'mesaje'})
+                </span>
+              </a>
+            )}
+
             {messages.length === 0 && (
               /* Un fir gol cere un început, nu o explicație. */
               <div class="chat__inceput">
@@ -251,7 +281,7 @@ const INCEPUTURI = [
                         'bubble--continuare': m.continuare,
                       },
                     ]}
-                    id={m.id === messages.at(-1)?.id ? 'ultim-mesaj' : undefined}
+                    id={m.id === messages.at(-1)?.id ? 'ultim-mesaj' : `mesaj-${m.id}`}
                   >
                     {/* Rândurile scrise înainte de această schimbare mai poartă
                         vechiul text de umplutură; nu are ce căuta într-o bulă. */}
@@ -798,6 +828,27 @@ const INCEPUTURI = [
   }
 
   /* --- firul gol ----------------------------------------------------------- */
+
+  .chat__mai-vechi {
+    align-self: center;
+    display: inline-flex;
+    align-items: center;
+    gap: var(--s-2);
+    margin-bottom: var(--s-3);
+    padding: var(--s-2) var(--s-4);
+    border: 1px solid var(--border-strong);
+    border-radius: 999px;
+    background: var(--surface);
+    font-size: var(--t-xs);
+    font-weight: 600;
+    color: var(--ink-soft);
+    text-decoration: none;
+  }
+  .chat__mai-vechi:hover {
+    border-color: var(--ink-muted);
+    background: var(--surface-sunken);
+    color: var(--ink);
+  }
 
   .chat__inceput {
     display: flex;
