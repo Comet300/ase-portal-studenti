@@ -73,6 +73,7 @@ const site = Astro.site ?? new URL(Astro.url.origin)
       import { porneste as pornesteDialoguri } from '../scripts/dialoguri'
       import { porneste as pornesteValidare } from '../scripts/validare'
       import { pornestePoza } from '../scripts/poza'
+      import { porneste as pornestePaleta } from '../scripts/paleta'
 
       declare global {
         interface Window {
@@ -87,6 +88,7 @@ const site = Astro.site ?? new URL(Astro.url.origin)
       pornesteValidare()
       // Nu face nimic pe paginile fără câmp de poză, deci poate sta aici.
       pornestePoza()
+      pornestePaleta()
     </script>
 
     <style>

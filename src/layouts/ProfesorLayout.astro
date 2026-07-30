@@ -117,6 +117,16 @@ const cai: Record<string, string> = {
       </nav>
 
       <div class="sidebar__end">
+        {/* Ctrl+K nu se descoperă singur. Butonul spune scurtătura, ca a doua
+            dată să nu mai fie nevoie de el. */}
+        <button class="nav__link nav__link--quiet paleta-buton" type="button" data-paleta>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+            <path d="M11 19a8 8 0 1 0 0-16 8 8 0 0 0 0 16zM21 21l-4.35-4.35" />
+          </svg>
+          <span class="nav__text">Mergi la…</span>
+          <kbd class="nav__scurtatura">⌘K</kbd>
+        </button>
+
         <a href="/" class="nav__link nav__link--quiet" title="Portalul studenților">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"
             ><path d="M3 12l9-9 9 9M5 10v10h14V10"></path></svg
@@ -463,6 +473,24 @@ const cai: Record<string, string> = {
     font-weight: 700;
     letter-spacing: 0.08em;
     text-transform: uppercase;
+    color: var(--dark-ink-muted);
+  }
+
+  .paleta-buton {
+    width: 100%;
+    border: 0;
+    background: none;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+  }
+  .nav__scurtatura {
+    margin-left: auto;
+    padding: 1px 5px;
+    border: 1px solid var(--dark-line);
+    border-radius: var(--r-sm);
+    font-family: var(--sans);
+    font-size: var(--t-xs);
     color: var(--dark-ink-muted);
   }
 

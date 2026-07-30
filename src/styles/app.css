@@ -1347,6 +1347,84 @@ dialog[open]::backdrop {
   }
 }
 
+/* --- paleta de comenzi --------------------------------------------------- */
+
+/* Un câmp pentru tot portalul, deschis cu Ctrl+K.
+ *
+ * Stă sus, nu în mijloc: se deschide cu tastatura, iar ochiul e deja pe rândul de
+ * sus al ecranului. */
+.paleta {
+  width: min(560px, calc(100vw - var(--s-5) * 2));
+  max-height: min(70vh, 520px);
+  margin: 12vh auto auto;
+  padding: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow-overlay);
+  overflow: hidden;
+}
+
+.paleta__camp {
+  width: 100%;
+  padding: var(--s-4) var(--s-5);
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  font-size: var(--t-md);
+}
+.paleta__camp:focus {
+  outline: none;
+}
+
+.paleta__lista {
+  list-style: none;
+  margin: 0;
+  padding: var(--s-2);
+  max-height: 340px;
+  overflow-y: auto;
+}
+
+.paleta__op a {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: var(--s-2) var(--s-3);
+  border-radius: var(--r-md);
+  color: var(--ink);
+  text-decoration: none;
+}
+.paleta__op strong {
+  font-size: var(--t-sm);
+  font-weight: 600;
+}
+.paleta__op small {
+  font-size: var(--t-xs);
+  color: var(--ink-muted);
+}
+
+/* Alegerea se marchează cu suprafață, nu cu inel: inelul e al focusului, care
+   rămâne tot timpul în câmpul de scris. */
+.paleta__op.is-ales a {
+  background: var(--red-tint);
+  color: var(--red);
+}
+.paleta__op.is-ales small {
+  color: var(--red);
+}
+
+.paleta__gol {
+  padding: var(--s-5);
+  font-size: var(--t-sm);
+  color: var(--ink-muted);
+}
+
+.paleta__jos {
+  padding: var(--s-2) var(--s-5) var(--s-3);
+  border-top: 1px solid var(--border);
+  font-size: var(--t-xs);
+  color: var(--ink-muted);
+}
+
 /* --- ținta unei legături ------------------------------------------------- */
 
 /* Care dintre ele.

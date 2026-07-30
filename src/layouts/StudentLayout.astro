@@ -109,6 +109,12 @@ const linkuriCont = [
                     <strong>{u.name}</strong>
                     <small>{u.email}</small>
                   </p>
+                  {/* Ctrl+K nu se descoperă singur, iar bara de sus nu are loc
+                      pentru încă un buton: intră în meniul contului, unde se
+                      caută oricum lucrurile care nu sunt navigație. */}
+                  <button class="cont__optiune" type="button" data-paleta>
+                    Mergi la… <kbd class="cont__scurtatura">⌘K</kbd>
+                  </button>
                   <a class="cont__optiune" href="/contul-meu">Contul meu</a>
                   <a class="cont__optiune" href={`/profil/${u.id}`}>Profilul public</a>
                   <form method="POST" action="/api/deconectare">
@@ -335,6 +341,16 @@ const linkuriCont = [
     color: var(--ink-muted);
     overflow: hidden;
     text-overflow: ellipsis;
+  }
+
+  .cont__scurtatura {
+    float: right;
+    padding: 1px 5px;
+    border: 1px solid var(--border);
+    border-radius: var(--r-sm);
+    font-family: var(--sans);
+    font-size: var(--t-xs);
+    color: var(--ink-muted);
   }
 
   .cont__optiune {
