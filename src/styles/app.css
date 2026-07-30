@@ -957,6 +957,16 @@ h4 {
   min-width: 0;
 }
 
+/* „Anulează”, pentru ștergerile care se pot întoarce. Trăiește cât notificarea,
+   care este și fereastra în care întoarcerea are sens. */
+.toast__actiune {
+  margin-top: var(--s-2);
+}
+.toast__actiune .btn {
+  border: 1px solid var(--border-strong);
+  min-height: 30px;
+}
+
 /* Culoarea singură nu spune care e care — nici pentru daltonism, nici pentru
  * cineva care prinde notificarea din colțul ochiului. */
 .toast__eticheta {

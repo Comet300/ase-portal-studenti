@@ -52,6 +52,31 @@ export function redirectWithNotice(path: string, message: string, isError = fals
 }
 
 /**
+ * O confirmare cu un drum de întoarcere.
+ *
+ * Ștergerile portalului erau definitive la un clic: o etapă din calendar, un
+ * termen al unei lucrări. Nimic din ele nu merită un dialog de confirmare — sunt
+ * gesturi mărunte, iar un dialog la fiecare le-ar face pe toate obositoare — dar
+ * merită să poată fi luate înapoi.
+ *
+ * Fereastra este cât trăiește notificarea. După ea, gestul s-a încheiat: nu se
+ * păstrează nimic pe server, nu apare niciun coș de reciclare de întreținut.
+ */
+export function redirectWithUndo(
+  path: string,
+  message: string,
+  undo: { catre: string; date: Record<string, string> },
+): Response {
+  const [faraFragment, fragment] = path.split('#')
+  const [base, existing] = faraFragment.split('?')
+  const params = new URLSearchParams(existing ?? '')
+  params.set('notificare', message)
+  params.set('anulare', undo.catre)
+  params.set('anulare_date', JSON.stringify(undo.date))
+  return redirect(`${base}?${params.toString()}${fragment ? `#${fragment}` : ''}`)
+}
+
+/**
  * Sesiunea a expirat în timp ce cineva completa un formular.
  *
  * Rutele răspundeau cu `new Response('Neautentificat', { status: 401 })` — adică

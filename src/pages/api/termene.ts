@@ -1,7 +1,7 @@
 import type { APIRoute } from 'astro'
 import { isTeacher } from '../../lib/auth'
-import { execute } from '../../lib/db'
-import { deadEnd, redirectWithNotice, sessionExpired } from '../../lib/http'
+import { execute, queryOne } from '../../lib/db'
+import { deadEnd, redirectWithNotice, redirectWithUndo, sessionExpired } from '../../lib/http'
 import { formAction } from '../../lib/forms'
 import { id as formId } from '../../lib/ids'
 
@@ -67,13 +67,74 @@ export const POST: APIRoute = async ({ request, locals }) => {
 
   if (action === 'sterge') {
     const milestoneId = formId(form.get('termen_id'))
-    const n = await execute(
+
+    // Se citește ce plecă în aceeași instrucțiune care îl șterge, ca notificarea
+    // să poată oferi întoarcerea. Proprietarul se verifică tot aici, ca înainte.
+    const sters = await queryOne<{
+      request_id: string
+      title: string
+      description: string | null
+      due_on: string | null
+      status: string
+      position: number
+    }>(
       `DELETE FROM milestones m
         WHERE m.id = $2
-          AND EXISTS (SELECT 1 FROM requests r WHERE r.id = m.request_id AND r.teacher_id = $1)`,
+          AND EXISTS (SELECT 1 FROM requests r WHERE r.id = m.request_id AND r.teacher_id = $1)
+       RETURNING request_id, title, description, due_on::text, status, position`,
       [u!.id, milestoneId],
     )
-    return back(n ? 'Termen șters.' : 'Termenul nu a fost găsit.', !n)
+
+    if (!sters) return back('Termenul nu a fost găsit.', true)
+
+    return redirectWithUndo(redirectTo, `Termenul „${sters.title}” a fost șters.`, {
+      catre: '/api/termene',
+      date: {
+        actiune: 'restaureaza',
+        cerere_id: sters.request_id,
+        title: sters.title,
+        descriere: sters.description ?? '',
+        termen: sters.due_on ?? '',
+        stare: sters.status,
+        pozitie: String(sters.position),
+        redirect: redirectTo,
+      },
+    })
+  }
+
+  /* Întoarcerea unei ștergeri: rândul se scrie din nou, cu id nou, pe poziția pe
+   * care o avea. Aceeași gardă `EXISTS` — un id de cerere venit din formular nu
+   * dă acces la lucrarea altcuiva. */
+  if (action === 'restaureaza') {
+    const requestId = formId(form.get('cerere_id'))
+    const title = String(form.get('title') ?? '').trim()
+    if (!requestId || !title) return back('Termenul nu a putut fi refăcut.', true)
+
+    const pozitie = Number(form.get('pozitie') ?? '')
+    const stare = String(form.get('stare') ?? 'planned')
+    const n = await execute(
+      `INSERT INTO milestones (request_id, position, title, description, due_on, status)
+       SELECT r.id,
+              COALESCE($6::int, (SELECT COALESCE(max(position), 0) + 1 FROM milestones WHERE request_id = r.id)),
+              $2, NULLIF($3, ''), NULLIF($4, '')::date, $5
+         FROM requests r
+        WHERE r.id = $7 AND r.teacher_id = $1`,
+      [
+        u!.id,
+        title,
+        String(form.get('descriere') ?? '').trim(),
+        String(form.get('termen') ?? '').trim(),
+        // Doar cele trei din CHECK-ul tabelei; 'late' se calculează, nu se scrie.
+        ['planned', 'in_progress', 'done'].includes(stare) ? stare : 'planned',
+        Number.isFinite(pozitie) ? Math.trunc(pozitie) : null,
+        requestId,
+      ],
+    )
+
+    return back(
+      n ? `Termenul „${title}” a fost pus înapoi.` : 'Termenul nu a putut fi refăcut.',
+      !n,
+    )
   }
 
   return deadEnd(400, 'Cerere neînțeleasă', 'Portalul nu a recunoscut acțiunea cerută. Reia pasul din interfață.')
