@@ -9,9 +9,11 @@
     "preview": "astro preview",
     "start": "node ./dist/server/entry.mjs",
     "check": "astro check",
+    "test": "node --experimental-strip-types --test test/*.test.ts",
     "db:migrate": "node scripts/migrate.mjs",
     "db:seed": "node scripts/seed.mjs",
-    "build:only": "astro build"
+    "build:only": "astro build",
+    "verify": "npm run check && npm test"
   },
   "dependencies": {
     "@astrojs/node": "^9.4.4",

@@ -33,6 +33,14 @@ export function escapeHtml(s: string): string {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
+    /* Apostroful, deși nimic din portal nu îl are nevoie astăzi.
+     *
+     * El contează doar într-un atribut delimitat cu ghilimele simple, iar toate
+     * atributele scrise aici folosesc ghilimele duble — deci lipsa lui nu era
+     * exploatabilă. Dar asta face siguranța marcajului să depindă de o convenție
+     * de stil pe care o poate încălca următorul șablon scris în grabă, într-un
+     * fișier care nu are nimic de-a face cu acesta. Costă o înlocuire. */
+    .replace(/'/g, '&#39;')
 }
 
 /**

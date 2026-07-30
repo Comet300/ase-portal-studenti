@@ -52,6 +52,23 @@ export interface CititArhiva {
  * mult mai des decât punct și virgulă. Un tab merge la fel, pentru că asta
  * produce o lipire directă din Excel.
  */
+/**
+ * O dată care există chiar și în calendar.
+ *
+ * `new Date('2022-02-31')` nu întoarce NaN: JavaScript rostogolește data peste
+ * lună și dă 3 martie. Deci verificarea „nu este NaN” lăsa să treacă orice zi
+ * inventată, iar `::date` din Postgres o refuza abia în mijlocul importului — exact
+ * eșecul pe care validarea exista ca să îl prevină. Se compară componentele cu
+ * data reconstruită: dacă s-au mutat, ziua nu exista.
+ */
+function dataExista(iso: string): boolean {
+  const [an, luna, zi] = iso.split('-').map(Number)
+  const d = new Date(Date.UTC(an, luna - 1, zi))
+  return (
+    d.getUTCFullYear() === an && d.getUTCMonth() === luna - 1 && d.getUTCDate() === zi
+  )
+}
+
 export function citesteRanduriArhiva(brut: string): CititArhiva {
   const bune: RandArhiva[] = []
   const respinse: RandRespins[] = []
@@ -82,7 +99,7 @@ export function citesteRanduriArhiva(brut: string): CititArhiva {
       respinse.push({ numar, text: linie, motiv: `data „${data}” nu este în formatul AAAA-LL-ZZ` })
       continue
     }
-    if (data && Number.isNaN(new Date(data).getTime())) {
+    if (data && !dataExista(data)) {
       respinse.push({ numar, text: linie, motiv: `data „${data}” nu există în calendar` })
       continue
     }
