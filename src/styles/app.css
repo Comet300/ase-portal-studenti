@@ -742,6 +742,20 @@ h4 {
  * fiecare tabel, împreună cu `role` și eticheta. */
 .table-wrap {
   overflow-x: auto;
+
+  /* Derularea laterală a tabelului nu are voie să devină derularea paginii.
+   *
+   * `overflow-x: auto` este de ajuns ca să apară bara de derulare a tabelului,
+   * dar nu ca să oprească propagarea: antetul lipicios și celelalte elemente
+   * poziționate dinăuntru se raportau la pagină, iar la 390px documentul devenea
+   * 760px lat — corpul rămânea 390, deci nimic nu „ieșea” din el, dar pagina
+   * chiar se trăgea 370px în lateral, cu tot cu antetul și cu titlul.
+   *
+   * `contain: paint` închide subarborele: el devine bloc conținător pentru ce e
+   * poziționat înăuntru și taie ce trece dincolo. Antetul lipicios rămâne
+   * lipicios — se raportează acum la propriul container de derulare, care este
+   * exact ce trebuie. */
+  contain: paint;
 }
 
 .table-wrap:focus:not(:focus-visible) {
