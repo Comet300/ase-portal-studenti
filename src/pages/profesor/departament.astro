@@ -265,7 +265,7 @@ const sectiuni = [
                     <td class="numeric">{t.bachelor_taken} / {t.bachelor_seats}</td>
                     <td class="numeric">{t.master_taken} / {t.master_seats}</td>
                     <td class="numeric">
-                      <span class:list={{ 'over-capacity': t.seats > 0 && t.taken >= t.seats }}>
+                      <span class:list={{ 'la-limita': t.seats > 0 && t.taken === t.seats, 'over-capacity': t.seats > 0 && t.taken > t.seats }}>
                         {t.taken} / {t.seats}
                       </span>
                     </td>
@@ -476,7 +476,7 @@ const sectiuni = [
                       </div>
                     </td>
                     <td class="numeric">
-                      <span class:list={{ 'over-capacity': t.seats > 0 && t.taken >= t.seats }}>
+                      <span class:list={{ 'la-limita': t.seats > 0 && t.taken === t.seats, 'over-capacity': t.seats > 0 && t.taken > t.seats }}>
                         {t.taken} / {t.seats}
                       </span>
                     </td>
@@ -650,6 +650,14 @@ const sectiuni = [
   }
   .alert a {
     color: inherit;
+  }
+
+  /* Exact plin nu este o problemă — este planul îndeplinit. Roșul era pus pe
+     `taken >= seats`, deci un coordonator cu 8 din 8 arăta ca o depășire, pe
+     același ecran care mai sus scria că totul e în regulă. */
+  .la-limita {
+    color: var(--warn);
+    font-weight: 600;
   }
 
   .over-capacity {

@@ -46,18 +46,18 @@ const DOCS = [
       <button class="tab is-activ" role="tab" aria-selected="true" aria-controls="p-redactare" id="t-redactare">
         Redactare
       </button>
-      <button class="tab" role="tab" aria-selected="false" aria-controls="p-ia" id="t-ia">
+      <button class="tab" role="tab" aria-selected="false" tabindex="-1" aria-controls="p-ia" id="t-ia">
         Regulament IA
       </button>
-      <button class="tab" role="tab" aria-selected="false" aria-controls="p-antiplagiat" id="t-antiplagiat">
+      <button class="tab" role="tab" aria-selected="false" tabindex="-1" aria-controls="p-antiplagiat" id="t-antiplagiat">
         Antiplagiat
       </button>
-      <button class="tab" role="tab" aria-selected="false" aria-controls="p-documente" id="t-documente">
+      <button class="tab" role="tab" aria-selected="false" tabindex="-1" aria-controls="p-documente" id="t-documente">
         Documente
       </button>
     </div>
 
-    <section class="panel" role="tabpanel" id="p-redactare" aria-labelledby="t-redactare">
+    <section class="panel" role="tabpanel" id="p-redactare" aria-labelledby="t-redactare" tabindex="-1">
       <div class="panel__body prose stack">
         <h2 class="section-title">Structura lucrării</h2>
         <ol class="lista-num">
@@ -84,7 +84,7 @@ const DOCS = [
       </div>
     </section>
 
-    <section class="panel" role="tabpanel" id="p-ia" aria-labelledby="t-ia" hidden>
+    <section class="panel" role="tabpanel" id="p-ia" aria-labelledby="t-ia" tabindex="-1" hidden>
       <div class="panel__body prose stack">
         <h2 class="section-title">Utilizarea instrumentelor de inteligență artificială</h2>
         <p>
@@ -122,7 +122,7 @@ const DOCS = [
       </div>
     </section>
 
-    <section class="panel" role="tabpanel" id="p-antiplagiat" aria-labelledby="t-antiplagiat" hidden>
+    <section class="panel" role="tabpanel" id="p-antiplagiat" aria-labelledby="t-antiplagiat" tabindex="-1" hidden>
       <div class="panel__body prose stack">
         <h2 class="section-title">Procedura antiplagiat</h2>
         <p>
@@ -130,11 +130,17 @@ const DOCS = [
           decide dacă lucrarea poate fi susținută.
         </p>
 
+        {/* Ghidul descria o încărcare care nu există în portal: pasul întâi
+            trimitea studentul să caute un buton inexistent. Se descrie procesul
+            real, cu legătura chiar lângă instrucțiune. */}
         <ol class="lista-num">
-          <li>Încarci forma finală în portal, în format PDF, până la termenul din calendar.</li>
-          <li>Lucrarea este trimisă automat spre verificare.</li>
-          <li>Coordonatorul primește raportul și îl analizează împreună cu tine.</li>
-          <li>Dacă sunt necesare corecturi, primești termen pentru o nouă încărcare.</li>
+          <li>
+            Trimiți forma finală în format PDF coordonatorului, prin{' '}
+            <a class="link" href="/mesaje">Mesaje</a>, până la termenul din calendar.
+          </li>
+          <li>Coordonatorul o încarcă în platforma antiplagiat a universității.</li>
+          <li>Raportul ajunge la coordonator, care îl analizează împreună cu tine.</li>
+          <li>Dacă sunt necesare corecturi, primești un termen nou și trimiți din nou fișierul.</li>
         </ol>
 
         <h3 class="section-title" style="font-size:var(--t-md)">Ce contează în raport</h3>
@@ -154,7 +160,7 @@ const DOCS = [
       </div>
     </section>
 
-    <section class="panel" role="tabpanel" id="p-documente" aria-labelledby="t-documente" hidden>
+    <section class="panel" role="tabpanel" id="p-documente" aria-labelledby="t-documente" tabindex="-1" hidden>
       <div class="panel__body stack">
         <h2 class="section-title">Documente</h2>
         <ul class="documente">
@@ -201,6 +207,10 @@ const DOCS = [
       const active = i === index
       t.classList.toggle('is-activ', active)
       t.setAttribute('aria-selected', String(active))
+      /* Un tablist are un singur opritor de tabulare: săgețile trec între file,
+         Tab iese din grup. Fără asta, patru file însemnau patru apăsări de Tab
+         înainte de a ajunge la conținut. */
+      t.setAttribute('tabindex', active ? '0' : '-1')
       panels[i].hidden = !active
     })
     history.replaceState({}, '', `#${tabs[index].id.replace('t-', '')}`)

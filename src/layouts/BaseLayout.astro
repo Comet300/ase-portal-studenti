@@ -71,6 +71,7 @@ const site = Astro.site ?? new URL(Astro.url.origin)
       import { porneste as pornesteFormulare } from '../scripts/formulare'
       import { porneste as pornesteRetea } from '../scripts/retea'
       import { porneste as pornesteDialoguri } from '../scripts/dialoguri'
+      import { porneste as pornesteValidare } from '../scripts/validare'
 
       declare global {
         interface Window {
@@ -82,6 +83,7 @@ const site = Astro.site ?? new URL(Astro.url.origin)
       pornesteFormulare()
       pornesteRetea()
       pornesteDialoguri()
+      pornesteValidare()
     </script>
 
     <style>

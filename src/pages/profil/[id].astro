@@ -1,6 +1,8 @@
 ---
 import Avatar from '../../components/Avatar.astro'
+import ProfesorLayout from '../../layouts/ProfesorLayout.astro'
 import StudentLayout from '../../layouts/StudentLayout.astro'
+import { internalPath } from '../../lib/http'
 import { ROLE_LABELS } from '../../lib/auth'
 import { queryOne, query } from '../../lib/db'
 import { id as routeId } from '../../lib/ids'
@@ -101,10 +103,30 @@ const coordination = !isTeacherProfile
   : null
 
 const editHref = isTeacherProfile ? '/profesor/arhiva' : '/contul-meu'
+
+/* Pagina se randează în carcasa celui care o citește.
+ *
+ * Era mereu layout-ul de student, deci un cadru didactic care deschidea profilul
+ * unui student din coada de cereri își pierdea bara laterală și nu mai avea drum
+ * înapoi — pagina arăta ca alt portal.
+ *
+ * `?de_la=` poartă drumul de întoarcere, trecut prin `internalPath` ca o adresă
+ * externă strecurată acolo să nu poată scoate pe nimeni din portal. */
+const Carcasa = me.role === 'student' ? StudentLayout : ProfesorLayout
+const deLa = Astro.url.searchParams.get('de_la')
+const inapoi = deLa ? internalPath(deLa, '') : ''
 ---
 
-<StudentLayout title={person.name} description={`Profilul ${person.name}`}>
+<Carcasa title={person.name} description={`Profilul ${person.name}`} lede={undefined}>
   <div class="container stack stack--loose">
+    {inapoi && (
+      <a class="inapoi" href={inapoi}>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+          <path d="M19 12H5M12 19l-7-7 7-7" />
+        </svg>
+        Înapoi
+      </a>
+    )}
     <section class="panel">
       <div class="panel__body identitate">
         <Avatar name={person.name} src={person.avatar_path} size="lg" />
@@ -316,9 +338,29 @@ const editHref = isTeacherProfile ? '/profesor/arhiva' : '/contul-meu'
       )
     }
   </div>
-</StudentLayout>
+</Carcasa>
 
 <style>
+  /* Drumul înapoi, când pagina a fost deschisă din altă parte a portalului. */
+  .inapoi {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--s-2);
+    align-self: flex-start;
+    min-height: var(--tap);
+    font-size: var(--t-sm);
+    font-weight: 500;
+    color: var(--ink-soft);
+    text-decoration: none;
+  }
+  .inapoi:hover {
+    color: var(--red);
+  }
+  .inapoi svg {
+    width: 15px;
+    height: 15px;
+  }
+
   .identitate {
     display: flex;
     align-items: center;

@@ -91,7 +91,12 @@ const openSeatRequest = mySeatRequests.find((r) => r.status === 'pending')
       <div class="grid-auto">
         <div class="metric">
           <span class="metric__value numeric">
-            {stats?.avg_response_hours != null ? `${stats.avg_response_hours}h` : '—'}
+            {/* „218h” cere o împărțire mentală. Peste două zile se scrie în zile. */}
+            {stats?.avg_response_hours == null
+              ? '—'
+              : stats.avg_response_hours < 48
+                ? `${stats.avg_response_hours} h`
+                : `${(stats.avg_response_hours / 24).toFixed(1).replace('.', ',')} zile`}
           </span>
           <span class="metric__label">timp mediu de răspuns</span>
           <span class="metric__note">de la depunere până la decizie</span>
