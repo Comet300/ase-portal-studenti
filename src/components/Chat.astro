@@ -154,11 +154,33 @@ const INCEPUTURI = [
       active ? (
         <>
           <header class="chat__header">
+            {/* Pe telefon lista de conversații se ascunde ca să încapă firul, și
+                nu mai exista niciun drum înapoi la ea în afară de butonul
+                browserului: firul arăta ca toată pagina. */}
+            <a class="chat__inapoi" href={base} aria-label="Toate conversațiile">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                <path d="M15 18l-6-6 6-6" />
+              </svg>
+            </a>
             <Avatar name={active.peer_name} src={active.peer_avatar} href={`/profil/${active.peer_id}`} />
             <span class="chat__peer">
               <strong>{active.peer_name}</strong>
               {active.peer_detail && <small class="muted">{active.peer_detail}</small>}
             </span>
+
+            {/* Contextul lucrării — titlu, termene, coordonator — este a treia
+                coloană doar peste 1200px. Sub această lățime era pur și simplu
+                `display:none`, deci pe tabletă și pe telefon nu exista nicio cale
+                la el: exact acolo unde firul are cea mai mare nevoie de el, fiind
+                singurul lucru de pe ecran. Devine un sertar, ca fișierele. */}
+            {hasContext && (
+              <button class="chat__fisiere-buton chat__context-buton" type="button" id="comuta-context" aria-expanded="false">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true">
+                  <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
+                </svg>
+                Lucrarea
+              </button>
+            )}
 
             <button class="chat__fisiere-buton" type="button" id="comuta-fisiere" aria-expanded="false">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true">
@@ -369,7 +391,20 @@ const INCEPUTURI = [
     }
   </section>
 
-  {hasContext && <aside class="chat__context"><slot name="context" /></aside>}
+  {
+    hasContext && (
+      <aside class="chat__context" id="chat-context">
+        {/* Închide sertarul; la lățime mare butonul nu se vede deloc, pentru că
+            acolo coloana este mereu deschisă. */}
+        <button class="chat__context-inchide" type="button" id="inchide-context" aria-label="Închide">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <path d="M18 6L6 18M6 6l12 12" />
+          </svg>
+        </button>
+        <slot name="context" />
+      </aside>
+    )
+  }
 </div>
 
 <script>
@@ -1081,12 +1116,80 @@ const INCEPUTURI = [
     height: 17px;
   }
 
+  /* Drumul înapoi la listă și butonul de context apar doar unde chiar lipsesc
+     lucrurile la care duc. */
+  .chat__inapoi {
+    display: none;
+    place-items: center;
+    width: 34px;
+    height: 34px;
+    margin-left: calc(var(--s-2) * -1);
+    border-radius: var(--r-md);
+    color: var(--ink-soft);
+    flex: none;
+  }
+  .chat__inapoi:hover {
+    background: var(--surface-sunken);
+    color: var(--ink);
+  }
+  .chat__inapoi svg {
+    width: 20px;
+    height: 20px;
+  }
+
+  .chat__context-buton {
+    display: none;
+    margin-left: 0;
+  }
+
+  .chat__context-inchide {
+    display: none;
+    position: absolute;
+    top: var(--s-2);
+    right: var(--s-2);
+    place-items: center;
+    width: 32px;
+    height: 32px;
+    border: 0;
+    border-radius: var(--r-md);
+    background: none;
+    color: var(--ink-soft);
+    cursor: pointer;
+  }
+  .chat__context-inchide:hover {
+    background: var(--surface-sunken);
+    color: var(--ink);
+  }
+  .chat__context-inchide svg {
+    width: 17px;
+    height: 17px;
+  }
+
   @media (max-width: 1200px) {
     .chat--cu-context {
       grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);
     }
+
+    /* Contextul devine sertar: acoperă firul cât e consultat, ca fișierele. */
     .chat__context {
+      position: absolute;
+      inset: 0 0 0 auto;
+      width: min(340px, 100%);
+      z-index: 4;
+      border-left: 1px solid var(--border);
+      box-shadow: var(--shadow-overlay);
+      animation: sertar-intra var(--base) var(--ease);
+    }
+    .chat__context[hidden] {
       display: none;
+    }
+    .chat__context:not([hidden]) {
+      display: block;
+      overflow-y: auto;
+    }
+    .chat__context-inchide,
+    .chat__context-buton {
+      display: inline-grid;
     }
   }
 
@@ -1101,11 +1204,19 @@ const INCEPUTURI = [
     .chat[data-has-thread] .chat__list {
       display: none;
     }
+    .chat[data-has-thread] .chat__inapoi {
+      display: inline-grid;
+    }
     .chat__thread {
       min-height: 70vh;
     }
     .chat__send-label {
       display: none;
+    }
+    /* Numele coordonatorului și două butoane nu încap pe un rând de telefon. */
+    .chat__context-buton span,
+    .chat__fisiere-buton {
+      font-size: var(--t-xs);
     }
   }
 </style>

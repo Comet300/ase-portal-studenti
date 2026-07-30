@@ -372,9 +372,52 @@ export function porneste() {
   comuta?.addEventListener('click', () => setSertar(sertar?.hidden ?? true))
   document.getElementById('inchide-fisiere')?.addEventListener('click', () => setSertar(false))
 
+  /* --- sertarul cu contextul lucrării -------------------------------------- */
+
+  /* Sub 1200px coloana din dreapta nu încape, iar până acum pur și simplu
+   * dispărea: titlul lucrării, termenele și coordonatorul nu existau pe tabletă
+   * și pe telefon. Aceeași mecanică ca la fișiere — deschis, se aude ca sertar;
+   * la lățime mare butonul nu se vede, deci `hidden` nu se pune niciodată și
+   * coloana rămâne coloană. */
+  const context = document.getElementById('chat-context')
+  const comutaContext = document.getElementById('comuta-context')
+
+  const setContext = (deschis: boolean) => {
+    if (!context) return
+    context.hidden = !deschis
+    comutaContext?.setAttribute('aria-expanded', String(deschis))
+    if (deschis) {
+      context.querySelector<HTMLElement>('a, button')?.focus()
+      return
+    }
+    if (context.contains(document.activeElement)) comutaContext?.focus()
+  }
+
+  // Pornește închis pe ecran îngust, fără să atingă nimic pe ecran lat.
+  if (context && comutaContext && comutaContext.offsetParent !== null) {
+    context.hidden = true
+  }
+
+  comutaContext?.addEventListener('click', () => setContext(context?.hidden ?? true))
+  document.getElementById('inchide-context')?.addEventListener('click', () => setContext(false))
+
+  /* Trecerea peste 1200px cu sertarul închis lăsa coloana ascunsă pe un ecran
+   * unde ea trebuie să fie mereu vizibilă. */
+  const lat = window.matchMedia('(min-width: 1201px)')
+  const potrivesteLatimea = () => {
+    if (!context) return
+    if (lat.matches) context.hidden = false
+    else if (comutaContext?.getAttribute('aria-expanded') !== 'true') context.hidden = true
+  }
+  lat.addEventListener('change', potrivesteLatimea)
+  potrivesteLatimea()
+
   document.addEventListener('keydown', (e) => {
     if (e.target === input) return
     if (e.key === 'Escape' && sertar && !sertar.hidden) setSertar(false)
+    if (e.key === 'Escape' && context && !context.hidden && comutaContext?.offsetParent !== null) {
+      setContext(false)
+    }
   })
 
   document.addEventListener('click', (e) => {

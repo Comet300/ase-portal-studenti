@@ -658,6 +658,55 @@ export function formatDate(iso: string | null, withTime = false): string {
   return withTime ? `${base}, ${formatTime(iso)}` : base
 }
 
+/**
+ * Luni, ca reper de grupare.
+ *
+ * Un program de consultații se citește pe săptămâni — „ce am săptămâna asta” —
+ * nu pe treizeci de rânduri la rând. Săptămâna începe luni, ca în calendarul
+ * românesc, iar `getDay()` pune duminica la zero, deci ea se împinge la coada
+ * săptămânii care se încheie.
+ */
+export function startOfWeek(iso: string): string {
+  const d = new Date(iso)
+  d.setHours(0, 0, 0, 0)
+  const zi = d.getDay()
+  d.setDate(d.getDate() - (zi === 0 ? 6 : zi - 1))
+  return d.toISOString().slice(0, 10)
+}
+
+/**
+ * Cum se numește o săptămână, față de cea în care ești.
+ *
+ * „Săptămâna 4–10 august” este exact, dar „săptămâna aceasta” este ce caută
+ * ochiul, iar cele două nu se exclud: prima rămâne ca subtitlu.
+ */
+export function weekLabel(mondayIso: string, todayIso = new Date().toISOString().slice(0, 10)) {
+  const luni = new Date(mondayIso + 'T00:00:00')
+  const duminica = new Date(luni)
+  duminica.setDate(duminica.getDate() + 6)
+
+  const aceasta = startOfWeek(todayIso)
+  const diferenta = Math.round(
+    (luni.getTime() - new Date(aceasta + 'T00:00:00').getTime()) / (7 * 86_400_000),
+  )
+
+  const nume =
+    diferenta === 0
+      ? 'Săptămâna aceasta'
+      : diferenta === 1
+        ? 'Săptămâna viitoare'
+        : diferenta === -1
+          ? 'Săptămâna trecută'
+          : null
+
+  const interval =
+    luni.getMonth() === duminica.getMonth()
+      ? `${luni.getDate()}–${duminica.getDate()} ${MONTHS[luni.getMonth()]}`
+      : `${luni.getDate()} ${MONTHS[luni.getMonth()]} – ${duminica.getDate()} ${MONTHS[duminica.getMonth()]}`
+
+  return { nume: nume ?? interval, interval: nume ? interval : null }
+}
+
 export function formatTime(iso: string): string {
   const d = new Date(iso)
   return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
