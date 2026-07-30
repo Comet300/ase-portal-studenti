@@ -195,7 +195,7 @@ const openSeatRequest = mySeatRequests.find((r) => r.status === 'pending')
                     minlength="20"
                     required
                     placeholder="Ex: am primit trei cereri peste capacitate, toate pe teme din aria mea de cercetare."
-                  />
+                  data-autogrow />
                   <span class="hint">Directorul decide pe baza acestui text.</span>
                 </div>
                 <div class="row row--end">
@@ -339,7 +339,7 @@ const openSeatRequest = mySeatRequests.find((r) => r.status === 'pending')
             maxlength="1200"
             placeholder="Ce fel de lucrări coordonezi și ce aștepți de la un student. Studenții citesc asta înainte să îți scrie."
             set:text={u.bio ?? ''}
-          />
+          data-autogrow />
         </div>
 
         <div class="row row--wrap" style="gap:var(--s-4)">

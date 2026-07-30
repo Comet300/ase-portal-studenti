@@ -20,7 +20,10 @@ import {
 import { allYears, groupLabel } from '../../lib/years'
 
 const u = Astro.locals.user!
-const sectiune = Astro.url.searchParams.get('sectiune') ?? 'cereri'
+// Vezi departament.astro: o valoare necunoscută nu are voie să golească pagina.
+const SECTIUNI = ['cereri', 'studenti', 'progres', 'invitatii'] as const
+const cerut = Astro.url.searchParams.get('sectiune') ?? ''
+const sectiune = (SECTIUNI as readonly string[]).includes(cerut) ? cerut : 'cereri'
 const studentDeschis = Astro.url.searchParams.get('student')
 
 const [toateCererile, studenti, teme, locuri, invitatii, directorStudenti, ani] =
@@ -489,8 +492,7 @@ function deadline(expiresAt: string | null | undefined) {
                             id={`desc-${j.id}`}
                             name="descriere"
                             rows="2"
-                            style="min-height:64px"
-                          >{j.description ?? ''}</textarea>
+                            style="min-height:64px" data-autogrow>{j.description ?? ''}</textarea>
                         </div>
 
                         <div class="row" style="gap:var(--s-2)">
@@ -625,7 +627,7 @@ function deadline(expiresAt: string | null | undefined) {
                   minlength="30"
                   required
                   placeholder="Spune-i de ce l-ai ales și ce temă ai în minte. Studentul decide pe baza acestui mesaj."
-                />
+                data-autogrow />
                 <span class="hint">
                   Studentul primește propunerea pe email și în conversație. Expiră după{' '}
                   {INVITATION_WINDOW_DAYS} de zile.
@@ -715,7 +717,7 @@ function deadline(expiresAt: string | null | undefined) {
 
       <div class="field">
         <label class="label" for="motiv" id="dialog-eticheta">Mesaj pentru student</label>
-        <textarea class="textarea" id="motiv" name="motiv" rows="4"></textarea>
+        <textarea class="textarea" id="motiv" name="motiv" rows="4" data-autogrow></textarea>
         <span class="hint" id="dialog-hint" />
       </div>
 

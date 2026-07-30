@@ -494,6 +494,23 @@ h4 {
   color: var(--ink-muted);
 }
 
+/* Obligatoriu se marchează o singură dată, în etichetă.
+ *
+ * Portalul folosea trei convenții în paralel: `required` fără nimic vizibil,
+ * „(opțional)” în etichetă la unele câmpuri, și „Opțional” strecurat în
+ * placeholder la altele — deci absența oricărui semn nu spunea nimic. Steluța
+ * marchează ce este obligatoriu; restul se citește prin lipsă. */
+.label__req {
+  color: var(--danger);
+  font-weight: 700;
+  margin-left: 2px;
+}
+
+.form-legenda {
+  font-size: var(--t-xs);
+  color: var(--ink-muted);
+}
+
 .input,
 .select,
 .textarea {
@@ -1138,6 +1155,47 @@ dialog[open]::backdrop {
   /* Insetul contează în peisaj pe un telefon cu crestătură: fără el, textul
    * intră sub ea. */
   padding-inline: max(var(--s-5), env(safe-area-inset-left)) max(var(--s-5), env(safe-area-inset-right));
+}
+
+/* --- deschideri și închideri --------------------------------------------- */
+
+/* `<details>` sare dintr-o stare în alta. `interpolate-size` face `height: auto`
+ * animabil, deci desfacerea alunecă în loc să pocnească; unde nu e suportat,
+ * comportamentul rămâne cel de acum. */
+:root {
+  interpolate-size: allow-keywords;
+}
+
+details > summary {
+  transition: color var(--fast) var(--ease);
+}
+
+/* Cardurile filtrate în catalog dispăreau într-un singur cadru. Intră eșalonat,
+ * ca lista să se recompună în loc să clipească. */
+.lista-coord > li,
+.lista-teme > li {
+  animation: card-intra var(--base) var(--ease) both;
+  animation-delay: calc(var(--i, 0) * 18ms);
+}
+
+@keyframes card-intra {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+/* Barele de progres își animau scaleX dintr-o valoare pusă la randare, deci
+ * nu porneau niciodată de la zero: nu se vedea nicio mișcare. */
+.progres__bara {
+  transform-origin: left;
+  animation: progres-umple var(--slow) var(--ease-inout) both;
+}
+
+@keyframes progres-umple {
+  from {
+    transform: scaleX(0);
+  }
 }
 
 /* --- tranziții între pagini ---------------------------------------------- */

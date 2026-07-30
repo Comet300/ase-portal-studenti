@@ -109,7 +109,7 @@ const anCurent = new Date().getFullYear()
 
                     <div class="field">
                       <label class="label" for={`descriere-${s.id}`}>Descriere</label>
-                      <textarea class="textarea" id={`descriere-${s.id}`} name="descriere" rows="2" style="min-height:64px">{s.description ?? ''}</textarea>
+                      <textarea class="textarea" id={`descriere-${s.id}`} name="descriere" rows="2" style="min-height:64px" data-autogrow>{s.description ?? ''}</textarea>
                     </div>
 
                     <div class="row" style="gap:var(--s-2)">

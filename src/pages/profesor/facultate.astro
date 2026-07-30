@@ -272,9 +272,7 @@ const STARI = [
                         <td colspan="6">
                           <form method="POST" action="/api/studenti" class="atribuire">
                             <input type="hidden" name="student_id" value={s.id} />
-                            <label class="visually-hidden" for={`prog-${s.id}`}>
-                              Program de studiu pentru {s.name}
-                            </label>
+                            <label class="label" for={`prog-${s.id}`}>Program de studiu</label>
                             <select class="select select--sm" id={`prog-${s.id}`} name="program_id">
                               {programeleAnului.map((p) => (
                                 <option
@@ -289,9 +287,7 @@ const STARI = [
                                 </option>
                               ))}
                             </select>
-                            <label class="visually-hidden" for={`an-${s.id}`}>
-                              An de studiu pentru {s.name}
-                            </label>
+                            <label class="label" for={`an-${s.id}`}>An</label>
                             <input
                               class="input input--num"
                               id={`an-${s.id}`}
@@ -301,15 +297,16 @@ const STARI = [
                               max="6"
                               value={s.study_year ?? ''}
                             />
-                            <label class="visually-hidden" for={`gr-${s.id}`}>
-                              Grupa pentru {s.name}
-                            </label>
+                            {/* Pe un rând deschis pe toată lățimea încape o
+                                etichetă adevărată; placeholderul ținea locul unei
+                                etichete și dispărea la prima tastă. */}
+                            <label class="label" for={`gr-${s.id}`}>Grupa</label>
                             <input
                               class="input input--num"
                               id={`gr-${s.id}`}
                               name="grupa"
                               value={s.study_group ?? ''}
-                              placeholder="Grupa"
+                              placeholder="Ex: RO-1503"
                             />
                             <button class="btn btn--primary btn--sm" type="submit">Salvează</button>
                           </form>

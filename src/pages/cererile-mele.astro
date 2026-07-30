@@ -440,8 +440,14 @@ const shouldOpenForm = Boolean(openWith.teacher) && !hasActiveRequest
         </div>
 
         <div class="field">
-          <label class="label" for="titlu_en">Titlul lucrării (engleză)</label>
-          <input class="input" id="titlu_en" name="titlu_en" maxlength="200" placeholder="Opțional" />
+          {/* „Opțional” aparține etichetei, nu placeholderului: un placeholder
+              dispare la prima tastă, iar cine revine la câmp nu mai are de unde
+              să știe dacă e obligatoriu. */}
+          <label class="label" for="titlu_en">
+            Titlul lucrării în engleză <span class="muted">(opțional)</span>
+          </label>
+          <input class="input" id="titlu_en" name="titlu_en" maxlength="200"
+            placeholder="Ex: The impact of video reviews on purchase intent" />
         </div>
 
         <div class="field">
@@ -453,7 +459,7 @@ const shouldOpenForm = Boolean(openWith.teacher) && !hasActiveRequest
             required
             minlength="40"
             placeholder="Descrie direcția generală a cercetării, problema abordată și minimum 3 obiective urmărite…"
-          />
+          data-autogrow />
           <span class="hint"><span id="contor-scop">0</span> caractere · minimum 40</span>
         </div>
 
@@ -468,7 +474,7 @@ const shouldOpenForm = Boolean(openWith.teacher) && !hasActiveRequest
             required
             minlength="40"
             placeholder="Ce te leagă de subiect: un curs, un stagiu, acces la date, planuri pentru master…"
-          />
+          data-autogrow />
           <span class="hint">
             <span id="contor-motivatie">0</span> caractere · minimum 40. Ajunge la coordonator
             odată cu cererea și rămâne în documentul tipărit.
@@ -535,7 +541,7 @@ const shouldOpenForm = Boolean(openWith.teacher) && !hasActiveRequest
           required
           minlength="10"
           placeholder="Ex: Mulțumesc pentru propunere, dar am depus deja o cerere pe o temă de marketing digital."
-        />
+        data-autogrow />
       </div>
 
       <div class="row" style="justify-content:flex-end;gap:var(--s-2)">

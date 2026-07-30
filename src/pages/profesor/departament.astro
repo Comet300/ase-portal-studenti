@@ -15,7 +15,12 @@ import { LEVEL_LABELS, currentYear } from '../../lib/years'
  * else in the portal.
  */
 
-const sectiune = Astro.url.searchParams.get('sectiune') ?? 'situatie'
+/* Un `?sectiune` necunoscut lăsa pagina cu bara de taburi, antetul și zero
+ * conținut: ambele gărzi erau false și nimic nu prelua. Orice valoare
+ * nerecunoscută cade pe secțiunea implicită. */
+const SECTIUNI = ['situatie', 'locuri'] as const
+const cerut = Astro.url.searchParams.get('sectiune') ?? ''
+const sectiune = (SECTIUNI as readonly string[]).includes(cerut) ? cerut : 'situatie'
 
 const teacherFilter = Astro.url.searchParams.get('coordonator') ?? ''
 const programFilter = Astro.url.searchParams.get('program') ?? ''
