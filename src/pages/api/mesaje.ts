@@ -3,13 +3,13 @@ import { myConversation } from '../../lib/chat'
 import { queryOne, transaction } from '../../lib/db'
 import { template, sendEmail, html, quote } from '../../lib/mail'
 import { MAX_BYTES, extensiePermisa, saveFile, tipDupaExtensie } from '../../lib/files'
-import { redirect, redirectWithNotice } from '../../lib/http'
+import { deadEnd, redirect, redirectWithNotice, sessionExpired } from '../../lib/http'
 import { id as formId } from '../../lib/ids'
 
 /** Trimite un mesaj, cu atașament opțional. */
 export const POST: APIRoute = async ({ request, locals, url }) => {
   const u = locals.user
-  if (!u) return new Response('Neautentificat', { status: 401 })
+  if (!u) return sessionExpired()
 
   const form = await request.formData()
   const conversationId = formId(form.get('conversation_id'))
@@ -17,11 +17,11 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
   const redirectTo = String(form.get('redirect') ?? '/mesaje')
   const file = form.get('file')
 
-  if (!conversationId) return new Response('Conversație lipsă', { status: 400 })
+  if (!conversationId) return deadEnd(400, 'Conversație neidentificată', 'Deschide conversația din lista de mesaje și încearcă din nou.')
 
   // Apartenența la conversație este verificată în interogare.
   const conversation = await myConversation(u.id, conversationId)
-  if (!conversation) return new Response('Conversația nu a fost găsită', { status: 404 })
+  if (!conversation) return deadEnd(404, 'Conversația nu a fost găsită', 'Fie nu există, fie nu face parte din conversațiile tale.')
 
   if (!body && !(file instanceof File && file.size > 0)) {
     return redirect(redirectTo)

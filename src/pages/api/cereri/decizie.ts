@@ -3,7 +3,7 @@ import { isTeacher } from '../../../lib/auth'
 import { postEvent } from '../../../lib/chat'
 import { queryOne, transaction } from '../../../lib/db'
 import { html, quote, sendEmail, template } from '../../../lib/mail'
-import { redirectWithNotice } from '../../../lib/http'
+import { deadEnd, redirectWithNotice, sessionExpired } from '../../../lib/http'
 import { DEFAULT_MILESTONES, teacherSeats } from '../../../lib/repo'
 import { id as formId } from '../../../lib/ids'
 
@@ -17,7 +17,7 @@ import { id as formId } from '../../../lib/ids'
  */
 export const POST: APIRoute = async ({ request, locals, url }) => {
   const u = locals.user
-  if (!isTeacher(u)) return new Response('Neautorizat', { status: 401 })
+  if (!isTeacher(u)) return sessionExpired()
 
   const form = await request.formData()
   const requestId = formId(form.get('cerere_id'))
@@ -26,7 +26,7 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
   const redirectTo = String(form.get('redirect') ?? '/profesor/studenti')
 
   if (decision !== 'approved' && decision !== 'rejected') {
-    return new Response('Decizie invalidă', { status: 400 })
+    return deadEnd(400, 'Decizie neînțeleasă', 'Decizia trimisă nu este una dintre cele posibile. Reia din coada de cereri.')
   }
 
   if (decision === 'rejected' && note.length < 10) {

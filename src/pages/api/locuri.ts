@@ -2,7 +2,7 @@ import type { APIRoute } from 'astro'
 import { isDepartmentHead, isTeacher } from '../../lib/auth'
 import { execute, queryOne } from '../../lib/db'
 import { grantSeats } from '../../lib/lifecycle'
-import { redirectWithNotice } from '../../lib/http'
+import { deadEnd, redirectWithNotice, sessionExpired } from '../../lib/http'
 import { formAction } from '../../lib/forms'
 import { html, quote, sendEmail, template } from '../../lib/mail'
 import { id as formId } from '../../lib/ids'
@@ -22,7 +22,7 @@ const TEACHER_PAGE = '/profesor/arhiva'
 
 export const POST: APIRoute = async ({ request, locals, url }) => {
   const u = locals.user
-  if (!isTeacher(u)) return new Response('Neautorizat', { status: 401 })
+  if (!isTeacher(u)) return sessionExpired()
 
   const form = await request.formData()
   const action = formAction(form)
@@ -31,7 +31,7 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
   /* --- the head allocates -------------------------------------------------- */
 
   if (action === 'aloca') {
-    if (!isDepartmentHead(u)) return new Response('Pagina nu a fost găsită', { status: 404 })
+    if (!isDepartmentHead(u)) return deadEnd(404, 'Pagina nu a fost găsită', 'Adresa aceasta nu duce nicăieri în portal.')
 
     const teacherId = formId(form.get('profesor_id'))
     const bachelor = Number(form.get('locuri_licenta') ?? 0)
@@ -131,14 +131,14 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
   /* --- the head decides ----------------------------------------------------- */
 
   if (action === 'decide') {
-    if (!isDepartmentHead(u)) return new Response('Pagina nu a fost găsită', { status: 404 })
+    if (!isDepartmentHead(u)) return deadEnd(404, 'Pagina nu a fost găsită', 'Adresa aceasta nu duce nicăieri în portal.')
 
     const seatRequestId = formId(form.get('cerere_id'))
     const decision = String(form.get('decizie') ?? '')
     const note = String(form.get('nota') ?? '').trim()
 
     if (decision !== 'approved' && decision !== 'rejected') {
-      return new Response('Decizie invalidă', { status: 400 })
+      return deadEnd(400, 'Decizie neînțeleasă', 'Decizia trimisă nu este una dintre cele posibile. Reia din coada de cereri.')
     }
 
     const decided =
@@ -186,5 +186,5 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
     )
   }
 
-  return new Response('Acțiune necunoscută', { status: 400 })
+  return deadEnd(400, 'Cerere neînțeleasă', 'Portalul nu a recunoscut acțiunea cerută. Reia pasul din interfață.')
 }

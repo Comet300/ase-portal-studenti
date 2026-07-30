@@ -4,14 +4,14 @@ import { queryOne } from '../../lib/db'
 import { buildIcs, consultationUid } from '../../lib/ics'
 import { template, sendEmail, html } from '../../lib/mail'
 import { formatDate, formatTime } from '../../lib/repo'
-import { redirectWithNotice } from '../../lib/http'
+import { redirectWithNotice, sessionExpired } from '../../lib/http'
 import { formAction } from '../../lib/forms'
 import { id as formId } from '../../lib/ids'
 
 /** Rezervarea și anularea unui interval de consultație, cu invitație în calendar. */
 export const POST: APIRoute = async ({ request, locals, url }) => {
   const u = locals.user
-  if (!u) return new Response('Neautentificat', { status: 401 })
+  if (!u) return sessionExpired()
 
   const form = await request.formData()
   const action = formAction(form) || 'rezerva'

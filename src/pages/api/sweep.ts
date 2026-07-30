@@ -14,6 +14,9 @@ import { sweepDeadlines, lastSweepAt } from '../../lib/lifecycle'
  * existe o rută publică ce declanșează emailuri.
  */
 export const GET: APIRoute = async ({ request, url }) => {
+  /* Răspunsurile de aici sunt pentru o mașină, nu pentru un om: un planificator
+   * are nevoie de un cod de stare, nu de o pagină sau de un redirect către
+   * ecranul de autentificare. */
   const asteptat = process.env.SWEEP_TOKEN
   if (!asteptat) return new Response('Pagina nu a fost găsită', { status: 404 })
 

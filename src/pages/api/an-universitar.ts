@@ -1,7 +1,7 @@
 import type { APIRoute } from 'astro'
 import { isDepartmentHead } from '../../lib/auth'
 import { execute, queryOne, transaction } from '../../lib/db'
-import { redirectWithNotice } from '../../lib/http'
+import { deadEnd, redirectWithNotice } from '../../lib/http'
 import { formAction } from '../../lib/forms'
 import { openYear } from '../../lib/years'
 import { id as formId } from '../../lib/ids'
@@ -20,7 +20,7 @@ const PAGE = '/profesor/an-universitar'
 
 export const POST: APIRoute = async ({ request, locals }) => {
   const u = locals.user
-  if (!isDepartmentHead(u)) return new Response('Pagina nu a fost găsită', { status: 404 })
+  if (!isDepartmentHead(u)) return deadEnd(404, 'Pagina nu a fost găsită', 'Adresa aceasta nu duce nicăieri în portal.')
 
   const form = await request.formData()
   const action = formAction(form)
@@ -200,5 +200,5 @@ export const POST: APIRoute = async ({ request, locals }) => {
     )
   }
 
-  return new Response('Acțiune necunoscută', { status: 400 })
+  return deadEnd(400, 'Cerere neînțeleasă', 'Portalul nu a recunoscut acțiunea cerută. Reia pasul din interfață.')
 }

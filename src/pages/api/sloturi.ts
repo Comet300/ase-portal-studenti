@@ -3,7 +3,7 @@ import { isTeacher } from '../../lib/auth'
 import { postEvent } from '../../lib/chat'
 import { execute, query, queryOne } from '../../lib/db'
 import { buildIcs, consultationUid } from '../../lib/ics'
-import { redirectWithNotice } from '../../lib/http'
+import { deadEnd, redirectWithNotice, sessionExpired } from '../../lib/http'
 import { formAction } from '../../lib/forms'
 import { html, joinHtml, sendEmail, template } from '../../lib/mail'
 import { formatDate, formatTime } from '../../lib/repo'
@@ -55,7 +55,7 @@ function whereItIs(mode: string, location: string | null, meetingUrl: string | n
 
 export const POST: APIRoute = async ({ request, locals, url }) => {
   const u = locals.user
-  if (!isTeacher(u)) return new Response('Neautorizat', { status: 401 })
+  if (!isTeacher(u)) return sessionExpired()
 
   const form = await request.formData()
   const action = formAction(form) || 'publica'
@@ -348,5 +348,5 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
     )
   }
 
-  return new Response('Acțiune necunoscută', { status: 400 })
+  return deadEnd(400, 'Cerere neînțeleasă', 'Portalul nu a recunoscut acțiunea cerută. Reia pasul din interfață.')
 }

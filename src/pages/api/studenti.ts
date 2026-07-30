@@ -1,7 +1,7 @@
 import type { APIRoute } from 'astro'
 import { isDepartmentHead } from '../../lib/auth'
 import { execute, queryOne } from '../../lib/db'
-import { redirectWithNotice } from '../../lib/http'
+import { deadEnd, redirectWithNotice } from '../../lib/http'
 import { id as formId } from '../../lib/ids'
 
 /**
@@ -18,7 +18,7 @@ const PAGE = '/profesor/facultate'
 
 export const POST: APIRoute = async ({ request, locals }) => {
   if (!isDepartmentHead(locals.user)) {
-    return new Response('Pagina nu a fost găsită', { status: 404 })
+    return deadEnd(404, 'Pagina nu a fost găsită', 'Adresa aceasta nu duce nicăieri în portal.')
   }
 
   const form = await request.formData()

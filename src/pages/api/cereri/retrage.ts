@@ -1,7 +1,7 @@
 import type { APIRoute } from 'astro'
 import { postEvent } from '../../../lib/chat'
 import { queryOne } from '../../../lib/db'
-import { redirectWithNotice } from '../../../lib/http'
+import { redirectWithNotice, sessionExpired } from '../../../lib/http'
 import { id as formId } from '../../../lib/ids'
 import { html, sendEmail, template } from '../../../lib/mail'
 
@@ -16,8 +16,8 @@ import { html, sendEmail, template } from '../../../lib/mail'
  */
 export const POST: APIRoute = async ({ request, locals, url }) => {
   const u = locals.user
-  if (!u) return new Response('Neautentificat', { status: 401 })
-  if (u.role !== 'student') return new Response('Neautorizat', { status: 403 })
+  if (!u) return sessionExpired()
+  if (u.role !== 'student') return sessionExpired()
 
   const form = await request.formData()
   const requestId = formId(form.get('cerere_id'))

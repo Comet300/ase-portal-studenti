@@ -1,7 +1,7 @@
 import type { APIRoute } from 'astro'
 import { isTeacher } from '../../lib/auth'
 import { execute, queryOne } from '../../lib/db'
-import { redirectWithNotice } from '../../lib/http'
+import { redirectWithNotice, sessionExpired } from '../../lib/http'
 import { id as formId } from '../../lib/ids'
 
 /**
@@ -16,7 +16,7 @@ import { id as formId } from '../../lib/ids'
  */
 export const POST: APIRoute = async ({ request, locals }) => {
   const u = locals.user
-  if (!isTeacher(u)) return new Response('Neautorizat', { status: 401 })
+  if (!isTeacher(u)) return sessionExpired()
 
   const form = await request.formData()
   const requestId = formId(form.get('cerere_id'))

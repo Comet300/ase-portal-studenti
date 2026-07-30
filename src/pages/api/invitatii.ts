@@ -3,7 +3,7 @@ import { isTeacher } from '../../lib/auth'
 import { postEvent } from '../../lib/chat'
 import { execute, queryOne } from '../../lib/db'
 import { formAction } from '../../lib/forms'
-import { redirect, redirectWithNotice } from '../../lib/http'
+import { deadEnd, redirect, redirectWithNotice, sessionExpired } from '../../lib/http'
 import { INVITATION_WINDOW_DAYS, openInvitationFor } from '../../lib/lifecycle'
 import { html, quote, sendEmail, template } from '../../lib/mail'
 import { teacherSeats } from '../../lib/repo'
@@ -26,7 +26,7 @@ const TEACHER_PAGE = '/profesor/studenti?sectiune=invitatii'
 
 export const POST: APIRoute = async ({ request, locals, url }) => {
   const u = locals.user
-  if (!u) return new Response('Neautentificat', { status: 401 })
+  if (!u) return sessionExpired()
 
   const form = await request.formData()
   const action = formAction(form)
@@ -35,7 +35,7 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
   /* --- the coordinator invites --------------------------------------------- */
 
   if (action === 'trimite') {
-    if (!isTeacher(u)) return new Response('Neautorizat', { status: 403 })
+    if (!isTeacher(u)) return sessionExpired()
 
     const studentId = formId(form.get('student_id'))
     const topicId = formId(form.get('tema_id'))
@@ -118,14 +118,14 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
   /* --- the student answers -------------------------------------------------- */
 
   if (action === 'raspunde') {
-    if (u.role !== 'student') return new Response('Neautorizat', { status: 403 })
+    if (u.role !== 'student') return sessionExpired()
 
     const invitationId = formId(form.get('invitatie_id'))
     const answer = String(form.get('raspuns') ?? '')
     const reason = String(form.get('motiv') ?? '').trim()
 
     if (answer !== 'accepted' && answer !== 'declined') {
-      return new Response('Răspuns invalid', { status: 400 })
+      return deadEnd(400, 'Răspuns neînțeles', 'Răspunsul trimis nu este unul dintre cele posibile.')
     }
 
     const invitation = await openInvitationFor(u.id, invitationId)
@@ -192,5 +192,5 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
       : redirectWithNotice('/cererile-mele', 'Ai refuzat propunerea. Coordonatorul a fost anunțat.')
   }
 
-  return new Response('Acțiune necunoscută', { status: 400 })
+  return deadEnd(400, 'Cerere neînțeleasă', 'Portalul nu a recunoscut acțiunea cerută. Reia pasul din interfață.')
 }

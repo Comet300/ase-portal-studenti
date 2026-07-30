@@ -572,15 +572,31 @@ function deadline(expiresAt: string | null | undefined) {
               <div class="row row--wrap" style="gap:var(--s-3)">
                 <div class="field" style="flex:2;min-width:260px">
                   <label class="label" for="student_id">Student</label>
-                  <select class="select" id="student_id" name="student_id" required>
-                    <option value="">Alege un student fără coordonator…</option>
+                  {/* Un `<datalist>` face lista căutabilă fără să înceteze să fie
+                      o listă: se poate scrie ca să filtrezi, sau se poate răsfoi.
+                      Cu douăzeci și cinci de nume, derularea era singura opțiune. */}
+                  <input
+                    class="input"
+                    id="student_nume"
+                    list="lista-invitabili"
+                    placeholder="Scrie un nume sau alege din listă…"
+                    autocomplete="off"
+                    aria-describedby="ajutor-invitabili"
+                  />
+                  <datalist id="lista-invitabili">
                     {invitabili.map((s) => (
-                      <option value={s.id}>
-                        {s.name} — {groupLabel(s)}
-                        {s.request_status === 'pending' ? ' · are o cerere depusă' : ''}
-                      </option>
+                      <option
+                        value={`${s.name} — ${groupLabel(s)}${s.request_status === 'pending' ? ' · are o cerere depusă' : ''}`}
+                        data-id={s.id}
+                      />
                     ))}
-                  </select>
+                  </datalist>
+                  <input type="hidden" id="student_id" name="student_id" required />
+                  <span class="hint" id="ajutor-invitabili">
+                    {invitabili.length}{' '}
+                    {invitabili.length === 1 ? 'student disponibil' : 'studenți disponibili'} —
+                    doar cei fără coordonator confirmat.
+                  </span>
                   <span class="hint">
                     Apar doar studenții care nu au încă un coordonator confirmat.
                   </span>
@@ -789,6 +805,31 @@ function deadline(expiresAt: string | null | undefined) {
     mod.addEventListener('change', sync)
     sync()
   })
+
+  /* --- alegerea studentului de invitat ------------------------------------
+   *
+   * Câmpul vizibil poartă numele, ca să poată fi căutat; formularul are nevoie
+   * de id, deci se traduce dintr-unul în altul. Dacă textul nu corespunde
+   * niciunei opțiuni, id-ul rămâne gol și `required` de pe el oprește
+   * trimiterea — deci un nume scris pe jumătate nu poate ajunge la server. */
+  const campNume = document.getElementById('student_nume') as HTMLInputElement | null
+  const campId = document.getElementById('student_id') as HTMLInputElement | null
+  const lista = document.getElementById('lista-invitabili')
+
+  if (campNume && campId && lista) {
+    const potrivire = () => {
+      const opt = [...lista.querySelectorAll<HTMLOptionElement>('option')].find(
+        (o) => o.value === campNume.value,
+      )
+      campId.value = opt?.dataset.id ?? ''
+      campNume.setAttribute('aria-invalid', campNume.value && !opt ? 'true' : 'false')
+    }
+
+    campNume.addEventListener('input', potrivire)
+    campNume.addEventListener('change', potrivire)
+    campNume.form?.addEventListener('reluat', potrivire)
+    potrivire()
+  }
 </script>
 
 <style>

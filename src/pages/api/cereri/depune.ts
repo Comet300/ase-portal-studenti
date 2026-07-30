@@ -2,7 +2,7 @@ import type { APIRoute } from 'astro'
 import { postEvent } from '../../../lib/chat'
 import { queryOne, transaction } from '../../../lib/db'
 import { template, sendEmail, html } from '../../../lib/mail'
-import { redirectWithNotice } from '../../../lib/http'
+import { deadEnd, redirectWithNotice, sessionExpired } from '../../../lib/http'
 import { DECISION_WINDOW_DAYS } from '../../../lib/lifecycle'
 import { seedMilestones, teacherSeats } from '../../../lib/repo'
 import { id as formId } from '../../../lib/ids'
@@ -17,9 +17,9 @@ import { id as formId } from '../../../lib/ids'
  */
 export const POST: APIRoute = async ({ request, locals, url }) => {
   const u = locals.user
-  if (!u) return new Response('Neautentificat', { status: 401 })
+  if (!u) return sessionExpired()
   if (u.role !== 'student') {
-    return new Response('Doar studenții pot depune cereri', { status: 403 })
+    return deadEnd(403, 'Cererile se depun de studenți', 'Zona cadrelor didactice are propriile ecrane pentru coordonare.')
   }
 
   const form = await request.formData()
