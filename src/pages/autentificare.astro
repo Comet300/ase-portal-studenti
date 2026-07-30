@@ -30,11 +30,37 @@ if (Astro.locals.user && !trimis) {
         trimis ? (
           <div class="stack">
             <h1 class="title">Verifică-ți emailul</h1>
+            {/* „Verifică-ți emailul” fără să spună care lăsa pe cineva care a
+                greșit domeniul să aștepte un mesaj care nu pleca nicăieri. */}
             <p class="muted">
-              Ți-am trimis un link de autentificare. Este valabil 20 de minute și poate fi folosit o
-              singură dată.
+              Am trimis linkul de autentificare la{' '}
+              {emailScris ? <strong>{emailScris}</strong> : 'adresa introdusă'}. Este valabil 20 de
+              minute și poate fi folosit o singură dată.
             </p>
-            <a href="/autentificare" class="btn btn--secondary">Trimite din nou</a>
+
+            <details class="ajutor">
+              <summary>Nu a ajuns niciun email?</summary>
+              <ul>
+                <li>Așteaptă un minut — uneori întârzie.</li>
+                <li>Caută în Spam sau în „Promoții”.</li>
+                <li>
+                  Verifică domeniul: <strong>@stud.ase.ro</strong> pentru studenți,
+                  <strong> @ase.ro</strong> pentru cadre didactice.
+                </li>
+                <li>
+                  Dacă tot nu ajunge, scrie la{' '}
+                  <a href="mailto:secretariat.marketing@ase.ro">secretariat.marketing@ase.ro</a>.
+                </li>
+              </ul>
+            </details>
+
+            <div class="row row--wrap" style="gap:var(--s-2)">
+              <a href={`/autentificare${emailScris ? `?email=${encodeURIComponent(emailScris)}` : ''}`}
+                class="btn btn--secondary">
+                Trimite din nou
+              </a>
+              <a href="/autentificare" class="btn btn--ghost">Încearcă altă adresă</a>
+            </div>
           </div>
         ) : (
           <div class="stack">
@@ -73,6 +99,12 @@ if (Astro.locals.user && !trimis) {
                 <span class="hint" id="ajutor-email">
                   Conturi @stud.ase.ro pentru studenți, @ase.ro pentru cadre didactice.
                 </span>
+                {/* Un domeniu greșit nu producea nicio reacție: portalul răspundea
+                    „ți-am trimis linkul” și nu trimitea nimic, fiindcă adresa nu
+                    exista. Corectura se propune înainte de trimitere. */}
+                <p class="hint corectura" id="corectura" hidden>
+                  Ai vrut să scrii <button class="corectura__buton" type="button" id="corectura-text"></button>?
+                </p>
               </div>
               <button class="btn btn--primary" type="submit">Trimite linkul de acces</button>
             </form>
@@ -117,6 +149,63 @@ if (Astro.locals.user && !trimis) {
     </main>
   </div>
 </BaseLayout>
+
+<script>
+  /* Domeniile instituționale, și greșelile care duc la ele.
+   *
+   * O adresă cu domeniul greșit nu producea nicio reacție: portalul răspundea
+   * „ți-am trimis linkul” — răspuns identic indiferent dacă adresa există, ca să
+   * nu devină o unealtă de aflat cine are cont — și nu trimitea nimic. Corectura
+   * se propune înainte, unde încă se poate face ceva.
+   */
+  const DOMENII = ['stud.ase.ro', 'ase.ro']
+
+  const APROPIATE: Record<string, string> = {
+    'stud.ase.com': 'stud.ase.ro',
+    'stud.ase.r': 'stud.ase.ro',
+    'stud.ase.roo': 'stud.ase.ro',
+    'studase.ro': 'stud.ase.ro',
+    'stud.ase.com.ro': 'stud.ase.ro',
+    'ase.com': 'ase.ro',
+    'ase.r': 'ase.ro',
+    'ase.roo': 'ase.ro',
+    'asero': 'ase.ro',
+  }
+
+  const camp = document.getElementById('email') as HTMLInputElement | null
+  const rand = document.getElementById('corectura')
+  const buton = document.getElementById('corectura-text')
+
+  if (camp && rand && buton) {
+    const propune = () => {
+      const [local, domeniu] = camp.value.trim().toLowerCase().split('@')
+      if (!local || !domeniu || DOMENII.includes(domeniu)) {
+        rand.hidden = true
+        return
+      }
+
+      const corect = APROPIATE[domeniu]
+      if (!corect) {
+        rand.hidden = true
+        return
+      }
+
+      buton.textContent = `${local}@${corect}`
+      rand.hidden = false
+    }
+
+    camp.addEventListener('input', propune)
+    camp.addEventListener('blur', propune)
+
+    buton.addEventListener('click', () => {
+      camp.value = buton.textContent ?? camp.value
+      rand.hidden = true
+      camp.focus()
+    })
+
+    propune()
+  }
+</script>
 
 <style>
   .ecran {
@@ -177,6 +266,35 @@ if (Astro.locals.user && !trimis) {
   .title {
     font-family: var(--serif);
     font-size: var(--t-2xl);
+  }
+
+  .corectura__buton {
+    border: 0;
+    background: none;
+    padding: 0;
+    font: inherit;
+    font-weight: 600;
+    color: var(--red);
+    text-decoration: underline;
+    cursor: pointer;
+  }
+
+  .ajutor {
+    font-size: var(--t-sm);
+    color: var(--ink-muted);
+  }
+  .ajutor summary {
+    cursor: pointer;
+    color: var(--ink-soft);
+    font-weight: 500;
+  }
+  .ajutor ul {
+    margin: var(--s-3) 0 0;
+    padding-left: var(--s-5);
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-2);
+    text-wrap: pretty;
   }
 
   .demo {

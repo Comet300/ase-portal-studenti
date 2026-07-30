@@ -646,6 +646,20 @@ h4 {
   color: var(--ink-muted);
 }
 
+/* `badge--respinsa` ajunsese să însemne patru lucruri: cerere refuzată, dar și
+ * „fără locuri”, „anulat” și „mai ai două zile”. Roșul își pierde puterea dacă
+ * marchează și un fapt neutru. Faptele iau neutru, presiunea de timp ia chihlimbar. */
+.badge--neutru {
+  background: var(--surface-sunken);
+  color: var(--ink-soft);
+}
+
+.badge--urgent {
+  background: var(--warn-tint);
+  color: var(--warn);
+  font-weight: 700;
+}
+
 /* Nivel, limbă, program — clasificare, nu stare. Purta numele `--info`, ceea ce
  * lăsa culoarea informativă fără nicio folosință proprie. */
 .badge--taxon {
@@ -715,6 +729,20 @@ h4 {
   padding: var(--s-3) var(--s-4);
   border-bottom: 1px solid var(--border);
   vertical-align: middle;
+}
+
+/* Cifrele se compară pe ultima poziție, deci se aliniază la dreapta și se scriu
+ * cu cifre de aceeași lățime: altfel „7” și „13” nu stau unul sub altul. */
+.table td.numeric,
+.table th.numeric {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.table td.col-actiuni,
+.table th.col-actiuni {
+  text-align: right;
+  white-space: nowrap;
 }
 
 .table tbody tr:last-child td {
@@ -849,7 +877,7 @@ h4 {
   margin-top: 1px;
   border-radius: 50%;
   background: rgba(255, 255, 255, 0.18);
-  font-size: 11px;
+  font-size: var(--t-xs);
   font-weight: 700;
   flex: none;
 }

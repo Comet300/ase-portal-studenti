@@ -76,15 +76,33 @@ export const onRequest = defineMiddleware(async (context, next) => {
 
   const response = await next()
 
-  /* Nimic din ce vede un utilizator autentificat nu are voie să ajungă în cache.
+  /* Nimic din ce vede un utilizator autentificat nu are voie să ajungă într-un
+   * cache partajat.
    *
    * Fără acest antet, originea nu spune nimic, iar Cloudflare aplică regula lui
    * implicită pe extensie: un export `.csv` a fost păstrat la margine patru ore
    * și servit oricui, fără cookie. Răspunsurile pentru un vizitator rămân
-   * publice — sunt aceleași pentru toată lumea. */
+   * publice — sunt aceleași pentru toată lumea.
+   *
+   * `no-store` interzice însă și cache-ul privat al browserului, ceea ce face
+   * inutil orice prefetch: pagina adusă înainte de clic ar fi descărcată încă o
+   * dată. Pentru navigări obișnuite este de ajuns `private` cu revalidare — tot
+   * nu ajunge la CDN, dar poate fi refolosită de browserul care a cerut-o.
+   * Descărcările și API-ul rămân la `no-store`. */
   if (user) {
+    const path = context.url.pathname
+    const strict =
+      path.startsWith('/api/') ||
+      path.startsWith('/fisiere/') ||
+      path.startsWith('/documente/') ||
+      path.includes('export') ||
+      context.request.method !== 'GET'
+
     try {
-      response.headers.set('cache-control', 'private, no-store')
+      response.headers.set(
+        'cache-control',
+        strict ? 'private, no-store' : 'private, max-age=0, must-revalidate',
+      )
       response.headers.set('vary', 'cookie')
     } catch {
       // Un răspuns cu antete imutabile este construit de noi și nu ajunge la CDN.

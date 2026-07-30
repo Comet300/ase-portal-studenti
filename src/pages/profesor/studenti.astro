@@ -71,7 +71,7 @@ function deadline(expiresAt: string | null | undefined) {
   const days = Math.ceil((new Date(expiresAt).getTime() - Date.now()) / 86_400_000)
   const text =
     days <= 0 ? 'expiră astăzi' : days === 1 ? '1 zi rămasă' : `${days} zile rămase`
-  return { days, text, clasa: days <= 2 ? 'badge--respinsa' : 'badge--asteptare' }
+  return { days, text, clasa: days <= 2 ? 'badge--urgent' : 'badge--asteptare' }
 }
 ---
 
@@ -702,7 +702,7 @@ function deadline(expiresAt: string | null | undefined) {
   {/* Ambele decizii trec prin aceeași fereastră, pentru că ambele merită un
       mesaj: o respingere fără motiv lasă studentul să ghicească, iar o acceptare
       fără un cuvânt e o schimbare de stare acolo unde se aștepta o propoziție. */}
-  <dialog id="dialog-decizie">
+  <dialog id="dialog-decizie" aria-labelledby="titlu-decizie">
     <form method="POST" action="/api/cereri/decizie" class="dialog">
       <h2 class="section-title" id="dialog-titlu">Decizia ta</h2>
       <p class="muted text-sm" id="dialog-explicatie">
@@ -885,7 +885,7 @@ function deadline(expiresAt: string | null | undefined) {
     padding: 1px 6px;
     border-radius: 999px;
     background: var(--surface-sunken);
-    font-size: 11px;
+    font-size: var(--t-xs);
     font-weight: 600;
     color: var(--ink-soft);
   }

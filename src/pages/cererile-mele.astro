@@ -40,7 +40,7 @@ function termenRamas(expiresAt: string | null | undefined) {
   if (zile < 0) return null
   return {
     text: zile === 0 ? 'expiră astăzi' : zile === 1 ? '1 zi rămasă' : `${zile} zile rămase`,
-    clasa: zile <= 2 ? 'badge--respinsa' : 'badge--asteptare',
+    clasa: zile <= 2 ? 'badge--urgent' : 'badge--asteptare',
   }
 }
 
@@ -362,10 +362,10 @@ const shouldOpenForm = Boolean(openWith.teacher) && !hasActiveRequest
     }
   </div>
 
-  <dialog id="dialog-cerere" data-deschide-imediat={shouldOpenForm ? '' : undefined}>
+  <dialog id="dialog-cerere" aria-labelledby="titlu-cerere" data-deschide-imediat={shouldOpenForm ? '' : undefined}>
     <form method="POST" action="/api/cereri/depune" class="formular" id="formular-cerere">
       <div class="formular__cap">
-        <h2 class="section-title">Cerere de coordonare</h2>
+        <h2 id="titlu-cerere" class="section-title">Cerere de coordonare</h2>
         <button class="btn btn--ghost btn--sm" type="button" data-inchide aria-label="Închide">✕</button>
       </div>
 
@@ -512,10 +512,10 @@ const shouldOpenForm = Boolean(openWith.teacher) && !hasActiveRequest
 
   {/* Refuzul cere un motiv: coordonatorul a scris o propunere personală și merită
       să știe de ce nu s-a potrivit. */}
-  <dialog id="dialog-refuz">
+  <dialog id="dialog-refuz" aria-labelledby="titlu-refuz">
     <form method="POST" action="/api/invitatii" class="formular">
       <div class="formular__cap">
-        <h2 class="section-title">Refuză propunerea</h2>
+        <h2 id="titlu-refuz" class="section-title">Refuză propunerea</h2>
         <button class="btn btn--ghost btn--sm" type="button" data-inchide-refuz aria-label="Închide">✕</button>
       </div>
       <input type="hidden" name="actiune" value="raspunde" />

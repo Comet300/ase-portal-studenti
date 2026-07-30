@@ -178,11 +178,12 @@ const cai: Record<string, string> = {
 </BaseLayout>
 
 <script>
-  import { porneste } from '../scripts/meniu'
+  import { porneste, panouri } from '../scripts/meniu'
 
   // Bara rămâne pe ecran la lățime mare, deci nu primește `hidden` — doar clasa
   // pe care o știu deja stilurile.
   porneste({ buton: '.hamburger', panou: '#sidebar', clasa: 'is-open', ascunde: false })
+  panouri('details.clopotel')
 </script>
 
 <style>
@@ -437,7 +438,7 @@ const cai: Record<string, string> = {
 
   .nav__grup-titlu {
     padding: 0 var(--s-3) var(--s-2);
-    font-size: 10.5px;
+    font-size: var(--t-xs);
     font-weight: 700;
     letter-spacing: 0.08em;
     text-transform: uppercase;

@@ -48,6 +48,11 @@ export function porneste({
 
     if (ascunde) panou.hidden = !vrem
     panou.classList.toggle(clasa, vrem)
+
+    /* Închis vizual nu însemna închis pentru tastatură: bara laterală ieșea din
+     * ecran cu `transform`, dar cele treisprezece legături rămâneau în ordinea
+     * de tabulare, deci Tab plimba utilizatorul prin conținut invizibil. */
+    if (!ascunde) panou.toggleAttribute('inert', !vrem)
     buton.setAttribute('aria-expanded', String(vrem))
     buton.setAttribute('aria-label', vrem ? etichetaDeschis : etichetaInchis)
 
@@ -98,5 +103,31 @@ export function porneste({
   const lat = window.matchMedia('(min-width: 901px)')
   lat.addEventListener('change', (e) => {
     if (e.matches) seteaza(false)
+  })
+
+  // La lățime mare bara este vizibilă și trebuie să fie navigabilă.
+  if (!ascunde && lat.matches) panou.removeAttribute('inert')
+  lat.addEventListener('change', (e) => {
+    if (!ascunde) panou.toggleAttribute('inert', !e.matches && !deschis)
+  })
+}
+
+/**
+ * Un panou `<details>` care se închide ca un meniu.
+ *
+ * `<details>` nativ se închide doar dacă apeși din nou pe rezumat — nici Escape,
+ * nici un clic în afară. Pentru ceva care arată ca un meniu, ambele sunt
+ * așteptate.
+ */
+export function panouri(selector: string) {
+  document.querySelectorAll<HTMLDetailsElement>(selector).forEach((d) => {
+    document.addEventListener('click', (e) => {
+      if (d.open && !d.contains(e.target as Node)) d.open = false
+    })
+    d.addEventListener('keydown', (e) => {
+      if (e.key !== 'Escape' || !d.open) return
+      d.open = false
+      d.querySelector<HTMLElement>('summary')?.focus()
+    })
   })
 }

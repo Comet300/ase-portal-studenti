@@ -168,7 +168,7 @@ const freeTeachers = teachers.filter((t) => !t.is_full).length
                   </div>
 
                   {p.is_full ? (
-                    <span class="badge badge--respinsa">Fără locuri disponibile</span>
+                    <span class="badge badge--neutru">Fără locuri disponibile</span>
                   ) : (
                     <span class="badge badge--aprobata">
                       {free} {free === 1 ? 'loc liber' : 'locuri libere'}
@@ -305,7 +305,7 @@ const freeTeachers = teachers.filter((t) => !t.is_full).length
                 </a>
 
                 {t.teacher_is_full ? (
-                  <span class="badge badge--respinsa">Coordonator fără locuri</span>
+                  <span class="badge badge--neutru">Coordonator fără locuri</span>
                 ) : (
                   u?.role === 'student' && (
                     <a
@@ -326,7 +326,7 @@ const freeTeachers = teachers.filter((t) => !t.is_full).length
     {/* Lista completă a studenților unui coordonator. Un singur dialog,
         completat din cardul apăsat — 9 dialoguri identice în pagină ar fi
         9 copii ale aceluiași markup. */}
-    <dialog id="dialog-echipa">
+    <dialog id="dialog-echipa" aria-labelledby="titlu-echipa">
       <div class="echipa">
         <div class="echipa__cap">
           <h2 class="section-title" id="echipa-titlu">Studenți coordonați</h2>
@@ -498,7 +498,7 @@ const freeTeachers = teachers.filter((t) => !t.is_full).length
     padding: 1px 6px;
     border-radius: 999px;
     background: var(--surface-sunken);
-    font-size: 11px;
+    font-size: var(--t-xs);
     font-weight: 600;
     color: var(--ink-soft);
   }
@@ -655,7 +655,7 @@ const freeTeachers = teachers.filter((t) => !t.is_full).length
     border-radius: 50%;
     background: var(--ink-soft);
     color: #fff;
-    font-size: 10px;
+    font-size: var(--t-xs);
     font-weight: 600;
     box-shadow: 0 0 0 2px var(--surface);
   }
@@ -834,7 +834,7 @@ const freeTeachers = teachers.filter((t) => !t.is_full).length
     font-size: var(--t-xs);
   }
   .card-tema__profesor small {
-    font-size: 11px;
+    font-size: var(--t-xs);
   }
   .card-tema__pied .btn,
   .card-tema__pied .badge {

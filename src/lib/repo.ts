@@ -87,7 +87,8 @@ export const STATUS_CLASS: Record<string, string> = {
   pending: 'badge--asteptare',
   approved: 'badge--aprobata',
   rejected: 'badge--respinsa',
-  expired: 'badge--respinsa',
+  // Expirarea nu este un refuz: nimeni nu a spus nu, doar a trecut termenul.
+  expired: 'badge--ciorna',
   withdrawn: 'badge--ciorna',
 }
 

@@ -225,9 +225,9 @@ for (const s of free) {
 
   {/* Anularea eliberează locul și anunță coordonatorul; nu este o acțiune de
       apăsat din greșeală în drum spre butonul de alături. */}
-  <dialog id="dialog-anulare">
+  <dialog id="dialog-anulare" aria-labelledby="titlu-anulare">
     <form method="POST" action="/api/rezervari" class="dialog">
-      <h2 class="section-title">Anulezi consultația?</h2>
+      <h2 id="titlu-anulare" class="section-title">Anulezi consultația?</h2>
       <p class="muted text-sm">
         <span id="anulare-cand"></span> — locul se eliberează pentru alt student, iar
         coordonatorul vede anularea. Poți rezerva din nou dacă intervalul rămâne liber.
@@ -241,9 +241,9 @@ for (const s of free) {
     </form>
   </dialog>
 
-  <dialog id="dialog-rezerva">
+  <dialog id="dialog-rezerva" aria-labelledby="titlu-rezerva">
     <form method="POST" action="/api/rezervari" class="dialog">
-      <h2 class="section-title">Rezervă consultația</h2>
+      <h2 id="titlu-rezerva" class="section-title">Rezervă consultația</h2>
       <input type="hidden" name="slot_id" id="dialog-slot" />
       <div class="field">
         <label class="label" for="subiect">Despre ce vrei să discuți? <span class="muted">(opțional)</span></label>
@@ -366,7 +366,7 @@ for (const s of free) {
     color: var(--red);
   }
   .data-chip small {
-    font-size: 10px;
+    font-size: var(--t-xs);
     color: var(--red);
   }
 
