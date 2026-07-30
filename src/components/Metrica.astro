@@ -57,9 +57,10 @@ const Tag = href ? 'a' : 'div'
   }
 
   /* Alerta colorează cifra, nu toată caseta: un card roșu întreg strigă mai tare
-     decât merită un număr. */
+     decât merită un număr. Ambru, nu roșu — toate cifrele care se marchează așa
+     („fără cerere depusă”, „locuri epuizate”) cer atenție, niciuna nu e o eroare. */
   .metrica--alerta .metrica__valoare {
-    color: var(--danger);
+    color: var(--warn);
   }
 
   .metrica__valoare {

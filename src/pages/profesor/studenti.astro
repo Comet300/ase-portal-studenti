@@ -12,7 +12,6 @@ import {
   teacherRequests,
   formatDate,
   requestMilestones,
-  formatTime,
   studentDirectory,
   teacherSeats,
   supervisedStudents,
@@ -61,7 +60,6 @@ const sectiuni = [
 
 const caleCurenta = `/profesor/studenti?sectiune=${sectiune}`
 const azi = new Date().toISOString().slice(0, 10)
-const cuStudent = Astro.url.searchParams.get('cu') ?? ''
 
 /**
  * How long is left to answer a request.
@@ -1012,20 +1010,6 @@ function deadline(expiresAt: string | null | undefined) {
     display: flex;
     gap: var(--s-2);
     flex-wrap: wrap;
-  }
-
-  .avatar {
-    display: grid;
-    place-items: center;
-    width: 34px;
-    height: 34px;
-    border-radius: 50%;
-    background: var(--surface-sunken);
-    border: 1px solid var(--border);
-    font-size: var(--t-xs);
-    font-weight: 600;
-    color: var(--ink-soft);
-    flex: none;
   }
 
   .select--compact {

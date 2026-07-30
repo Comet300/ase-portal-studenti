@@ -1,6 +1,7 @@
 ---
 import AlegeAn from '../../components/AlegeAn.astro'
 import Avatar from '../../components/Avatar.astro'
+import Metrica from '../../components/Metrica.astro'
 import ProfesorLayout from '../../layouts/ProfesorLayout.astro'
 import { ROLE_LABELS } from '../../lib/auth'
 import { queryOne, query } from '../../lib/db'
@@ -89,49 +90,46 @@ const openSeatRequest = mySeatRequests.find((r) => r.status === 'pending')
     <section class="stack">
       <h2 class="section-title">Sesiunea în cifre</h2>
       <div class="grid-auto">
-        <div class="metric">
-          <span class="metric__value numeric">
-            {/* „218h” cere o împărțire mentală. Peste două zile se scrie în zile. */}
-            {stats?.avg_response_hours == null
+        {/* „218h” cere o împărțire mentală. Peste două zile se scrie în zile. */}
+        <Metrica
+          valoare={
+            stats?.avg_response_hours == null
               ? '—'
               : stats.avg_response_hours < 48
                 ? `${stats.avg_response_hours} h`
-                : `${(stats.avg_response_hours / 24).toFixed(1).replace('.', ',')} zile`}
-          </span>
-          <span class="metric__label">timp mediu de răspuns</span>
-          <span class="metric__note">de la depunere până la decizie</span>
-        </div>
-        <div class="metric">
-          <span class="metric__value numeric">{topics?.taken ?? 0} / {topics?.proposed ?? 0}</span>
-          <span class="metric__label">teme preluate</span>
-          <span class="metric__note">
-            {
-              (topics?.proposed ?? 0) - (topics?.taken ?? 0) > 0
-                ? `${(topics?.proposed ?? 0) - (topics?.taken ?? 0)} încă disponibile`
-                : 'Toate temele au fost alese'
-            }
-          </span>
-        </div>
-        <div class:list={['metric', { 'metric--alert': seats.free === 0 && seats.total_seats > 0 }]}>
-          <span class="metric__value numeric">{seats.total_taken} / {seats.total_seats}</span>
-          <span class="metric__label">locuri ocupate</span>
-          <span class="metric__note">
-            {
-              seats.total_seats === 0
-                ? 'Directorul nu ți-a alocat încă locuri'
-                : seats.free === 0
-                  ? 'Nu mai apari ca disponibil în catalog'
-                  : `${seats.free} ${seats.free === 1 ? 'loc liber' : 'locuri libere'}`
-            }
-          </span>
-        </div>
-        <div class="metric">
-          <span class="metric__value numeric">{(stats?.rejected ?? 0) + (stats?.expired ?? 0)}</span>
-          <span class="metric__label">cereri neacceptate</span>
-          <span class="metric__note">
-            {stats?.expired ? `${stats.expired} expirate fără răspuns` : 'toate cu motivul comunicat'}
-          </span>
-        </div>
+                : `${(stats.avg_response_hours / 24).toFixed(1).replace('.', ',')} zile`
+          }
+          eticheta="timp mediu de răspuns"
+          nota="de la depunere până la decizie"
+        />
+        <Metrica
+          valoare={`${topics?.taken ?? 0} / ${topics?.proposed ?? 0}`}
+          eticheta="teme preluate"
+          nota={
+            (topics?.proposed ?? 0) - (topics?.taken ?? 0) > 0
+              ? `${(topics?.proposed ?? 0) - (topics?.taken ?? 0)} încă disponibile`
+              : 'Toate temele au fost alese'
+          }
+        />
+        <Metrica
+          valoare={`${seats.total_taken} / ${seats.total_seats}`}
+          eticheta="locuri ocupate"
+          alerta={seats.free === 0 && seats.total_seats > 0}
+          nota={
+            seats.total_seats === 0
+              ? 'Directorul nu ți-a alocat încă locuri'
+              : seats.free === 0
+                ? 'Nu mai apari ca disponibil în catalog'
+                : `${seats.free} ${seats.free === 1 ? 'loc liber' : 'locuri libere'}`
+          }
+        />
+        <Metrica
+          valoare={(stats?.rejected ?? 0) + (stats?.expired ?? 0)}
+          eticheta="cereri neacceptate"
+          nota={
+            stats?.expired ? `${stats.expired} expirate fără răspuns` : 'toate cu motivul comunicat'
+          }
+        />
       </div>
     </section>
 
@@ -383,32 +381,6 @@ const openSeatRequest = mySeatRequests.find((r) => r.status === 'pending')
 </ProfesorLayout>
 
 <style>
-  .metric {
-    display: flex;
-    flex-direction: column;
-    gap: var(--s-1);
-    padding: var(--s-4);
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: var(--r-lg);
-  }
-  .metric--alert {
-    border-color: var(--warn);
-  }
-  .metric__value {
-    font-size: var(--t-2xl);
-    font-weight: 600;
-    line-height: 1.15;
-  }
-  .metric__label {
-    font-size: var(--t-sm);
-    color: var(--ink-soft);
-  }
-  .metric__note {
-    font-size: var(--t-xs);
-    color: var(--ink-muted);
-  }
-
   .seats {
     display: flex;
     flex-wrap: wrap;

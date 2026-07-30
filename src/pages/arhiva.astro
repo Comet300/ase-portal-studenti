@@ -1,5 +1,6 @@
 ---
 import AlegeAn from '../components/AlegeAn.astro'
+import Metrica from '../components/Metrica.astro'
 import StudentLayout from '../layouts/StudentLayout.astro'
 import { archiveRows, formatDate } from '../lib/repo'
 import { LEVEL_LABELS, allYears, languageLabel, levelLabel } from '../lib/years'
@@ -82,26 +83,16 @@ const levels = {
     </div>
 
     <div class="grid-auto">
-      <div class="metric">
-        <span class="metric__value numeric">{filtered.length}</span>
-        <span class="metric__label">
-          {filtered.length === 1 ? "lucrare" : "lucrări"} în {year?.label}
-        </span>
-      </div>
-      <div class="metric">
-        <span class="metric__value numeric">{levels.bachelor}</span>
-        <span class="metric__label">{LEVEL_LABELS.bachelor.toLowerCase()}</span>
-      </div>
-      <div class="metric">
-        <span class="metric__value numeric">{levels.master}</span>
-        <span class="metric__label">{LEVEL_LABELS.master.toLowerCase()}</span>
-      </div>
-      <div class="metric">
-        <span class="metric__value numeric">{grouped.length}</span>
-        <span class="metric__label">
-          {grouped.length === 1 ? "coordonator" : "coordonatori"}
-        </span>
-      </div>
+      <Metrica
+        valoare={filtered.length}
+        eticheta={`${filtered.length === 1 ? 'lucrare' : 'lucrări'} în ${year?.label ?? ''}`}
+      />
+      <Metrica valoare={levels.bachelor} eticheta={LEVEL_LABELS.bachelor.toLowerCase()} />
+      <Metrica valoare={levels.master} eticheta={LEVEL_LABELS.master.toLowerCase()} />
+      <Metrica
+        valoare={grouped.length}
+        eticheta={grouped.length === 1 ? 'coordonator' : 'coordonatori'}
+      />
     </div>
 
     {
@@ -167,25 +158,6 @@ const levels = {
 </StudentLayout>
 
 <style>
-  .metric {
-    display: flex;
-    flex-direction: column;
-    gap: var(--s-1);
-    padding: var(--s-4);
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: var(--r-lg);
-  }
-  .metric__value {
-    font-size: var(--t-2xl);
-    font-weight: 600;
-    line-height: 1.15;
-  }
-  .metric__label {
-    font-size: var(--t-sm);
-    color: var(--ink-soft);
-  }
-
   .lucrari {
     list-style: none;
     margin: 0;

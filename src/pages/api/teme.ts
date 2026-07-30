@@ -6,7 +6,7 @@ import { formAction } from '../../lib/forms'
 import { id as formId } from '../../lib/ids'
 
 /** Temele propuse de un cadru didactic. Proprietarul este verificat în fiecare instrucțiune. */
-export const POST: APIRoute = async ({ request, locals, url }) => {
+export const POST: APIRoute = async ({ request, locals }) => {
   const u = locals.user
   if (!isTeacher(u)) return sessionExpired()
 

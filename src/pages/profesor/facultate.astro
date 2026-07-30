@@ -1,5 +1,6 @@
 ---
 import Avatar from '../../components/Avatar.astro'
+import Metrica from '../../components/Metrica.astro'
 import ProfesorLayout from '../../layouts/ProfesorLayout.astro'
 import { isDepartmentHead } from '../../lib/auth'
 import { studentDirectory } from '../../lib/repo'
@@ -107,22 +108,10 @@ const STARI = [
 
   <div class="stack stack--loose">
     <div class="grid-auto">
-      <div class="metric">
-        <span class="metric__value numeric">{totals.toti}</span>
-        <span class="metric__label">studenți în sesiune</span>
-      </div>
-      <div class="metric">
-        <span class="metric__value numeric">{totals.coordonati}</span>
-        <span class="metric__label">cu coordonator confirmat</span>
-      </div>
-      <div class="metric">
-        <span class="metric__value numeric">{totals.asteptare}</span>
-        <span class="metric__label">cu cerere în așteptare</span>
-      </div>
-      <div class:list={['metric', { 'metric--alert': neinceput > 0 }]}>
-        <span class="metric__value numeric">{neinceput}</span>
-        <span class="metric__label">fără cerere depusă</span>
-      </div>
+      <Metrica valoare={totals.toti} eticheta="studenți în sesiune" />
+      <Metrica valoare={totals.coordonati} eticheta="cu coordonator confirmat" />
+      <Metrica valoare={totals.asteptare} eticheta="cu cerere în așteptare" />
+      <Metrica valoare={neinceput} eticheta="fără cerere depusă" alerta={neinceput > 0} />
     </div>
 
     <form method="GET" class="panel">
@@ -348,28 +337,6 @@ const STARI = [
 </script>
 
 <style>
-  .metric {
-    display: flex;
-    flex-direction: column;
-    gap: var(--s-1);
-    padding: var(--s-4);
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: var(--r-lg);
-  }
-  .metric--alert {
-    border-color: var(--warn);
-  }
-  .metric__value {
-    font-size: var(--t-2xl);
-    font-weight: 600;
-    line-height: 1.15;
-  }
-  .metric__label {
-    font-size: var(--t-sm);
-    color: var(--ink-soft);
-  }
-
   .editor-rand td {
     background: var(--surface-sunken);
   }

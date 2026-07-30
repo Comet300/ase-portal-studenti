@@ -1,5 +1,6 @@
 ---
 import Avatar from '../../components/Avatar.astro'
+import Metrica from '../../components/Metrica.astro'
 import ProfesorLayout from '../../layouts/ProfesorLayout.astro'
 import Taburi from '../../components/Taburi.astro'
 import { query, queryOne } from '../../lib/db'
@@ -166,48 +167,42 @@ const sectiuni = [
         <section class="stack">
           <h2 class="section-title">Acoperire</h2>
           <div class="grid-auto">
-            <div class="metric">
-              <span class="metric__value numeric">{totals?.students ?? 0}</span>
-              <span class="metric__label">studenți în sesiune</span>
-            </div>
-            <div class:list={['metric', { 'metric--alert': unassigned > 0 }]}>
-              <span class="metric__value numeric">{unassigned}</span>
-              <span class="metric__label">fără cerere activă</span>
-              <span class="metric__note">
-                {(totals?.students ?? 0) === 0
+            <Metrica valoare={totals?.students ?? 0} eticheta="studenți în sesiune" />
+            <Metrica
+              valoare={unassigned}
+              eticheta="fără cerere activă"
+              alerta={unassigned > 0}
+              nota={
+                (totals?.students ?? 0) === 0
                   ? 'Niciun student înscris în sesiune'
                   : unassigned > 0
                     ? 'Fie nu au depus, fie cererea a fost respinsă'
-                    : 'Toți au o cerere în lucru sau aprobată'}
-              </span>
-            </div>
+                    : 'Toți au o cerere în lucru sau aprobată'
+              }
+            />
             {/* Respinsele și expirările nu mai dispar în „a depus”: sunt exact
                 studenții pe care directorul trebuie să îi caute. */}
-            <div class="metric">
-              <span class="metric__value numeric">
-                {(totals?.rejected ?? 0) + (totals?.expired ?? 0)}
-              </span>
-              <span class="metric__label">cereri respinse sau expirate</span>
-              <span class="metric__note">
-                {(totals?.expired ?? 0) > 0
+            <Metrica
+              valoare={(totals?.rejected ?? 0) + (totals?.expired ?? 0)}
+              eticheta="cereri respinse sau expirate"
+              nota={
+                (totals?.expired ?? 0) > 0
                   ? `${totals?.expired} expirate fără răspuns`
-                  : 'toate cu motivul comunicat'}
-              </span>
-            </div>
-            <div class="metric">
-              <span class="metric__value numeric">{totals?.pending ?? 0}</span>
-              <span class="metric__label">cereri în așteptare</span>
-              <span class="metric__note">
-                la {load.filter((t) => t.pending > 0).length} coordonatori
-              </span>
-            </div>
-            <div class="metric">
-              <span class="metric__value numeric">{totals?.approved ?? 0}</span>
-              <span class="metric__label">coordonări confirmate</span>
-              <span class="metric__note">
-                {totals?.expired ? `${totals.expired} cereri au expirat fără răspuns` : ''}
-              </span>
-            </div>
+                  : 'toate cu motivul comunicat'
+              }
+            />
+            <Metrica
+              valoare={totals?.pending ?? 0}
+              eticheta="cereri în așteptare"
+              nota={`la ${load.filter((t) => t.pending > 0).length} coordonatori`}
+            />
+            <Metrica
+              valoare={totals?.approved ?? 0}
+              eticheta="coordonări confirmate"
+              nota={
+                totals?.expired ? `${totals.expired} cereri au expirat fără răspuns` : undefined
+              }
+            />
           </div>
         </section>
 
@@ -605,32 +600,6 @@ const sectiuni = [
   .tab.is-activ .tab__contor {
     background: var(--red-tint);
     color: var(--red);
-  }
-
-  .metric {
-    display: flex;
-    flex-direction: column;
-    gap: var(--s-1);
-    padding: var(--s-4);
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: var(--r-lg);
-  }
-  .metric--alert {
-    border-color: var(--warn);
-  }
-  .metric__value {
-    font-size: var(--t-3xl);
-    font-weight: 600;
-    line-height: 1.1;
-  }
-  .metric__label {
-    font-size: var(--t-sm);
-    color: var(--ink-soft);
-  }
-  .metric__note {
-    font-size: var(--t-xs);
-    color: var(--ink-muted);
   }
 
   .alert {
