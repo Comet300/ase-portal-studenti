@@ -323,7 +323,10 @@ const openSeatRequest = mySeatRequests.find((r) => r.status === 'pending')
           <div class="field" style="flex:1;min-width:240px">
             <label class="label" for="poza">Poză de profil</label>
             <input class="input" id="poza" name="poza" type="file" accept="image/*" />
-            <span class="hint">JPG, PNG, WEBP sau GIF, maximum 2 MB. Studenții o văd în catalog.</span>
+            <span class="hint">
+              JPG, PNG, WEBP sau GIF, maximum 2 MB. Studenții o văd în catalog. Pozele mari
+              sunt micșorate automat înainte de trimitere.
+            </span>
           </div>
         </div>
 

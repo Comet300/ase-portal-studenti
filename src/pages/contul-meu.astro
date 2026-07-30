@@ -103,7 +103,10 @@ const saved = Astro.url.searchParams.get('salvat') === '1'
           <div class="field" style="flex:1;min-width:240px">
             <label class="label" for="poza">Poză de profil</label>
             <input class="input" id="poza" name="poza" type="file" accept="image/*" />
-            <span class="hint">JPG, PNG, WEBP sau GIF, maximum 2 MB.</span>
+            <span class="hint">
+              JPG, PNG, WEBP sau GIF, maximum 2 MB. Pozele mari sunt micșorate
+              automat înainte de trimitere — portalul le afișează la cel mult 72 px.
+            </span>
           </div>
         </div>
 
