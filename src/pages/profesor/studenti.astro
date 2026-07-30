@@ -360,6 +360,18 @@ function deadline(expiresAt: string | null | undefined) {
                           >
                             Programează consultație
                           </a>
+                          {/* Terminarea lucrării nu avea nicio stare: coordonarea
+                              rămânea „aprobată” pentru totdeauna, locul rămânea
+                              ocupat, iar arhiva trecea data aprobării drept dată
+                              a susținerii. */}
+                          <button
+                            class="btn btn--secondary btn--sm"
+                            type="button"
+                            data-sustinuta={s.id}
+                            data-nume={s.student_name}
+                          >
+                            A susținut
+                          </button>
                         </div>
                       </td>
                     </tr>
@@ -704,6 +716,39 @@ function deadline(expiresAt: string | null | undefined) {
   {/* Ambele decizii trec prin aceeași fereastră, pentru că ambele merită un
       mesaj: o respingere fără motiv lasă studentul să ghicească, iar o acceptare
       fără un cuvânt e o schimbare de stare acolo unde se aștepta o propoziție. */}
+  {/* Susținerea, ca fapt: data reală și, opțional, nota. Coordonarea se închide,
+      locul se eliberează, iar lucrarea intră în arhivă sub data corectă. */}
+  <dialog id="dialog-sustinere" aria-labelledby="titlu-sustinere">
+    <form method="POST" action="/api/sustinere" class="dialog">
+      <h2 id="titlu-sustinere" class="section-title">Înregistrează susținerea</h2>
+      <input type="hidden" name="actiune" value="sustinuta" />
+      <input type="hidden" name="cerere_id" id="sustinere-id" />
+
+      <p class="muted text-sm">
+        Confirmi că <strong id="sustinere-nume">studentul</strong> și-a susținut lucrarea. Coordonarea
+        se închide, locul se eliberează, iar lucrarea intră în arhivă cu data susținerii.
+      </p>
+
+      <div class="row row--wrap" style="gap:var(--s-3)">
+        <div class="field" style="flex:1;min-width:170px">
+          <label class="label" for="sustinere-data">
+            Data susținerii <span class="label__req" aria-hidden="true">*</span>
+          </label>
+          <input class="input" id="sustinere-data" name="data" type="date" max={azi} required />
+        </div>
+        <div class="field" style="flex:1;min-width:130px">
+          <label class="label" for="sustinere-nota">Nota <span class="muted">(opțional)</span></label>
+          <input class="input" id="sustinere-nota" name="nota" type="number" min="1" max="10" step="0.01" />
+        </div>
+      </div>
+
+      <div class="row row--end" style="gap:var(--s-2)">
+        <button class="btn btn--ghost btn--sm" type="button" data-inchide-sustinere>Renunț</button>
+        <button class="btn btn--primary btn--sm" type="submit">Înregistrează</button>
+      </div>
+    </form>
+  </dialog>
+
   <dialog id="dialog-decizie" aria-labelledby="titlu-decizie">
     <form method="POST" action="/api/cereri/decizie" class="dialog">
       <h2 class="section-title" id="dialog-titlu">Decizia ta</h2>
@@ -808,6 +853,24 @@ function deadline(expiresAt: string | null | undefined) {
     mod.addEventListener('change', sync)
     sync()
   })
+
+  /* --- susținerea ---------------------------------------------------------- */
+  const dSustinere = document.getElementById('dialog-sustinere') as HTMLDialogElement | null
+
+  document.querySelectorAll<HTMLButtonElement>('[data-sustinuta]').forEach((b) => {
+    b.addEventListener('click', () => {
+      const camp = document.getElementById('sustinere-id') as HTMLInputElement | null
+      const nume = document.getElementById('sustinere-nume')
+      if (camp) camp.value = b.dataset.sustinuta ?? ''
+      if (nume) nume.textContent = b.dataset.nume ?? 'studentul'
+      dSustinere?.showModal()
+      document.getElementById('sustinere-data')?.focus()
+    })
+  })
+
+  dSustinere
+    ?.querySelectorAll('[data-inchide-sustinere]')
+    .forEach((b) => b.addEventListener('click', () => dSustinere.close()))
 
   /* --- alegerea studentului de invitat ------------------------------------
    *

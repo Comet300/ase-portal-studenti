@@ -257,6 +257,10 @@ const INCEPUTURI = [
             Mesaje mai noi ↓
           </button>
 
+          {/* Ceva a sosit cât timp firul era deschis. Pagina nu se schimbă sub
+              mână — apeși dacă vrei să vezi. */}
+          <button class="chat__noi chat__noi--primite" type="button" id="mesaje-primite" hidden></button>
+
           {/* Toate fișierele firului, în ordine cronologică. Stă peste conversație
               ca un sertar, ca să nu fure lățime când nu e nevoie de el. */}
           <aside class="fisiere-drawer" id="fisiere-drawer" role="dialog" aria-modal="false" aria-label="Fișiere din conversație" hidden>
@@ -685,6 +689,16 @@ const INCEPUTURI = [
   }
 
   /* --- pilula „mesaje mai noi” --------------------------------------------- */
+
+  /* Un mesaj primit este o veste, nu o comandă de derulare: stă sus, unde ajung
+     lucrurile noi, și poartă culoarea informativă. */
+  .chat__noi--primite {
+    top: 72px;
+    bottom: auto;
+    background: var(--info-tint);
+    border-color: var(--info);
+    color: var(--info);
+  }
 
   .chat__noi {
     position: absolute;

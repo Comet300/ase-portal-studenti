@@ -322,14 +322,29 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
   if (action === 'anuleaza') {
     const slotId = formId(form.get('slot_id'))
 
-    // Anularea marchează și rezervările, ca studentul să nu rămână cu o
-    // rezervare la un interval care nu mai există.
-    const cancelledBookings = await query<{ student_id: string }>(
+    /* Anularea marchează și rezervările — dar mai ales le spune celor care
+     * așteptau.
+     *
+     * Rezervările erau retrase în tăcere: studentul rămânea cu o oră în calendar
+     * și cu convingerea că se întâlnește cu coordonatorul, și afla că nu, când
+     * ajungea la ușă. Fiecare primește email, anulare în calendar și un eveniment
+     * în fir — aceleași trei canale ca la anularea dinspre student. */
+    const cancelledBookings = await query<{
+      student_id: string
+      student_name: string
+      student_email: string
+      starts_at: string
+      ends_at: string
+      mode: string
+      location: string | null
+      meeting_url: string | null
+    }>(
       `UPDATE bookings r SET status = 'cancelled'
-        WHERE r.slot_id = $2
-          AND r.status = 'booked'
-          AND EXISTS (SELECT 1 FROM consultation_slots s WHERE s.id = r.slot_id AND s.teacher_id = $1)
-        RETURNING r.student_id`,
+         FROM consultation_slots s, users st
+        WHERE r.slot_id = s.id AND st.id = r.student_id
+          AND r.slot_id = $2 AND r.status = 'booked' AND s.teacher_id = $1
+        RETURNING r.student_id, st.name AS student_name, st.email AS student_email,
+                  s.starts_at, s.ends_at, s.mode, s.location, s.meeting_url`,
       [u!.id, slotId],
     )
 
@@ -338,13 +353,54 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
       [u!.id, slotId],
     )
 
+    if (!n) return back('Intervalul nu a fost găsit.', true)
+
+    for (const b of cancelledBookings) {
+      const cand = `${formatDate(b.starts_at)}, ${formatTime(b.starts_at)}–${formatTime(b.ends_at)}`
+
+      await postEvent({
+        studentId: b.student_id,
+        teacherId: u!.id,
+        senderId: u!.id,
+        eventType: 'consultation_cancelled',
+        body: `${u!.name} a anulat consultația din ${cand}.`,
+        createConversation: false,
+      })
+
+      const anulare = buildIcs({
+        uid: consultationUid(slotId!, b.student_id),
+        title: `Consultație cu ${u!.name}`,
+        location: b.mode === 'online' ? (b.meeting_url ?? 'Online') : (b.location ?? 'Cabinet'),
+        start: new Date(b.starts_at),
+        end: new Date(b.ends_at),
+        organizerName: u!.name,
+        organizerEmail: u!.email,
+        attendeeName: b.student_name,
+        attendeeEmail: b.student_email,
+        cancelled: true,
+      })
+
+      void sendEmail({
+        to: b.student_email,
+        subject: `Consultația din ${cand} a fost anulată`,
+        html: template(
+          'Consultația a fost anulată',
+          html`<p>Bună, ${b.student_name.split(' ')[0]}. ${u!.name} a anulat consultația din
+           <strong>${cand}</strong>.</p>
+           <p>Poți rezerva un alt interval din portal, sau îi poți scrie direct ca să stabiliți
+           altul.</p>`,
+          { text: 'Vezi intervalele libere', url: `${base}/consultatii` },
+        ),
+        attachments: [
+          { filename: 'anulare.ics', content: Buffer.from(anulare), contentType: 'text/calendar; method=CANCEL' },
+        ],
+      }).catch((err) => console.error('[sloturi] anularea nu a fost anunțată', err))
+    }
+
     return back(
-      n
-        ? cancelledBookings.length > 0
-          ? 'Intervalul a fost anulat, iar rezervarea a fost retrasă.'
-          : 'Intervalul a fost anulat.'
-        : 'Intervalul nu a fost găsit.',
-      !n,
+      cancelledBookings.length > 0
+        ? `Intervalul a fost anulat. ${cancelledBookings.length} ${cancelledBookings.length === 1 ? 'student anunțat' : 'studenți anunțați'} pe email.`
+        : 'Intervalul a fost anulat.',
     )
   }
 

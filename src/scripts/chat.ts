@@ -408,4 +408,48 @@ export function porneste() {
   })
 
   if (!scroller.querySelector('.bubble')) input.focus()
+
+  /* --- mesajele care sosesc între timp -------------------------------------
+   *
+   * Nimic nu ajungea într-o conversație deschisă fără reîncărcare manuală: doi
+   * oameni care își scriau simultan nu vedeau nimic până apăsa unul F5.
+   *
+   * Interogarea este ieftină — un număr, nu conținut — și se oprește complet
+   * când fila nu e la vedere, ca un portal lăsat deschis peste noapte să nu
+   * ceară nimic. Când apare ceva, pagina nu se schimbă sub mână: apare o pilulă
+   * pe care o apeși dacă vrei. */
+  const idConversatie = new URLSearchParams(location.search).get('conversatie')
+  const pilula = document.getElementById('mesaje-primite')
+
+  if (idConversatie && pilula) {
+    const start = scroller.querySelectorAll('.bubble, .eveniment').length
+    let cunoscute = start
+
+    const verifica = async () => {
+      if (document.hidden || inZbor) return
+      try {
+        const r = await fetch(`/api/fir?conversatie=${encodeURIComponent(idConversatie)}`, {
+          headers: { accept: 'application/json' },
+        })
+        if (!r.ok) return
+        const d = (await r.json()) as { total?: number }
+        if (typeof d.total !== 'number' || d.total <= cunoscute) return
+
+        cunoscute = d.total
+        const cate = d.total - start
+        pilula.textContent =
+          cate === 1 ? '1 mesaj nou — arată' : `${cate} mesaje noi — arată`
+        pilula.hidden = false
+      } catch {
+        // O rețea căzută nu are voie să umple consola: reîncercăm la următorul tic.
+      }
+    }
+
+    pilula.addEventListener('click', () => location.reload())
+
+    setInterval(verifica, 20_000)
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) verifica()
+    })
+  }
 }

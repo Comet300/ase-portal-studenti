@@ -33,7 +33,7 @@ export interface RequestRow {
   title_en: string | null
   objectives: string
   motivation: string | null
-  status: 'draft' | 'pending' | 'approved' | 'rejected' | 'expired' | 'withdrawn'
+  status: 'draft' | 'pending' | 'approved' | 'rejected' | 'expired' | 'withdrawn' | 'defended'
   rejection_reason: string | null
   decision_note: string | null
   expires_at: string | null
@@ -80,6 +80,7 @@ export const STATUS_LABELS: Record<string, string> = {
   rejected: 'Respinsă',
   expired: 'Expirată',
   withdrawn: 'Retrasă',
+  defended: 'Susținută',
 }
 
 export const STATUS_CLASS: Record<string, string> = {
@@ -90,6 +91,7 @@ export const STATUS_CLASS: Record<string, string> = {
   // Expirarea nu este un refuz: nimeni nu a spus nu, doar a trecut termenul.
   expired: 'badge--ciorna',
   withdrawn: 'badge--ciorna',
+  defended: 'badge--aprobata',
 }
 
 export const INVITATION_LABELS: Record<string, string> = {
@@ -407,7 +409,7 @@ export function studentMilestones(studentId: string) {
     `SELECT m.id, m.request_id, m.title, m.description, m.due_on, m.status, m.position
        FROM milestones m
        JOIN requests r ON r.id = m.request_id
-      WHERE r.student_id = $1 AND r.status = 'approved'
+      WHERE r.student_id = $1 AND r.status IN ('approved', 'defended')
       ORDER BY m.position, m.due_on NULLS LAST`,
     [studentId],
   )
@@ -617,13 +619,20 @@ export interface ArchiveRow {
  */
 export function archiveRows(yearId: string): Promise<ArchiveRow[]> {
   return query<ArchiveRow>(
+    /* Data susținerii, nu data aprobării.
+     *
+     * Aici se scria `decided_at`, adică ziua în care coordonatorul a acceptat
+     * cererea — o lucrare aprobată în martie și susținută în iulie apărea în
+     * arhivă cu martie. Sunt două evenimente la câteva luni distanță, iar arhiva
+     * unei facultăți este exact locul unde diferența contează. Când susținerea nu
+     * e încă înregistrată, coloana rămâne goală în loc să mintă. */
     `SELECT 'portal'::text AS source, s.name AS student_name, s.student_number,
             s.specialization AS programme, s.program AS level, s.study_language AS language,
-            t.name AS teacher_name, r.title_ro, r.decided_at::date::text AS defended_on
+            t.name AS teacher_name, r.title_ro, r.defended_on::text AS defended_on
        FROM requests r
        JOIN users s ON s.id = r.student_id
        JOIN users t ON t.id = r.teacher_id
-      WHERE r.status = 'approved'
+      WHERE r.status IN ('approved', 'defended')
         AND COALESCE(r.graduation_year_id, r.academic_year_id) = $1
       UNION ALL
      SELECT 'import'::text, a.student_name, a.student_number, a.programme, a.level, a.language,
@@ -681,7 +690,9 @@ export async function hasApprovedRequest(studentId: string): Promise<boolean> {
     `SELECT EXISTS (
        SELECT 1 FROM requests
         WHERE student_id = $1
-          AND status = 'approved'
+          -- O lucrare susținută rămâne lucrarea studentului: nu a pierdut-o
+          -- terminând-o, deci bara spune în continuare „Lucrarea mea”.
+          AND status IN ('approved', 'defended')
           AND academic_year_id = (SELECT id FROM academic_years WHERE is_current)
      ) AS exista`,
     [studentId],
