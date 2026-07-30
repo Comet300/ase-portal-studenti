@@ -42,10 +42,37 @@ export const POST: APIRoute = async ({ request, locals }) => {
     )
     if (existing) return back(`Anul „${label}” există deja.`, true)
 
+    /* Trecerea anului nu se dezface.
+     *
+     * Sesiunea curentă intră în arhivă cu tot ce conține, coordonările se
+     * încheie, catalogul se golește — la un singur clic, dintr-un formular care
+     * stă deschis pe ecran. Confirmarea nu este o casetă de bifat, ci denumirea
+     * anului care se închide, scrisă de mână: singurul gest care nu se poate face
+     * din reflex. Se compară cu anul curent din baza de date, nu cu ce a trimis
+     * pagina. */
+    const anCurent = await queryOne<{ label: string }>(
+      `SELECT label FROM academic_years WHERE is_current`,
+    )
+    /* Cratima ține locul liniuței de dialog.
+     *
+     * Denumirea este „2025–2026”, cu liniuță en — un caracter care nu există pe
+     * tastatura românească. Cerând-o exact, gardul ar fi fost imposibil de trecut
+     * fără copiere din pagină, ceea ce transformă confirmarea în copiere, adică în
+     * exact reflexul pe care încearcă să îl oprească. */
+    const fara = (t: string) => t.replace(/[\u2010-\u2015]/g, '-')
+    const confirmare = String(form.get('confirmare') ?? '').trim()
+    if (anCurent && fara(confirmare) !== fara(anCurent.label)) {
+      return back(
+        `Scrie exact „${anCurent.label}” în câmpul de confirmare ca să închizi sesiunea în curs.`,
+        true,
+      )
+    }
+
     await openYear(label, startsOn, endsOn, {
       copyStages: form.get('preia_etape') === 'da',
       copyTopics: form.get('preia_teme') === 'da',
       copyProgrammes: form.get('preia_programe') === 'da',
+      copySeats: form.get('preia_locuri') === 'da',
     })
 
     return back(`Anul ${label} este deschis. Sesiunea anterioară a trecut în arhivă.`)

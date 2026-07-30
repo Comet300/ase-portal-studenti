@@ -126,6 +126,17 @@ const byLevel = {
               <small>Aceleași specializări, limbi și durate. Aproape întotdeauna corect.</small>
             </span>
           </label>
+          {/* Alocările de locuri sunt capacitatea reală a fiecărui cadru
+              didactic și nu se schimbă aproape niciodată de la un an la altul —
+              dar porneau la zero, deci primul lucru de făcut într-un an nou era
+              să reintroduci patruzeci de numere pe care portalul le știa. */}
+          <label class="check">
+            <input type="checkbox" name="preia_locuri" value="da" checked />
+            <span>
+              Locurile alocate coordonatorilor
+              <small>Aceleași numere pe cadru didactic. Le poate schimba oricând directorul.</small>
+            </span>
+          </label>
           <label class="check">
             <input type="checkbox" name="preia_etape" value="da" />
             <span>
@@ -144,8 +155,33 @@ const byLevel = {
           </label>
         </fieldset>
 
+        {/* Un formular deschis pe ecran, cu un buton care arhivează o promoție
+            întreagă. Confirmarea este denumirea anului care se închide, scrisă de
+            mână: o casetă de bifat se bifează din reflex, un nume nu se scrie din
+            reflex. Serverul o compară cu anul curent din baza de date. */}
+        <div class="field confirmare">
+          <label class="label" for="confirmare">
+            Scrie <strong>{current?.label}</strong> ca să confirmi închiderea sesiunii în curs
+          </label>
+          <input
+            class="input"
+            id="confirmare"
+            name="confirmare"
+            required
+            autocomplete="off"
+            placeholder={current?.label}
+            data-confirma={current?.label}
+          />
+          <span class="hint">
+            Cererile, coordonările și consultațiile din {current?.label} rămân în arhivă și pot fi
+            citite oricând. Ce nu se poate face este întoarcerea.
+          </span>
+        </div>
+
         <div class="row row--end">
-          <button class="btn btn--primary" type="submit">Deschide anul universitar</button>
+          <button class="btn btn--primary" type="submit" id="deschide-an" disabled>
+            Deschide anul universitar
+          </button>
         </div>
       </form>
     </section>
@@ -280,6 +316,30 @@ Ana Petre;MK-2021-0142;Marketing strategic;master;ro;Conf. univ. dr. Cristian Va
   </div>
 </ProfesorLayout>
 
+<script>
+  /* Butonul rămâne închis până confirmarea e scrisă exact.
+   *
+   * Verificarea adevărată este pe server, comparată cu anul curent din baza de
+   * date — asta e doar ca butonul să nu arate apăsabil cât încă nu e. Fără
+   * JavaScript butonul pornește activ (`disabled` se scoate la încărcare), pentru
+   * că altfel formularul ar deveni imposibil de trimis. */
+  const camp = document.querySelector<HTMLInputElement>('[data-confirma]')
+  const buton = document.getElementById('deschide-an') as HTMLButtonElement | null
+
+  if (camp && buton) {
+    // Aceeași toleranță ca pe server: liniuța en nu este pe tastatură.
+    const fara = (t: string) => t.replace(/[\u2010-\u2015]/g, '-')
+    const cerut = fara(camp.dataset.confirma ?? '')
+    const verifica = () => {
+      buton.disabled = fara(camp.value.trim()) !== cerut
+    }
+    camp.addEventListener('input', verifica)
+    verifica()
+  } else if (buton) {
+    buton.disabled = false
+  }
+</script>
+
 <style>
   .preia {
     display: flex;
@@ -332,6 +392,18 @@ Ana Petre;MK-2021-0142;Marketing strategic;master;ro;Conf. univ. dr. Cristian Va
     list-style: none;
     margin: 0;
     padding: 0;
+  }
+
+  /* Confirmarea stă despărțită de restul formularului: nu este un câmp printre
+     altele, este pasul care hotărăște. */
+  .confirmare {
+    padding: var(--s-4);
+    border: 1px solid var(--warn);
+    border-radius: var(--r-md);
+    background: var(--warn-tint);
+  }
+  .confirmare .label strong {
+    font-family: var(--serif);
   }
 
   .program {
