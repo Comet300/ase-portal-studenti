@@ -15,6 +15,7 @@ export type AccesTip =
   | 'export_coordonari'
   | 'export_cereri'
   | 'descarca_fisier'
+  | 'descarca_arhiva'
   | 'descarca_document'
   | 'export_date_proprii'
 

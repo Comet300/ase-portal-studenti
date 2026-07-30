@@ -707,6 +707,21 @@ export function weekLabel(mondayIso: string, todayIso = new Date().toISOString()
   return { nume: nume ?? interval, interval: nume ? interval : null }
 }
 
+/**
+ * „august 2026”, pentru capul unui grup de fișiere.
+ *
+ * Fișierele unei coordonări se adună o dată pe lună — un capitol, un set de date
+ * — deci luna este singura despărțire naturală într-o listă care crește. Anul se
+ * scrie doar când nu e cel curent, altfel se repetă în fiecare cap de grup.
+ */
+export function monthLabel(iso: string, todayIso = new Date().toISOString()): string {
+  const d = new Date(iso)
+  const anCurent = new Date(todayIso).getFullYear()
+  return d.getFullYear() === anCurent
+    ? MONTHS[d.getMonth()]
+    : `${MONTHS[d.getMonth()]} ${d.getFullYear()}`
+}
+
 export function formatTime(iso: string): string {
   const d = new Date(iso)
   return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`

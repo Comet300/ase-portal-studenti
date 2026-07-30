@@ -1,7 +1,7 @@
 ---
 import Avatar from './Avatar.astro'
 import type { Conversation, Message } from '../lib/chat'
-import { formatTime, shortMonth, timeAgo } from '../lib/repo'
+import { formatTime, monthLabel, shortMonth, timeAgo } from '../lib/repo'
 import { ACCEPT } from '../lib/files'
 
 /**
@@ -66,6 +66,24 @@ const {
   emptyText,
   hasContext = false,
 } = Astro.props
+
+/**
+ * Fișierele, pe luni.
+ *
+ * O coordonare de nouă luni adună douăzeci de fișiere, iar sertarul le înșira pe
+ * toate la rând: „capitolul 2” apărea de trei ori, cu trei date, și nu se putea
+ * spune care este cel din primăvară fără să citești fiecare rând. Luna este
+ * despărțirea pe care o are ritmul lucrării.
+ */
+const fisierePeLuni = [
+  ...files
+    .reduce((harta, f) => {
+      const cheie = f.created_at.slice(0, 7)
+      harta.set(cheie, [...(harta.get(cheie) ?? []), f])
+      return harta
+    }, new Map<string, typeof files>())
+    .entries(),
+].sort(([a], [b]) => (a < b ? 1 : -1))
 
 /** Messages are grouped by day, the way a messaging app does it. */
 type Bucata = Message & { continuare: boolean; ultimulDinGrup: boolean }
@@ -315,29 +333,52 @@ const INCEPUTURI = [
                 <li class="fisiere-drawer__gol" id="fisiere-fara-rezultat" hidden>
                   Niciun fișier cu numele acesta.
                 </li>
-                {files.map((f) => (
-                  <li data-nume-fisier={f.original_name.toLowerCase()}>
-                    <a class="fisier" href={`/fisiere/${f.id}`}>
-                      <span class="fisier__icon" aria-hidden="true">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
-                          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6" />
-                        </svg>
+                {fisierePeLuni.map(([luna, dinLuna]) => (
+                  <li class="fisiere-drawer__grup" data-luna={luna}>
+                    <p class="fisiere-drawer__luna">
+                      <span>{monthLabel(dinLuna[0].created_at)}</span>
+                      <span class="muted numeric">
+                        {dinLuna.length} {dinLuna.length === 1 ? 'fișier' : 'fișiere'}
                       </span>
-                      <span class="fisier__corp">
-                        <strong>{f.original_name}</strong>
-                        <small class="muted">
-                          {[f.size_label, timeAgo(f.created_at)].filter(Boolean).join(' · ')}
-                          {f.uploaded_by === userId ? ' · trimis de tine' : ''}
-                        </small>
-                      </span>
-                      <svg class="fisier__descarca" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true">
-                        <path d="M12 3v12M7 12l5 5 5-5M4 21h16" />
-                      </svg>
-                    </a>
+                    </p>
+                    <ul>
+                      {dinLuna.map((f) => (
+                        <li data-nume-fisier={f.original_name.toLowerCase()}>
+                          <a class="fisier" href={`/fisiere/${f.id}`}>
+                            <span class="fisier__icon" aria-hidden="true">
+                              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+                                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6" />
+                              </svg>
+                            </span>
+                            <span class="fisier__corp">
+                              <strong>{f.original_name}</strong>
+                              <small class="muted">
+                                {[f.size_label, timeAgo(f.created_at)].filter(Boolean).join(' · ')}
+                                {f.uploaded_by === userId ? ' · trimis de tine' : ''}
+                              </small>
+                            </span>
+                            <svg class="fisier__descarca" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true">
+                              <path d="M12 3v12M7 12l5 5 5-5M4 21h16" />
+                            </svg>
+                          </a>
+                        </li>
+                      ))}
+                    </ul>
                   </li>
                 ))}
               </ul>
             )}
+
+            {/* Nouă fișiere însemnau nouă clicuri și nouă „Salvează ca”, pentru
+                fiecare student, la fiecare depunere de dosar. */}
+            {files.length > 1 && (
+              <div class="fisiere-drawer__jos">
+                <a class="btn btn--secondary btn--sm" href={`/fisiere/conversatie/${active.id}.zip`}>
+                  Descarcă toate ({files.length})
+                </a>
+              </div>
+            )}
+
           </aside>
 
           <form class="chat__compose" method="POST" action="/api/mesaje" enctype="multipart/form-data">
@@ -932,6 +973,38 @@ const INCEPUTURI = [
     display: flex;
     flex-direction: column;
     gap: 2px;
+  }
+
+  .fisiere-drawer__lista ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  /* Capul de lună: lipicios, ca la derularea unei liste lungi să știi în ce lună
+     ești, nu doar prin ce nume treci. */
+  .fisiere-drawer__luna {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    display: flex;
+    justify-content: space-between;
+    gap: var(--s-2);
+    padding: var(--s-2) var(--s-2) var(--s-1);
+    background: var(--surface);
+    font-size: var(--t-xs);
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--ink-muted);
+  }
+
+  .fisiere-drawer__jos {
+    padding: var(--s-3) var(--s-4);
+    border-top: 1px solid var(--border);
   }
 
   .fisier {

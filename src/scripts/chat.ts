@@ -437,6 +437,15 @@ export function porneste() {
       li.hidden = !seVede
       if (seVede) vizibile++
     })
+
+    /* Fișierele stau acum pe luni, iar o lună din care nu mai rămâne nimic după
+     * filtrare ar fi un cap de grup fără grup — „august, 3 fișiere”, urmat de
+     * nimic. Grupul dispare împreună cu conținutul lui. */
+    sertar?.querySelectorAll<HTMLElement>('[data-luna]').forEach((grup) => {
+      const cuFisiere = [...grup.querySelectorAll<HTMLElement>('[data-nume-fisier]')]
+      grup.hidden = cuFisiere.length > 0 && cuFisiere.every((li) => li.hidden)
+    })
+
     const gol = document.getElementById('fisiere-fara-rezultat')
     if (gol) gol.hidden = vizibile > 0
   })
