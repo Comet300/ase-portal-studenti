@@ -1,5 +1,6 @@
 ---
 import Avatar from '../../components/Avatar.astro'
+import Metrica from '../../components/Metrica.astro'
 import ProfesorLayout from '../../layouts/ProfesorLayout.astro'
 import {
   timeAgo,
@@ -44,13 +45,14 @@ const necitite = studenti.reduce((s, x) => s + x.unread, 0)
 
 <ProfesorLayout
   title={`Bine ai revenit, ${prenume}`}
+  docTitle="Panoul meu"
   lede={etapa
     ? `Etapa curentă: ${etapa.title} · ${etapa.interval_label}`
     : `Sesiunea de Finalizare a Studiilor ${sesiune}`}
   active="dashboard"
 >
   <div slot="actiuni" class="row">
-    <a href="/profesor/studenti" class="btn btn--primary btn--sm">Deschide cererile</a>
+    <a href="/profesor/studenti?sectiune=cereri" class="btn btn--primary btn--sm">Deschide cererile</a>
   </div>
 
   <div class="stack stack--loose">
@@ -58,41 +60,44 @@ const necitite = studenti.reduce((s, x) => s + x.unread, 0)
     <section class="stack">
       <h2 class="section-title">Ce cere atenția ta</h2>
       <div class="grid-auto">
-        <a href="/profesor/studenti?status=in_asteptare" class="metric metric--link">
-          <span class="metric__valoare numeric">{stat?.pending ?? 0}</span>
-          <span class="metric__eticheta">cereri în așteptare</span>
-          {
-            (stat?.pending ?? 0) > 0 && (
-              <span class="metric__nota">Cea mai veche: {timeAgo(cereri.at(-1)?.submitted_at ?? null)}</span>
-            )
+        <Metrica
+          valoare={stat?.pending ?? 0}
+          eticheta="cereri în așteptare"
+          nota={
+            (stat?.pending ?? 0) > 0
+              ? `Cea mai veche: ${timeAgo(cereri.at(-1)?.submitted_at ?? null)}`
+              : undefined
           }
-        </a>
+          href="/profesor/studenti?sectiune=cereri"
+        />
 
-        <a href="/profesor/mesaje" class="metric metric--link">
-          <span class="metric__valoare numeric">{necitite}</span>
-          <span class="metric__eticheta">mesaje necitite</span>
-          <span class="metric__nota">de la {studenti.filter((s) => s.unread > 0).length} studenți</span>
-        </a>
+        <Metrica
+          valoare={necitite}
+          eticheta="mesaje necitite"
+          nota={`de la ${studenti.filter((s) => s.unread > 0).length} studenți`}
+          href="/profesor/mesaje"
+        />
 
-        <div class="metric">
-          <span class="metric__valoare numeric">{sloturiAzi.length}</span>
-          <span class="metric__eticheta">consultații astăzi</span>
-          <span class="metric__nota">
-            {sloturiAzi.length > 0 ? `Prima la ${formatTime(sloturiAzi[0].starts_at)}` : 'Nicio programare'}
-          </span>
-        </div>
+        <Metrica
+          valoare={sloturiAzi.length}
+          eticheta="consultații astăzi"
+          nota={
+            sloturiAzi.length > 0
+              ? `Prima la ${formatTime(sloturiAzi[0].starts_at)}`
+              : 'Nicio programare'
+          }
+        />
 
-        <a href="/profesor/studenti?sectiune=invitatii" class="metric metric--link">
-          <span class="metric__valoare numeric">{invitatiiDeschise}</span>
-          <span class="metric__eticheta">propuneri trimise</span>
-          <span class="metric__nota">
-            {
-              invitatiiDeschise > 0
-                ? 'în așteptarea răspunsului studentului'
-                : 'Poți invita tu un student la coordonare'
-            }
-          </span>
-        </a>
+        <Metrica
+          valoare={invitatiiDeschise}
+          eticheta="propuneri trimise"
+          nota={
+            invitatiiDeschise > 0
+              ? 'în așteptarea răspunsului studentului'
+              : 'Poți invita tu un student la coordonare'
+          }
+          href="/profesor/studenti?sectiune=invitatii"
+        />
       </div>
     </section>
 
@@ -101,7 +106,7 @@ const necitite = studenti.reduce((s, x) => s + x.unread, 0)
       <section class="panel">
         <div class="panel__header">
           <h2 class="section-title">Cereri în așteptare</h2>
-          <a href="/profesor/studenti?status=in_asteptare" class="btn btn--ghost btn--sm">Vezi toate</a>
+          <a href="/profesor/studenti?sectiune=cereri" class="btn btn--ghost btn--sm">Vezi toate</a>
         </div>
 
         {
@@ -119,18 +124,24 @@ const necitite = studenti.reduce((s, x) => s + x.unread, 0)
                 <li class="lista__item">
                   <Avatar name={c.student_name} />
                   <span class="lista__corp">
-                    <a href={`/profesor/studenti?cerere=${c.id}`} class="lista__titlu">{c.title_ro}</a>
+                    <a href={`/profesor/studenti?sectiune=cereri#cerere-${c.id}`} class="lista__titlu">
+                      {c.title_ro}
+                    </a>
                     <span class="lista__meta">
                       {c.student_name} · {c.student_number} ·{' '}
                       {c.program === 'master' ? 'Master' : 'Licență'} · depusă {timeAgo(c.submitted_at)}
                     </span>
                   </span>
-                  <form method="POST" action="/api/cereri/decizie" class="row">
-                    <input type="hidden" name="cerere_id" value={c.id} />
-                    <input type="hidden" name="decizie" value="approved" />
-                    <input type="hidden" name="redirect" value="/profesor" />
-                    <button class="btn btn--primary btn--sm" type="submit">Acceptă</button>
-                  </form>
+                  {/* Acceptarea ocupă un loc și leagă un student de tine pentru
+                      toată sesiunea. Era un singur clic, fără confirmare și fără
+                      niciun cuvânt către student — aici doar deschide dialogul
+                      din coada de cereri. */}
+                  <a
+                    class="btn btn--primary btn--sm"
+                    href={`/profesor/studenti?sectiune=cereri#cerere-${c.id}`}
+                  >
+                    Vezi și decide
+                  </a>
                 </li>
               ))}
             </ul>
@@ -142,7 +153,7 @@ const necitite = studenti.reduce((s, x) => s + x.unread, 0)
       <section class="panel">
         <div class="panel__header">
           <h2 class="section-title">Consultații</h2>
-          <a href="/profesor/studenti#consultatii" class="btn btn--ghost btn--sm">Program</a>
+          <a href="/profesor/consultatii" class="btn btn--ghost btn--sm">Program</a>
         </div>
 
         {
@@ -189,11 +200,11 @@ const necitite = studenti.reduce((s, x) => s + x.unread, 0)
       <section class="panel">
         <div class="panel__header">
           <h2 class="section-title">Locuri de coordonare</h2>
-          <a href="/profesor/arhiva" class="btn btn--ghost btn--sm">Cere locuri</a>
+          <a href="/profesor/arhiva#locuri" class="btn btn--secondary btn--sm">Cere locuri</a>
         </div>
         <div class="panel__body stack">
           <div class="row row--between">
-            <span class="muted" style="font-size:var(--t-sm)">
+            <span class="muted text-sm">
               Licență {locuri.bachelor_taken}/{locuri.bachelor_seats} · Master {locuri.master_taken}/{locuri.master_seats}
             </span>
             <span class="numeric" style="font-weight:600">{ocupate} / {capacitate}</span>
@@ -208,7 +219,7 @@ const necitite = studenti.reduce((s, x) => s + x.unread, 0)
           >
             <span class="bara__fill" style={`--procent:${procent / 100}`}></span>
           </div>
-          <p class="muted" style="font-size:var(--t-sm)">
+          <p class="muted text-sm">
             {
               capacitate === 0
                 ? 'Directorul de departament nu ți-a alocat încă locuri pentru această sesiune.'
@@ -253,44 +264,6 @@ const necitite = studenti.reduce((s, x) => s + x.unread, 0)
     grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
     gap: var(--s-4);
     align-items: start;
-  }
-
-  /* Metricile sunt cifre pe care se poate acționa, nu decor: fiecare duce undeva
-     sau explică ce urmează. */
-  .metric {
-    display: flex;
-    flex-direction: column;
-    gap: var(--s-1);
-    padding: var(--s-4);
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: var(--r-lg);
-    text-decoration: none;
-    color: inherit;
-  }
-
-  .metric--link {
-    transition: border-color var(--fast) var(--ease);
-  }
-  .metric--link:hover {
-    border-color: var(--border-strong);
-    color: inherit;
-  }
-
-  .metric__valoare {
-    font-size: var(--t-3xl);
-    font-weight: 600;
-    line-height: 1.1;
-  }
-
-  .metric__eticheta {
-    font-size: var(--t-sm);
-    color: var(--ink-soft);
-  }
-
-  .metric__nota {
-    font-size: var(--t-xs);
-    color: var(--ink-muted);
   }
 
   .lista {
@@ -342,20 +315,6 @@ const necitite = studenti.reduce((s, x) => s + x.unread, 0)
     color: var(--ink-muted);
   }
 
-  .avatar {
-    display: grid;
-    place-items: center;
-    width: 34px;
-    height: 34px;
-    border-radius: 50%;
-    background: var(--surface-sunken);
-    border: 1px solid var(--border);
-    font-size: var(--t-xs);
-    font-weight: 600;
-    color: var(--ink-soft);
-    flex: none;
-  }
-
   .data-chip {
     display: grid;
     place-items: center;
@@ -372,7 +331,7 @@ const necitite = studenti.reduce((s, x) => s + x.unread, 0)
     font-variant-numeric: tabular-nums;
   }
   .data-chip small {
-    font-size: 10px;
+    font-size: var(--t-xs);
     color: var(--ink-muted);
     text-transform: lowercase;
   }

@@ -14,13 +14,88 @@ const [stageList, currentStageRow, sesiune] = await Promise.all([
 const requests = u?.role === 'student' ? await studentRequests(u.id) : []
 const activeRequest = requests.find((c) => c.status === 'approved' || c.status === 'pending')
 const milestones = u?.role === 'student' ? await studentMilestones(u.id) : []
-const nextMilestone = milestones.find((j) => j.status !== 'done')
+/* „Următorul termen” trebuie să fie în viitor.
+ *
+ * Se lua primul nefinalizat, în ordine, deci pe 29 iulie pagina anunța drept
+ * următor un termen din 1 martie. Dacă tot ce a rămas este restant, se spune
+ * asta — nu se prezintă trecutul ca viitor. */
+const neterminate = milestones.filter((j) => j.status !== 'done')
+const azi = new Date()
+azi.setHours(0, 0, 0, 0)
+
+const nextMilestone =
+  neterminate.find((j) => j.due_on && new Date(j.due_on) >= azi) ?? neterminate[0]
+const nextMilestoneOverdue = Boolean(
+  nextMilestone?.due_on && new Date(nextMilestone.due_on) < azi,
+)
+
+/**
+ * Prima propoziție de pe ecran.
+ *
+ * Era una singură pentru toată lumea — o prezentare a portalului, arătată la
+ * fel unui vizitator care nu îl cunoaște și unui student care intră a
+ * cincisprezecea oară ca să vadă dacă i s-a răspuns. Iar un cadru didactic
+ * primea drept acțiune principală „Cererile mele”, adică o pagină de student,
+ * goală pentru el.
+ */
+const intro = (() => {
+  if (!u) {
+    return {
+      titlu: 'Tot ce ține de lucrarea ta, într-un singur loc',
+      text: 'Alegi coordonatorul, depui cererea, urmărești termenele și discuți cu profesorul — fără drumuri la secretariat și fără fire de email pierdute.',
+      actiune: { href: '/autentificare', text: 'Intră în cont' },
+      secundar: { href: '/coordonatori', text: 'Vezi coordonatorii' },
+    }
+  }
+
+  if (u.role !== 'student') {
+    return {
+      titlu: `Bine ai revenit, ${u.name.split(' ').slice(-1)[0]}`,
+      text: 'Ești autentificat ca și cadru didactic. Triajul cererilor, temele propuse și consultațiile sunt în zona dedicată.',
+      actiune: { href: '/profesor', text: 'Deschide zona cadrelor didactice' },
+      secundar: { href: '/coordonatori', text: 'Vezi catalogul public' },
+    }
+  }
+
+  if (activeRequest?.status === 'approved') {
+    return {
+      titlu: activeRequest.title_ro,
+      text: `Coordonezi lucrarea cu ${activeRequest.teacher_name}.${
+        nextMilestone
+          ? nextMilestoneOverdue
+            ? ` Termenul „${nextMilestone.title}” a trecut pe ${formatDate(nextMilestone.due_on)}.`
+            : ` Următorul termen: ${nextMilestone.title}, ${formatDate(nextMilestone.due_on)}.`
+          : ''
+      }`,
+      actiune: { href: '/cererile-mele', text: 'Vezi termenele lucrării' },
+      secundar: { href: '/mesaje', text: 'Scrie coordonatorului' },
+    }
+  }
+
+  if (activeRequest) {
+    return {
+      titlu: `Cererea ta este la ${activeRequest.teacher_name}`,
+      text: activeRequest.expires_at
+        ? `Ai un răspuns până la ${formatDate(activeRequest.expires_at)}. Dacă nu vine până atunci, cererea se închide singură și poți depune alta.`
+        : 'Aștepți răspunsul coordonatorului. Primești un email imediat ce decide.',
+      actiune: { href: '/cererile-mele', text: 'Vezi cererea' },
+      secundar: { href: '/coordonatori', text: 'Vezi coordonatorii' },
+    }
+  }
+
+  return {
+    titlu: 'Primul pas: alege-ți coordonatorul',
+    text: 'Poți porni de la persoană sau de la temă. Cererea se depune din catalog, iar coordonatorul are o săptămână să răspundă.',
+    actiune: { href: '/coordonatori', text: 'Alege coordonator' },
+    secundar: { href: '/ghid', text: 'Citește ghidul' },
+  }
+})()
 
 const RESOURCES = [
   { title: 'Ghid de redactare', text: 'Structura lucrării, citare, formatare.', href: '/ghid#redactare' },
   { title: 'Regulament privind IA', text: 'Ce este permis și ce trebuie declarat.', href: '/ghid#ia' },
   { title: 'Antiplagiat', text: 'Procedura de verificare și pragurile admise.', href: '/ghid#antiplagiat' },
-  { title: 'Formulare', text: 'Cereri, declarații și anexe descărcabile.', href: '/ghid#formulare' },
+  { title: 'Formulare', text: 'Cereri, declarații și anexe descărcabile.', href: '/ghid#documente' },
 ]
 ---
 
@@ -33,20 +108,11 @@ const RESOURCES = [
     <section class="hero">
       <div class="hero__text">
         <p class="hero__sesiune">Sesiunea de Finalizare a Studiilor {sesiune}</p>
-        <h1 class="hero__titlu">Tot ce ține de lucrarea ta, într-un singur loc</h1>
-        <p class="page-lede">
-          Alegi coordonatorul, depui cererea, urmărești termenele și discuți cu profesorul — fără
-          drumuri la secretariat și fără fire de email pierdute.
-        </p>
+        <h1 class="hero__titlu">{intro.titlu}</h1>
+        <p class="page-lede">{intro.text}</p>
         <div class="row row--wrap" style="gap:var(--s-3)">
-          {
-            u ? (
-              <a href="/cererile-mele" class="btn btn--primary">Cererile mele</a>
-            ) : (
-              <a href="/autentificare" class="btn btn--primary">Intră în cont</a>
-            )
-          }
-          <a href="/coordonatori" class="btn btn--secondary">Vezi coordonatorii</a>
+          <a href={intro.actiune.href} class="btn btn--primary">{intro.actiune.text}</a>
+          <a href={intro.secundar.href} class="btn btn--secondary">{intro.secundar.text}</a>
         </div>
       </div>
 
@@ -66,15 +132,19 @@ const RESOURCES = [
                 </p>
                 {nextMilestone && (
                   <p class="situatie__linie">
-                    <span class="muted">Următorul termen</span>
-                    <strong>{nextMilestone.title} · {formatDate(nextMilestone.due_on)}</strong>
+                    <span class="muted">
+                      {nextMilestoneOverdue ? 'Termen depășit' : 'Următorul termen'}
+                    </span>
+                    <strong class:list={{ 'is-restant': nextMilestoneOverdue }}>
+                      {nextMilestone.title} · {formatDate(nextMilestone.due_on)}
+                    </strong>
                   </p>
                 )}
               </>
             ) : (
               <>
-                <p class="muted" style="font-size:var(--t-sm)">
-                  Nu ai încă o request activă. Primul pas este să alegi un coordonator și să depui
+                <p class="muted text-sm">
+                  Nu ai încă o cerere activă. Primul pas este să alegi un coordonator și să depui
                   cererea de coordonare.
                 </p>
                 <a href="/coordonatori" class="btn btn--primary btn--sm">Alege coordonator</a>
@@ -93,7 +163,7 @@ const RESOURCES = [
             const active = currentStageRow?.id === e.id
             const past = e.ends_on ? new Date(e.ends_on) < new Date() : false
             return (
-              <li class:list={['currentStageRow', { 'is-activa': active, 'is-trecuta': past }]}>
+              <li class:list={['etapa', { 'is-activa': active, 'is-trecuta': past }]}>
                 <span class="etapa__index numeric" aria-hidden="true">
                   {String(i + 1).padStart(2, '0')}
                 </span>
@@ -178,6 +248,10 @@ const RESOURCES = [
     gap: 2px;
     font-size: var(--t-sm);
   }
+  .is-restant {
+    color: var(--danger);
+  }
+
   .situatie__linie .muted {
     font-size: var(--t-xs);
   }
@@ -190,13 +264,13 @@ const RESOURCES = [
     flex-direction: column;
   }
 
-  .currentStageRow {
+  .etapa {
     display: flex;
     gap: var(--s-4);
     padding: var(--s-4) 0;
     border-bottom: 1px solid var(--border);
   }
-  .currentStageRow:last-child {
+  .etapa:last-child {
     border-bottom: 0;
   }
 
@@ -209,10 +283,10 @@ const RESOURCES = [
     flex: none;
     width: 2.2rem;
   }
-  .currentStageRow.is-activa .etapa__index {
+  .etapa.is-activa .etapa__index {
     color: var(--red);
   }
-  .currentStageRow.is-trecuta .etapa__index {
+  .etapa.is-trecuta .etapa__index {
     color: var(--ok);
   }
 
@@ -263,7 +337,7 @@ const RESOURCES = [
     font-size: var(--t-xs);
   }
 
-  @media (max-width: 860px) {
+  @media (max-width: 900px) {
     .hero {
       grid-template-columns: minmax(0, 1fr);
     }

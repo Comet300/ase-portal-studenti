@@ -2,7 +2,8 @@ import type { APIRoute } from 'astro'
 import { isDepartmentHead, isTeacher } from '../../lib/auth'
 import { execute, queryOne } from '../../lib/db'
 import { grantSeats } from '../../lib/lifecycle'
-import { redirectWithNotice } from '../../lib/http'
+import { deadEnd, redirectWithNotice, sessionExpired } from '../../lib/http'
+import { formAction } from '../../lib/forms'
 import { html, quote, sendEmail, template } from '../../lib/mail'
 import { id as formId } from '../../lib/ids'
 
@@ -21,16 +22,16 @@ const TEACHER_PAGE = '/profesor/arhiva'
 
 export const POST: APIRoute = async ({ request, locals, url }) => {
   const u = locals.user
-  if (!isTeacher(u)) return new Response('Neautorizat', { status: 401 })
+  if (!isTeacher(u)) return sessionExpired()
 
   const form = await request.formData()
-  const action = String(form.get('actiune') ?? '')
+  const action = formAction(form)
   const base = process.env.APP_BASE_URL ?? url.origin
 
   /* --- the head allocates -------------------------------------------------- */
 
   if (action === 'aloca') {
-    if (!isDepartmentHead(u)) return new Response('Pagina nu a fost găsită', { status: 404 })
+    if (!isDepartmentHead(u)) return deadEnd(404, 'Pagina nu a fost găsită', 'Adresa aceasta nu duce nicăieri în portal.')
 
     const teacherId = formId(form.get('profesor_id'))
     const bachelor = Number(form.get('locuri_licenta') ?? 0)
@@ -54,7 +55,19 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
       [teacherId, clamp(bachelor), clamp(master), u!.id],
     )
 
-    return redirectWithNotice(HEAD_PAGE, `Locurile pentru ${teacher.name} au fost actualizate.`)
+    /* Valoarea salvată poate să nu fie cea trimisă.
+     *
+     * `clamp` taie tăcut la 0–40: cine scria 100 primea „Locurile au fost
+     * actualizate” și pleca convins că a alocat 100. Dacă s-a schimbat ceva,
+     * mesajul spune ce s-a scris de fapt. */
+    const taiat = clamp(bachelor) !== bachelor || clamp(master) !== master
+    return redirectWithNotice(
+      HEAD_PAGE,
+      taiat
+        ? `Locurile pentru ${teacher.name}: ${clamp(bachelor)} licență și ${clamp(master)} master. Valorile au fost limitate la intervalul 0–40.`
+        : `Locurile pentru ${teacher.name} au fost actualizate.`,
+      taiat,
+    )
   }
 
   /* --- a coordinator asks --------------------------------------------------- */
@@ -118,14 +131,33 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
   /* --- the head decides ----------------------------------------------------- */
 
   if (action === 'decide') {
-    if (!isDepartmentHead(u)) return new Response('Pagina nu a fost găsită', { status: 404 })
+    if (!isDepartmentHead(u)) return deadEnd(404, 'Pagina nu a fost găsită', 'Adresa aceasta nu duce nicăieri în portal.')
 
     const seatRequestId = formId(form.get('cerere_id'))
     const decision = String(form.get('decizie') ?? '')
     const note = String(form.get('nota') ?? '').trim()
 
     if (decision !== 'approved' && decision !== 'rejected') {
-      return new Response('Decizie invalidă', { status: 400 })
+      return deadEnd(400, 'Decizie neînțeleasă', 'Decizia trimisă nu este una dintre cele posibile. Reia din coada de cereri.')
+    }
+
+    /* Directorul nu își decide propria cerere.
+     *
+     * `isTeacher(head)` este adevărat, deci ramura „cere” accepta și o cerere a
+     * directorului către el însuși, iar „decide” nu verifica nimic: se putea
+     * cere două locuri și aproba singur, iar rândul rezultat era imposibil de
+     * deosebit de o decizie a departamentului. Condiția stă în interogare, ca
+     * peste tot în portal, ca să nu poată fi ocolită cu un POST. */
+    const aSa = await queryOne<{ da: boolean }>(
+      `SELECT (teacher_id = $1) AS da FROM seat_requests WHERE id = $2`,
+      [u!.id, seatRequestId],
+    )
+    if (aSa?.da) {
+      return redirectWithNotice(
+        HEAD_PAGE,
+        'Nu îți poți decide propria cerere de locuri. Alocă-ți direct locurile din tabelul de mai sus, unde decizia rămâne vizibilă ca alocare.',
+        true,
+      )
     }
 
     const decided =
@@ -173,5 +205,5 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
     )
   }
 
-  return new Response('Acțiune necunoscută', { status: 400 })
+  return deadEnd(400, 'Cerere neînțeleasă', 'Portalul nu a recunoscut acțiunea cerută. Reia pasul din interfață.')
 }

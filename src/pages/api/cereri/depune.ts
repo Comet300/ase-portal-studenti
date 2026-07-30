@@ -2,7 +2,7 @@ import type { APIRoute } from 'astro'
 import { postEvent } from '../../../lib/chat'
 import { queryOne, transaction } from '../../../lib/db'
 import { template, sendEmail, html } from '../../../lib/mail'
-import { redirectWithNotice } from '../../../lib/http'
+import { deadEnd, redirectWithNotice, sessionExpired } from '../../../lib/http'
 import { DECISION_WINDOW_DAYS } from '../../../lib/lifecycle'
 import { seedMilestones, teacherSeats } from '../../../lib/repo'
 import { id as formId } from '../../../lib/ids'
@@ -17,9 +17,9 @@ import { id as formId } from '../../../lib/ids'
  */
 export const POST: APIRoute = async ({ request, locals, url }) => {
   const u = locals.user
-  if (!u) return new Response('Neautentificat', { status: 401 })
+  if (!u) return sessionExpired()
   if (u.role !== 'student') {
-    return new Response('Doar studenții pot depune cereri', { status: 403 })
+    return deadEnd(403, 'Cererile se depun de studenți', 'Zona cadrelor didactice are propriile ecrane pentru coordonare.')
   }
 
   const form = await request.formData()
@@ -46,6 +46,32 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
     [teacherId],
   )
   if (!teacher) return back('Coordonatorul selectat nu există.', true)
+
+  /* Tema trebuie să fie a coordonatorului ales.
+   *
+   * Legătura era ținută doar de un script care ascundea opțiunile nepotrivite cu
+   * `option.hidden` — un atribut pe care nu toate motoarele îl respectă, deci pe
+   * unele browsere se putea alege prin interfața obișnuită tema altui cadru
+   * didactic. Nivelul trebuie să se potrivească și el: o temă de master nu are
+   * ce căuta pe o cerere de licență. */
+  if (topicId) {
+    const tema = await queryOne<{ id: string; level: string; title: string }>(
+      `SELECT id, level, title
+         FROM topics
+        WHERE id = $1 AND teacher_id = $2 AND is_active
+          AND academic_year_id = (SELECT id FROM academic_years WHERE is_current)`,
+      [topicId, teacherId],
+    )
+    if (!tema) {
+      return back('Tema aleasă nu este propusă de acest coordonator în sesiunea curentă.', true)
+    }
+    if (u.program && tema.level !== u.program) {
+      return back(
+        `„${tema.title}” este o temă de ${tema.level === 'master' ? 'master' : 'licență'}, iar tu ești la ${u.program === 'master' ? 'master' : 'licență'}.`,
+        true,
+      )
+    }
+  }
 
   // An accepted invitation is what turns this into an approved request. The
   // lookup carries the student id, so an invitation addressed to someone else
@@ -124,6 +150,8 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
         eventType: 'request_approved',
         body: `Cererea ${number} a fost aprobată automat, pe baza propunerii de coordonare acceptate. Termenele lucrării sunt disponibile în portal.`,
         createConversation: true,
+        subjectKind: 'request',
+        subjectId: created.id,
       })
 
       await sendEmail({

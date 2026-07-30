@@ -1,6 +1,8 @@
 import type { APIRoute } from 'astro'
+import { noteazaAcces } from '../../lib/audit'
 import { isDepartmentHead, isTeacher } from '../../lib/auth'
-import { query } from '../../lib/db'
+import { query, queryOne } from '../../lib/db'
+import { id } from '../../lib/ids'
 import { languageLabel, levelLabel } from '../../lib/years'
 
 /**
@@ -42,11 +44,18 @@ function cell(value: unknown): string {
   return /[";\n\r]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text
 }
 
-export const GET: APIRoute = async ({ locals, url }) => {
+export const GET: APIRoute = async ({ locals, url, request }) => {
   const u = locals.user
   if (!isTeacher(u)) return new Response('Pagina nu a fost găsită', { status: 404 })
 
   const all = isDepartmentHead(u) && url.searchParams.get('doar_ale_mele') !== '1'
+
+  /* Anul, când ecranul care cere exportul are un an ales.
+   *
+   * Arhiva se răsfoiește pe ani universitari, dar exportul răspundea numai cu
+   * sesiunea curentă: butonul de pe o promoție din 2023 descărca 2026. Un `an`
+   * care nu e uuid cade pe sesiunea curentă, nu pe „tot”. */
+  const anul = id(url.searchParams.get('an'))
 
   const rows = await query<Record<string, unknown>>(
     `SELECT r.number, s.name AS student_name, s.student_number, s.program, s.specialization,
@@ -59,10 +68,10 @@ export const GET: APIRoute = async ({ locals, url }) => {
        JOIN users s ON s.id = r.student_id
        JOIN users t ON t.id = r.teacher_id
       WHERE r.status = 'approved'
-        AND r.academic_year_id = (SELECT id FROM academic_years WHERE is_current)
+        AND r.academic_year_id = COALESCE($3::uuid, (SELECT id FROM academic_years WHERE is_current))
         AND ($1 OR r.teacher_id = $2)
       ORDER BY t.name, s.name`,
-    [all, u!.id],
+    [all, u!.id, anul],
   )
 
   const lines = [
@@ -91,7 +100,19 @@ export const GET: APIRoute = async ({ locals, url }) => {
     ),
   ]
 
-  const filename = all ? 'coordonari-departament.csv' : 'coordonarile-mele.csv'
+  /* Numele fișierului spune care promoție e în el: doi exporturi din doi ani
+     ajungeau amândoi „coordonarile-mele.csv” în folderul Descărcări. */
+  const eticheta = (
+    await queryOne<{ label: string }>(
+      `SELECT label FROM academic_years
+        WHERE id = COALESCE($1::uuid, (SELECT id FROM academic_years WHERE is_current))`,
+      [anul],
+    )
+  )?.label
+  const sufix = eticheta ? '-' + eticheta.replace(/[^\x20-\x7e]+/g, '-') : ''
+  const filename = `${all ? 'coordonari-departament' : 'coordonarile-mele'}${sufix}.csv`
+
+  await noteazaAcces({ userId: u!.id, action: 'export_coordonari', subject: url.pathname + url.search, rowCount: rows.length, request })
 
   return new Response('﻿' + lines.join('\r\n') + '\r\n', {
     headers: {

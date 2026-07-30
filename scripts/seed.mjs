@@ -590,11 +590,29 @@ const { rows: demoPair } = await q(
      AND s.is_demo = true AND s.role = 'student' AND s.id <> $1
      AND t.is_demo = true AND t.role = 'teacher'
      AND r.status <> 'approved'
-   RETURNING r.id, r.student_id, r.teacher_id`,
+   RETURNING r.id, r.student_id, r.teacher_id, r.number`,
   [unassignedStudentId],
 )
 
-for (const r of demoPair) {
+/* Perechea demo, indiferent dacă tocmai a fost aprobată sau era deja.
+ *
+ * `RETURNING` de mai sus dă rânduri doar la prima rulare, pentru că filtrul
+ * cere `status <> 'approved'`. Tot ce urmează trebuie să fie idempotent, deci
+ * se citește separat. */
+const { rows: demoPairAll } = demoPair.length
+  ? { rows: demoPair }
+  : await q(
+      `SELECT r.id, r.student_id, r.teacher_id, r.number
+         FROM requests r
+         JOIN users s ON s.id = r.student_id
+         JOIN users t ON t.id = r.teacher_id
+        WHERE s.is_demo = true AND s.role = 'student' AND s.id <> $1
+          AND t.is_demo = true AND t.role = 'teacher'
+          AND r.status = 'approved'`,
+      [unassignedStudentId],
+    )
+
+for (const r of demoPairAll) {
   const { rows: existing } = await q('SELECT 1 FROM milestones WHERE request_id = $1 LIMIT 1', [r.id])
   if (existing.length === 0) {
     for (const [j, [title, description]] of MILESTONES.entries()) {
@@ -610,6 +628,27 @@ for (const r of demoPair) {
      ON CONFLICT (student_id, teacher_id) DO NOTHING`,
     [r.student_id, r.teacher_id],
   )
+
+  /* Aprobarea, ca eveniment în fir.
+   *
+   * Perechea demo era legată direct în bază, fără să treacă prin decizia
+   * coordonatorului — deci studentul demo avea o cerere aprobată și nicio urmă
+   * a aprobării: cronologia și clopoțelul de notificări arătau goale exact
+   * pentru contul pe care îl deschide oricine încearcă portalul. */
+  await q(
+    `INSERT INTO messages (conversation_id, sender_id, kind, event_type, body, created_at)
+     SELECT c.id, $2, 'event', 'request_approved',
+            'Cererea ' || $3 || ' a fost aprobată. Termenele lucrării sunt disponibile în portal.',
+            now() - interval '2 days'
+       FROM conversations c
+      WHERE c.student_id = $1 AND c.teacher_id = $2
+        AND NOT EXISTS (
+          SELECT 1 FROM messages m
+           WHERE m.conversation_id = c.id AND m.event_type = 'request_approved'
+        )`,
+    [r.student_id, r.teacher_id, r.number],
+  )
+
   console.log(`[seed] demo pair linked (request ${r.id})`)
 }
 
@@ -641,6 +680,48 @@ await q(
     'Bună ziua! Am observat rezultatele dumneavoastră la cursul de cercetări de marketing și v-aș propune să vă coordonez lucrarea de licență. Am o temă disponibilă care cred că vi se potrivește. Dacă acceptați, completați cererea din portal și o voi aproba direct.',
   ],
 )
+
+/* Un coordonator cu toate locurile ocupate.
+ *
+ * Starea „plin" schimbă catalogul, butonul de depunere și invitațiile, dar nu
+ * apărea nicăieri în datele demonstrative — nu se putea compara cu un
+ * coordonator disponibil fără să strici manual alocările.
+ *
+ * Se alege cel cu cei mai puțini studenți aprobați, ca schimbarea să fie
+ * minimă, și niciodată contul demo: coada lui trebuie să rămână liberă.
+ */
+await q(
+  `UPDATE seat_allocations a
+      -- Exact câte sunt ocupate. Un GREATEST(…, 1) aici dădea un loc de licență
+      -- în plus unui coordonator al cărui singur student e la master, deci nu
+      -- mai era plin deloc. HAVING de mai jos garantează că totalul nu e zero.
+      SET bachelor_seats = ocupate.b,
+          master_seats   = ocupate.m
+     FROM (
+       SELECT r.teacher_id,
+              count(*) FILTER (WHERE s.program = 'bachelor')::int AS b,
+              count(*) FILTER (WHERE s.program = 'master')::int   AS m
+         FROM requests r
+         JOIN users s ON s.id = r.student_id
+         JOIN users t ON t.id = r.teacher_id
+        WHERE r.status = 'approved' AND r.academic_year_id = $1
+          AND t.is_demo = false
+        GROUP BY r.teacher_id
+        HAVING count(*) > 0
+        ORDER BY count(*), r.teacher_id
+        LIMIT 1
+     ) ocupate
+    WHERE a.teacher_id = ocupate.teacher_id AND a.academic_year_id = $1`,
+  [currentYear.id],
+)
+
+/* Poza de profil a contului demo, ștearsă la fiecare pornire.
+ *
+ * Un fișier încărcat în timpul unui test rămâne acolo și ascunde exact ce ar
+ * trebui să se vadă implicit: inițialele. Conturile demonstrative pornesc fără
+ * poză, ca varianta implicită să fie cea vizibilă.
+ */
+await q(`UPDATE users SET avatar_path = NULL WHERE is_demo = true`)
 
 console.log('[seed] cerere de locuri')
 /* --- o cerere de locuri suplimentare, în așteptarea directorului ----------- */

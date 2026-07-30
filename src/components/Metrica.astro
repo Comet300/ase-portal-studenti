@@ -1,0 +1,83 @@
+---
+/**
+ * O cifră cu numele ei.
+ *
+ * Aceeași casetă era scrisă de mână pe cinci ecrane, cu cinci variante de
+ * spațiere și trei feluri de a marca starea de alertă. Când ceva se schimbă la
+ * ea — și s-a schimbat, de două ori în auditul acesta — trebuie schimbat o
+ * singură dată.
+ */
+interface Props {
+  valoare: string | number
+  eticheta: string
+  /** Un rând sub etichetă: contextul care face cifra utilă. */
+  nota?: string
+  /** Marchează cifra ca fiind cea care cere atenție. */
+  alerta?: boolean
+  /** Când e dată, toată caseta devine o legătură. */
+  href?: string
+}
+
+const { valoare, eticheta, nota, alerta = false, href } = Astro.props
+const Tag = href ? 'a' : 'div'
+---
+
+<Tag class:list={['metrica', { 'metrica--alerta': alerta, 'metrica--link': href }]} href={href}>
+  <span class="metrica__valoare numeric">{valoare}</span>
+  <span class="metrica__eticheta">{eticheta}</span>
+  {nota && <span class="metrica__nota">{nota}</span>}
+</Tag>
+
+<style>
+  .metrica {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: var(--s-4) var(--s-5);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--r-lg);
+    box-shadow: var(--shadow-card);
+    color: inherit;
+    text-decoration: none;
+  }
+
+  /* Elevația marchează ce răspunde la atingere. */
+  .metrica--link {
+    transition:
+      box-shadow var(--fast) var(--ease),
+      transform 90ms var(--ease-in);
+  }
+  .metrica--link:hover {
+    box-shadow: var(--shadow-raised);
+    color: inherit;
+  }
+  .metrica--link:active {
+    transform: scale(0.99);
+  }
+
+  /* Alerta colorează cifra, nu toată caseta: un card roșu întreg strigă mai tare
+     decât merită un număr. Ambru, nu roșu — toate cifrele care se marchează așa
+     („fără cerere depusă”, „locuri epuizate”) cer atenție, niciuna nu e o eroare. */
+  .metrica--alerta .metrica__valoare {
+    color: var(--warn);
+  }
+
+  .metrica__valoare {
+    font-family: var(--serif);
+    font-size: var(--t-2xl);
+    font-weight: 600;
+    line-height: 1.1;
+  }
+
+  .metrica__eticheta {
+    font-size: var(--t-sm);
+    color: var(--ink-soft);
+  }
+
+  .metrica__nota {
+    font-size: var(--t-xs);
+    color: var(--ink-muted);
+    text-wrap: pretty;
+  }
+</style>

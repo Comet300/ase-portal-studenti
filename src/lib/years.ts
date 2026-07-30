@@ -58,7 +58,13 @@ export async function openYear(
   label: string,
   startsOn: string,
   endsOn: string,
-  options: { copyStages: boolean; copyTopics: boolean; copyProgrammes: boolean },
+  options: {
+    copyStages: boolean
+    copyTopics: boolean
+    copyProgrammes: boolean
+    /** Aceleași numere de locuri pe coordonator, nu doar rândurile goale. */
+    copySeats: boolean
+  },
 ): Promise<string> {
   return transaction(async (client) => {
     const { rows: previous } = await client.query<{ id: string }>(
@@ -122,8 +128,26 @@ export async function openYear(
       )
     }
 
-    // Seats do not carry over as numbers, but every coordinator needs a row so
-    // the director's allocation table is not empty on day one.
+    /* Fiecare coordonator are nevoie de un rând, ca tabelul de alocări al
+     * directorului să nu fie gol în prima zi. Numerele se preiau la cerere.
+     *
+     * Alocările nu se schimbă aproape niciodată de la un an la altul — sunt
+     * capacitatea reală a fiecărui cadru didactic — dar porneau la zero, deci
+     * primul lucru de făcut într-un an nou era să reintroduci patruzeci de
+     * numere pe care le știa deja portalul. Rămâne o opțiune, pentru că uneori
+     * chiar se renegociază. */
+    if (from && options.copySeats) {
+      await client.query(
+        `INSERT INTO seat_allocations (teacher_id, academic_year_id, bachelor_seats, master_seats)
+         SELECT teacher_id, $1, bachelor_seats, master_seats
+           FROM seat_allocations WHERE academic_year_id = $2
+         ON CONFLICT (teacher_id, academic_year_id)
+         DO UPDATE SET bachelor_seats = EXCLUDED.bachelor_seats,
+                       master_seats   = EXCLUDED.master_seats`,
+        [yearId, from],
+      )
+    }
+
     await client.query(
       `INSERT INTO seat_allocations (teacher_id, academic_year_id)
        SELECT id, $1 FROM users WHERE role IN ('teacher', 'head')

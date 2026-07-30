@@ -1,5 +1,6 @@
 import { defineMiddleware } from 'astro:middleware'
 import { SESSION_COOKIE, getUserFromSession } from './lib/auth'
+import { atingePrezenta } from './lib/chat'
 import { sweepDeadlines } from './lib/lifecycle'
 
 /**
@@ -14,7 +15,6 @@ const REQUIRES_SESSION = [
   '/consultatii',
   '/contul-meu',
   '/arhiva',
-  '/coordonari',
   '/profil',
 ]
 const TEACHER_AREA = '/profesor'
@@ -49,11 +49,33 @@ export const onRequest = defineMiddleware(async (context, next) => {
   const user = await getUserFromSession(sessionId)
   context.locals.user = user
 
-  // Deadlines are enforced here rather than by a scheduler: one container, no
-  // cron, and the sweep throttles itself. It never blocks the response.
+  /* Plasa de siguranță pentru termene.
+   *
+   * Sursa principală este `/api/sweep`, chemată de un planificator: legată doar
+   * de trafic, o cerere care trebuia închisă vineri seara rămânea deschisă până
+   * luni. Apelul de aici acoperă cazul în care planificatorul nu e configurat —
+   * se auto-limitează și nu ține răspunsul în loc. */
   void sweepDeadlines(process.env.APP_BASE_URL ?? context.url.origin)
 
   const path = context.url.pathname
+
+  /* Prezența.
+   *
+   * O pagină cerută este dovada că omul e în portal. Se notează doar pentru
+   * navigări — nu pentru fișiere, exporturi sau API, care pot fi cerute de un
+   * prefetch sau de un tab lăsat deschis — și se scrie cel mult o dată pe minut,
+   * prin condiția din UPDATE. Nu ține răspunsul în loc. */
+  if (
+    user &&
+    context.request.method === 'GET' &&
+    !path.startsWith('/api/') &&
+    !path.startsWith('/fisiere/') &&
+    !path.startsWith('/documente/') &&
+    !path.startsWith('/avatare/') &&
+    !path.includes('export')
+  ) {
+    void atingePrezenta(user.id)
+  }
 
   const needsLogin =
     REQUIRES_SESSION.some((p) => path === p || path.startsWith(p + '/')) ||
@@ -64,25 +86,47 @@ export const onRequest = defineMiddleware(async (context, next) => {
   }
 
   if (path.startsWith(TEACHER_AREA) && user?.role === 'student') {
-    return new Response('Pagina nu a fost găsită', { status: 404 })
+    return context.rewrite('/404')
   }
 
   if (HEAD_ONLY.some((p) => path.startsWith(p)) && user && user.role !== 'head') {
-    return new Response('Pagina nu a fost găsită', { status: 404 })
+    return context.rewrite('/404')
   }
 
   const response = await next()
 
-  /* Nimic din ce vede un utilizator autentificat nu are voie să ajungă în cache.
+  /* Nimic din ce vede un utilizator autentificat nu are voie să ajungă într-un
+   * cache partajat.
    *
    * Fără acest antet, originea nu spune nimic, iar Cloudflare aplică regula lui
    * implicită pe extensie: un export `.csv` a fost păstrat la margine patru ore
    * și servit oricui, fără cookie. Răspunsurile pentru un vizitator rămân
-   * publice — sunt aceleași pentru toată lumea. */
+   * publice — sunt aceleași pentru toată lumea.
+   *
+   * `no-store` interzice însă și cache-ul privat al browserului, ceea ce face
+   * inutil orice prefetch: pagina adusă înainte de clic ar fi descărcată încă o
+   * dată. Pentru navigări obișnuite este de ajuns `private` cu revalidare — tot
+   * nu ajunge la CDN, dar poate fi refolosită de browserul care a cerut-o.
+   * Descărcările și API-ul rămân la `no-store`. */
   if (user) {
+    const path = context.url.pathname
+    const strict =
+      path.startsWith('/api/') ||
+      path.startsWith('/fisiere/') ||
+      path.startsWith('/documente/') ||
+      path.includes('export') ||
+      context.request.method !== 'GET'
+
     try {
-      response.headers.set('cache-control', 'private, no-store')
-      response.headers.set('vary', 'cookie')
+      response.headers.set(
+        'cache-control',
+        strict ? 'private, no-store' : 'private, max-age=0, must-revalidate',
+      )
+      /* `cookie` este întotdeauna în joc; o pagină care se schimbă și după altceva
+       * și-o spune singură, iar aici se adaugă, nu se înlocuiește. Profilul își
+       * scoate butonul „Înapoi” din `Referer`, deci acela face parte din cheie. */
+      const propriu = response.headers.get('vary')
+      response.headers.set('vary', propriu ? `cookie, ${propriu}` : 'cookie')
     } catch {
       // Un răspuns cu antete imutabile este construit de noi și nu ajunge la CDN.
     }

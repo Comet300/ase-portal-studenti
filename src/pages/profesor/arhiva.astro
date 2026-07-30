@@ -1,6 +1,7 @@
 ---
 import AlegeAn from '../../components/AlegeAn.astro'
 import Avatar from '../../components/Avatar.astro'
+import Metrica from '../../components/Metrica.astro'
 import ProfesorLayout from '../../layouts/ProfesorLayout.astro'
 import { ROLE_LABELS } from '../../lib/auth'
 import { queryOne, query } from '../../lib/db'
@@ -83,58 +84,66 @@ const openSeatRequest = mySeatRequests.find((r) => r.status === 'pending')
   lede="Istoricul cererilor pe ani universitari, locurile alocate și datele profilului tău."
   active="arhiva"
 >
-  <AlegeAn slot="actiuni" years={years} selected={year?.id ?? ''} base="/profesor/arhiva" />
+  <div slot="actiuni" class="row row--wrap" style="gap:var(--s-2)">
+    <AlegeAn years={years} selected={year?.id ?? ''} base="/profesor/arhiva" />
+    {/* Exportul urmează anul ales de pe ecran, nu sesiunea curentă. */}
+    <a class="btn btn--secondary btn--sm" href={`/profesor/export-coordonari?doar_ale_mele=1&an=${year?.id ?? ''}`}>
+      Descarcă lista (CSV)
+    </a>
+  </div>
 
   <div class="stack stack--loose">
     <section class="stack">
       <h2 class="section-title">Sesiunea în cifre</h2>
       <div class="grid-auto">
-        <div class="metric">
-          <span class="metric__value numeric">
-            {stats?.avg_response_hours != null ? `${stats.avg_response_hours}h` : '—'}
-          </span>
-          <span class="metric__label">timp mediu de răspuns</span>
-          <span class="metric__note">de la depunere până la decizie</span>
-        </div>
-        <div class="metric">
-          <span class="metric__value numeric">{topics?.taken ?? 0} / {topics?.proposed ?? 0}</span>
-          <span class="metric__label">teme preluate</span>
-          <span class="metric__note">
-            {
-              (topics?.proposed ?? 0) - (topics?.taken ?? 0) > 0
-                ? `${(topics?.proposed ?? 0) - (topics?.taken ?? 0)} încă disponibile`
-                : 'Toate temele au fost alese'
-            }
-          </span>
-        </div>
-        <div class:list={['metric', { 'metric--alert': seats.free === 0 && seats.total_seats > 0 }]}>
-          <span class="metric__value numeric">{seats.total_taken} / {seats.total_seats}</span>
-          <span class="metric__label">locuri ocupate</span>
-          <span class="metric__note">
-            {
-              seats.total_seats === 0
-                ? 'Directorul nu ți-a alocat încă locuri'
-                : seats.free === 0
-                  ? 'Nu mai apari ca disponibil în catalog'
-                  : `${seats.free} ${seats.free === 1 ? 'loc liber' : 'locuri libere'}`
-            }
-          </span>
-        </div>
-        <div class="metric">
-          <span class="metric__value numeric">{(stats?.rejected ?? 0) + (stats?.expired ?? 0)}</span>
-          <span class="metric__label">cereri neacceptate</span>
-          <span class="metric__note">
-            {stats?.expired ? `${stats.expired} expirate fără răspuns` : 'toate cu motivul comunicat'}
-          </span>
-        </div>
+        {/* „218h” cere o împărțire mentală. Peste două zile se scrie în zile. */}
+        <Metrica
+          valoare={
+            stats?.avg_response_hours == null
+              ? '—'
+              : stats.avg_response_hours < 48
+                ? `${stats.avg_response_hours} h`
+                : `${(stats.avg_response_hours / 24).toFixed(1).replace('.', ',')} zile`
+          }
+          eticheta="timp mediu de răspuns"
+          nota="de la depunere până la decizie"
+        />
+        <Metrica
+          valoare={`${topics?.taken ?? 0} / ${topics?.proposed ?? 0}`}
+          eticheta="teme preluate"
+          nota={
+            (topics?.proposed ?? 0) - (topics?.taken ?? 0) > 0
+              ? `${(topics?.proposed ?? 0) - (topics?.taken ?? 0)} încă disponibile`
+              : 'Toate temele au fost alese'
+          }
+        />
+        <Metrica
+          valoare={`${seats.total_taken} / ${seats.total_seats}`}
+          eticheta="locuri ocupate"
+          alerta={seats.free === 0 && seats.total_seats > 0}
+          nota={
+            seats.total_seats === 0
+              ? 'Directorul nu ți-a alocat încă locuri'
+              : seats.free === 0
+                ? 'Nu mai apari ca disponibil în catalog'
+                : `${seats.free} ${seats.free === 1 ? 'loc liber' : 'locuri libere'}`
+          }
+        />
+        <Metrica
+          valoare={(stats?.rejected ?? 0) + (stats?.expired ?? 0)}
+          eticheta="cereri neacceptate"
+          nota={
+            stats?.expired ? `${stats.expired} expirate fără răspuns` : 'toate cu motivul comunicat'
+          }
+        />
       </div>
     </section>
 
     {/* ------------------------------------------------------------- locuri */}
-    <section class="panel">
+    <section class="panel" id="locuri" tabindex="-1">
       <div class="panel__header">
         <h2 class="section-title">Locuri alocate</h2>
-        <span class="muted" style="font-size:var(--t-sm)">{year?.label}</span>
+        <span class="muted text-sm">{year?.label}</span>
       </div>
 
       <div class="panel__body stack">
@@ -195,10 +204,10 @@ const openSeatRequest = mySeatRequests.find((r) => r.status === 'pending')
                     minlength="20"
                     required
                     placeholder="Ex: am primit trei cereri peste capacitate, toate pe teme din aria mea de cercetare."
-                  />
+                  data-autogrow />
                   <span class="hint">Directorul decide pe baza acestui text.</span>
                 </div>
-                <div class="row" style="justify-content:flex-end">
+                <div class="row row--end">
                   <button class="btn btn--secondary" type="submit">Trimite cererea directorului</button>
                 </div>
               </form>
@@ -238,11 +247,11 @@ const openSeatRequest = mySeatRequests.find((r) => r.status === 'pending')
               <li>
                 <div class="row row--between row--wrap" style="gap:var(--s-2)">
                   <strong>{r.student_name}</strong>
-                  <span class="muted numeric" style="font-size:var(--t-xs)">
+                  <span class="muted numeric text-xs">
                     {r.number} · {formatDate(r.decided_at)}
                   </span>
                 </div>
-                <p class="muted" style="font-size:var(--t-sm)">{r.title_ro}</p>
+                <p class="muted text-sm">{r.title_ro}</p>
                 {r.rejection_reason && <p class="reason">{r.rejection_reason}</p>}
               </li>
             ))}
@@ -254,7 +263,7 @@ const openSeatRequest = mySeatRequests.find((r) => r.status === 'pending')
     <section class="panel">
       <div class="panel__header">
         <h2 class="section-title">Istoricul cererilor</h2>
-        <span class="muted" style="font-size:var(--t-sm)">
+        <span class="muted text-sm">
           {history.length} {history.length === 1 ? 'înregistrare' : 'înregistrări'} · {year?.label}
         </span>
       </div>
@@ -269,16 +278,16 @@ const openSeatRequest = mySeatRequests.find((r) => r.status === 'pending')
             </p>
           </div>
         ) : (
-          <div class="table-wrap">
+          <div class="table-wrap" tabindex="0" role="region" aria-label="Lucrările din arhivă">
             <table class="table">
               <thead>
                 <tr>
-                  <th>Cerere</th>
-                  <th>Student</th>
-                  <th>Titlul lucrării</th>
-                  <th>Stare</th>
-                  <th>Depusă</th>
-                  <th>Decisă</th>
+                  <th scope="col">Cerere</th>
+                  <th scope="col">Student</th>
+                  <th scope="col">Titlul lucrării</th>
+                  <th scope="col">Stare</th>
+                  <th scope="col">Depusă</th>
+                  <th scope="col">Decisă</th>
                 </tr>
               </thead>
               <tbody>
@@ -314,7 +323,10 @@ const openSeatRequest = mySeatRequests.find((r) => r.status === 'pending')
           <div class="field" style="flex:1;min-width:240px">
             <label class="label" for="poza">Poză de profil</label>
             <input class="input" id="poza" name="poza" type="file" accept="image/*" />
-            <span class="hint">JPG, PNG, WEBP sau GIF, maximum 2 MB. Studenții o văd în catalog.</span>
+            <span class="hint">
+              JPG, PNG, WEBP sau GIF, maximum 2 MB. Studenții o văd în catalog. Pozele mari
+              sunt micșorate automat înainte de trimitere.
+            </span>
           </div>
         </div>
 
@@ -339,7 +351,7 @@ const openSeatRequest = mySeatRequests.find((r) => r.status === 'pending')
             maxlength="1200"
             placeholder="Ce fel de lucrări coordonezi și ce aștepți de la un student. Studenții citesc asta înainte să îți scrie."
             set:text={u.bio ?? ''}
-          />
+          data-autogrow />
         </div>
 
         <div class="row row--wrap" style="gap:var(--s-4)">
@@ -378,32 +390,6 @@ const openSeatRequest = mySeatRequests.find((r) => r.status === 'pending')
 </ProfesorLayout>
 
 <style>
-  .metric {
-    display: flex;
-    flex-direction: column;
-    gap: var(--s-1);
-    padding: var(--s-4);
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: var(--r-lg);
-  }
-  .metric--alert {
-    border-color: var(--warn);
-  }
-  .metric__value {
-    font-size: var(--t-2xl);
-    font-weight: 600;
-    line-height: 1.15;
-  }
-  .metric__label {
-    font-size: var(--t-sm);
-    color: var(--ink-soft);
-  }
-  .metric__note {
-    font-size: var(--t-xs);
-    color: var(--ink-muted);
-  }
-
   .seats {
     display: flex;
     flex-wrap: wrap;

@@ -22,7 +22,13 @@ const teme = await teacherTopics(u.id)
 >
     <section class="panel">
       <div class="panel__header">
-        <h2 class="section-title">Teme propuse</h2>
+        {/* Titlul paginii spune deja „Teme propuse”; antetul panoului repeta
+            cuvânt cu cuvânt și nu adăuga nimic. Aici e util numărul. */}
+        <h2 class="section-title">În catalog</h2>
+        <span class="muted text-sm">
+          {teme.filter((t) => t.is_active).length} din {teme.length}
+          {teme.length === 1 ? ' temă' : ' teme'} publicate
+        </span>
       </div>
 
       {teme.length === 0 ? (
@@ -38,23 +44,25 @@ const teme = await teacherTopics(u.id)
           {teme.map((t) => (
             <li class:list={['tema', { 'is-inactiva': !t.is_active }]}>
               <div class="tema__cap">
-                <span class="badge badge--info">
+                <span class="badge badge--taxon">
                   {t.level === 'master' ? 'Master' : 'Licență'}
                   {t.language !== 'ro' ? ` · ${languageLabel(t.language)}` : ''}
                 </span>
-                <span class="muted numeric" style="font-size:var(--t-xs)">
+                <span class="muted numeric text-xs">
                   {t.taken}/{t.seats} locuri
                 </span>
               </div>
               <h3 class="tema__titlu">{t.title}</h3>
-              {t.methods && <p class="muted" style="font-size:var(--t-sm)">Metode: {t.methods}</p>}
+              {t.methods && <p class="muted text-sm">Metode: {t.methods}</p>}
               {t.prerequisites && t.prerequisites !== '—' && (
-                <p class="muted" style="font-size:var(--t-xs)">Prerechizite: {t.prerequisites}</p>
+                <p class="muted text-xs">Prerechizite: {t.prerequisites}</p>
               )}
               <form method="POST" action="/api/teme" style="margin-top:auto">
                 <input type="hidden" name="actiune" value="comuta" />
                 <input type="hidden" name="tema_id" value={t.id} />
-                <button class="btn btn--ghost btn--sm" type="submit">
+                {/* Ghost pe fundal alb nu are contur, deci arăta ca un link, nu
+                    ca un buton — exact reproșul primit de două ori până acum. */}
+                <button class="btn btn--secondary btn--sm" type="submit">
                   {t.is_active ? 'Retrage din catalog' : 'Publică din nou'}
                 </button>
               </form>
@@ -64,52 +72,124 @@ const teme = await teacherTopics(u.id)
       )}
 
       <div class="panel__footer">
-        <form method="POST" action="/api/teme" class="row row--wrap" style="gap:var(--s-3);align-items:flex-end">
+        <form method="POST" action="/api/teme" class="tema-noua">
           <input type="hidden" name="actiune" value="adauga" />
-          <div class="field" style="flex:3;min-width:240px">
+
+          <div class="field tema-noua__titlu">
             <label class="label" for="tema-titlu">Temă nouă</label>
             <input class="input" id="tema-titlu" name="titlu" required
               placeholder="Ex: Adopția plăților contactless în mediul rural" />
           </div>
-          <div class="field" style="flex:1;min-width:130px">
+
+          <div class="field tema-noua__nivel">
             <label class="label" for="tema-nivel">Nivel</label>
             <select class="select" id="tema-nivel" name="nivel">
               <option value="bachelor">Licență</option>
               <option value="master">Master</option>
             </select>
           </div>
-          <div class="field" style="flex:1;min-width:140px">
+
+          <div class="field tema-noua__limba">
             <label class="label" for="tema-limba">Limba lucrării</label>
-            <select class="select" id="tema-limba" name="limba">
+            <select class="select" id="tema-limba" name="limba" aria-describedby="ajutor-limba">
               {Object.entries(LANGUAGE_LABELS).map(([cod, text]) => (
                 <option value={cod}>{text}</option>
               ))}
             </select>
-            <span class="hint">Tema apare doar studenților din programele cu această limbă.</span>
+            <span class="hint" id="ajutor-limba">
+              Tema apare doar studenților din programele cu această limbă.
+            </span>
           </div>
-          <div class="field" style="flex:1;min-width:100px">
+
+          <div class="field tema-noua__locuri">
             <label class="label" for="tema-locuri">Locuri</label>
             <input class="input" id="tema-locuri" name="locuri" type="number" min="1" max="20" value="2" />
           </div>
-          <div class="field" style="flex:2;min-width:200px">
+
+          {/* Descrierea este singurul loc în care un student află despre ce e
+              vorba. Catalogul o afișa și o căuta de la început, dar formularul
+              nu o cerea niciodată, așa că fiecare temă publicată din portal
+              rămânea fără ea. */}
+          <div class="field tema-noua__descriere">
+            <label class="label" for="tema-descriere">Descriere</label>
+            <textarea
+              class="textarea"
+              id="tema-descriere"
+              name="descriere"
+              rows="3"
+              maxlength="800"
+              data-autogrow
+              aria-describedby="contor-descriere"
+              placeholder="Ce problemă abordează, ce date se folosesc și ce ar trebui să obțină studentul."
+            ></textarea>
+            <span class="hint" id="contor-descriere" data-contor-pentru="tema-descriere"></span>
+          </div>
+
+          <div class="field tema-noua__metode">
             <label class="label" for="tema-metode">Metode</label>
             <input class="input" id="tema-metode" name="metode" placeholder="Ex: sondaj, analiză factorială" />
           </div>
-          <div class="field" style="flex:2;min-width:200px">
+
+          <div class="field tema-noua__prerechizite">
             <label class="label" for="tema-prerechizite">Prerechizite</label>
             <input class="input" id="tema-prerechizite" name="prerechizite" placeholder="Ex: Statistică aplicată" />
           </div>
-          <button class="btn btn--primary" type="submit">Publică tema</button>
+
+          <button class="btn btn--primary tema-noua__actiune" type="submit">Publică tema</button>
         </form>
       </div>
     </section>
-  )
-}
-
-{/* -------------------------------------------------------- consultații */}
 </ProfesorLayout>
 
 <style>
+  /* Douăsprezece coloane, fiecare câmp cu deschiderea lui declarată.
+     `auto-fit` dădea tuturor aceeași lățime — un titlu de lucrare primea 160px,
+     la fel ca numărul de locuri — iar stilurile inline rămase de la varianta
+     flex băteau regula de mai jos și scoteau câmpurile unul peste altul. */
+  .tema-noua {
+    display: grid;
+    grid-template-columns: repeat(12, minmax(0, 1fr));
+    gap: var(--s-4);
+    align-items: start;
+  }
+  .tema-noua .field {
+    min-width: 0;
+  }
+
+  .tema-noua__titlu {
+    grid-column: span 12;
+  }
+  .tema-noua__nivel {
+    grid-column: span 3;
+  }
+  .tema-noua__limba {
+    grid-column: span 5;
+  }
+  .tema-noua__locuri {
+    grid-column: span 4;
+  }
+  .tema-noua__descriere {
+    grid-column: span 12;
+  }
+  .tema-noua__metode,
+  .tema-noua__prerechizite {
+    grid-column: span 6;
+  }
+  .tema-noua__actiune {
+    grid-column: 1 / -1;
+    justify-self: start;
+  }
+
+  @media (max-width: 640px) {
+    .tema-noua__nivel,
+    .tema-noua__limba,
+    .tema-noua__locuri,
+    .tema-noua__metode,
+    .tema-noua__prerechizite {
+      grid-column: span 12;
+    }
+  }
+
   .teme {
     list-style: none;
     margin: 0;

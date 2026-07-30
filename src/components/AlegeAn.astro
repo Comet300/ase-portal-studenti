@@ -29,7 +29,9 @@ const current = years.find((y) => y.id === selected) ?? years[0]
 ---
 
 <details class="an" name="alege-an">
-  <summary class="an__buton" aria-label={label}>
+  {/* Eticheta citită cu voce tare trebuie să conțină și valoarea: „An
+      universitar” singur nu spune pe ce an ești. */}
+  <summary class="an__buton" aria-label={`${label}: ${current?.label ?? 'nealese'}. Alege un alt an.`}>
     <span class="an__eticheta">{label}</span>
     <span class="an__valoare">
       {current?.label}
@@ -53,6 +55,24 @@ const current = years.find((y) => y.id === selected) ?? years[0]
     }
   </ul>
 </details>
+
+<script>
+  /* `<details>` se închide doar dacă apeși din nou pe rezumat: nici Escape, nici
+     un clic în altă parte nu îl închid. Pentru un buton care arată ca un selector
+     de listă, ambele sunt așteptate. */
+  document.querySelectorAll<HTMLDetailsElement>('details.an').forEach((d) => {
+    document.addEventListener('click', (e) => {
+      if (!d.open) return
+      if (!d.contains(e.target as Node)) d.open = false
+    })
+
+    d.addEventListener('keydown', (e) => {
+      if (e.key !== 'Escape' || !d.open) return
+      d.open = false
+      d.querySelector<HTMLElement>('summary')?.focus()
+    })
+  })
+</script>
 
 <style>
   .an {
@@ -113,7 +133,7 @@ const current = years.find((y) => y.id === selected) ?? years[0]
     border-radius: 999px;
     background: var(--ok-tint);
     color: var(--ok);
-    font-size: 11px;
+    font-size: var(--t-xs);
     font-weight: 600;
   }
 

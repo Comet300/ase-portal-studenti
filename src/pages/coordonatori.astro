@@ -78,8 +78,8 @@ const freeTeachers = teachers.filter((t) => !t.is_full).length
     </nav>
 
     <div class="filtre panel">
-      <div class="panel__body row row--wrap" style="gap:var(--s-4)">
-        <div class="field" style="flex:2;min-width:240px">
+      <div class="panel__body filtre__rand">
+        <div class="field filtre__cauta">
           <label class="label" for="cauta">Caută</label>
           <input
             class="input"
@@ -89,7 +89,7 @@ const freeTeachers = teachers.filter((t) => !t.is_full).length
             autocomplete="off"
           />
         </div>
-        <div class="field" style="flex:1;min-width:170px">
+        <div class="field filtre__camp">
           <label class="label" for="nivel">Nivel</label>
           <select class="select" id="nivel">
             <option value="">Licență și master</option>
@@ -100,7 +100,7 @@ const freeTeachers = teachers.filter((t) => !t.is_full).length
             }
           </select>
         </div>
-        <div class="field" style="flex:1;min-width:170px">
+        <div class="field filtre__camp">
           <label class="label" for="limba">Limba lucrării</label>
           <select class="select" id="limba">
             <option value="">Toate limbile</option>
@@ -113,7 +113,7 @@ const freeTeachers = teachers.filter((t) => !t.is_full).length
         </div>
         {
           view === 'coordonatori' && (
-            <div class="field" style="flex:1;min-width:180px">
+            <div class="field filtre__camp filtre__camp--lat">
               <label class="label" for="departament">Departament</label>
               <select class="select" id="departament">
                 <option value="">Toate departamentele</option>
@@ -126,6 +126,10 @@ const freeTeachers = teachers.filter((t) => !t.is_full).length
           <input type="checkbox" id="doar-libere" />
           <span>Doar cu locuri libere</span>
         </label>
+        {/* Ca să vezi tot trebuia să duci înapoi, manual, trei liste derulante. */}
+        <button class="btn btn--ghost btn--sm" type="button" id="goleste-filtre" hidden>
+          Golește filtrele
+        </button>
       </div>
     </div>
 
@@ -161,14 +165,14 @@ const freeTeachers = teachers.filter((t) => !t.is_full).length
                     <h2 class="coord__nume">
                       <a href={`/profil/${p.id}`}>{p.name}</a>
                     </h2>
-                    <p class="muted" style="font-size:var(--t-xs)">
+                    <p class="muted text-xs">
                       {p.department}
                       {p.office ? ` · ${p.office}` : ''}
                     </p>
                   </div>
 
                   {p.is_full ? (
-                    <span class="badge badge--respinsa">Fără locuri disponibile</span>
+                    <span class="badge badge--neutru">Fără locuri disponibile</span>
                   ) : (
                     <span class="badge badge--aprobata">
                       {free} {free === 1 ? 'loc liber' : 'locuri libere'}
@@ -195,16 +199,16 @@ const freeTeachers = teachers.filter((t) => !t.is_full).length
                       <li class="tema" data-level={t.level} data-limba={t.language}>
                         <div class="row row--between" style="gap:var(--s-2);align-items:flex-start">
                           <h3 class="tema__titlu">{t.title}</h3>
-                          <span class="badge badge--info">
+                          <span class="badge badge--taxon">
                             {LEVEL_LABELS[t.level]}
                             {t.language !== 'ro' ? ` · ${languageLabel(t.language)}` : ''}
                           </span>
                         </div>
                         {t.methods && (
-                          <p class="muted" style="font-size:var(--t-xs)">Metode: {t.methods}</p>
+                          <p class="muted text-xs">Metode: {t.methods}</p>
                         )}
                         {t.prerequisites && t.prerequisites !== '—' && (
-                          <p class="muted" style="font-size:var(--t-xs)">
+                          <p class="muted text-xs">
                             Prerechizite: {t.prerequisites}
                           </p>
                         )}
@@ -268,7 +272,7 @@ const freeTeachers = teachers.filter((t) => !t.is_full).length
             >
               <div class="row row--between" style="gap:var(--s-3);align-items:flex-start">
                 <h2 class="card-tema__titlu">{t.title}</h2>
-                <span class="badge badge--info">
+                <span class="badge badge--taxon">
                   {LEVEL_LABELS[t.level]}
                   {t.language !== 'ro' ? ` · ${languageLabel(t.language)}` : ''}
                 </span>
@@ -305,7 +309,7 @@ const freeTeachers = teachers.filter((t) => !t.is_full).length
                 </a>
 
                 {t.teacher_is_full ? (
-                  <span class="badge badge--respinsa">Coordonator fără locuri</span>
+                  <span class="badge badge--neutru">Coordonator fără locuri</span>
                 ) : (
                   u?.role === 'student' && (
                     <a
@@ -326,7 +330,7 @@ const freeTeachers = teachers.filter((t) => !t.is_full).length
     {/* Lista completă a studenților unui coordonator. Un singur dialog,
         completat din cardul apăsat — 9 dialoguri identice în pagină ar fi
         9 copii ale aceluiași markup. */}
-    <dialog id="dialog-echipa">
+    <dialog id="dialog-echipa" aria-labelledby="titlu-echipa">
       <div class="echipa">
         <div class="echipa__cap">
           <h2 class="section-title" id="echipa-titlu">Studenți coordonați</h2>
@@ -359,10 +363,20 @@ const freeTeachers = teachers.filter((t) => !t.is_full).length
       })
     }
 
-    <p class="empty__text" id="fara-rezultate" hidden>
-      Nimic nu corespunde filtrelor. Încearcă un alt cuvânt-cheie, altă limbă, sau debifează „doar
-      cu locuri libere”.
-    </p>
+    {/* Era un paragraf simplu, stilat altfel decât orice altă stare goală din
+        portal, care sfătuia să debifezi o casetă fără să ți-o pună la îndemână. */}
+    <section class="panel" id="fara-rezultate" hidden>
+      <div class="empty">
+        <p class="empty__title">Nimic nu corespunde filtrelor</p>
+        <p class="empty__text">
+          Încearcă un alt cuvânt-cheie sau altă limbă. Dacă ai bifat „doar cu locuri libere”, s-ar
+          putea să fie deja toate ocupate — coordonatorii plini rămân în listă.
+        </p>
+        <button class="btn btn--secondary btn--sm" type="button" id="goleste-filtre-gol">
+          Golește filtrele
+        </button>
+      </div>
+    </section>
   </div>
 </StudentLayout>
 
@@ -415,9 +429,97 @@ const freeTeachers = teachers.filter((t) => !t.is_full).length
     emptyLabel.hidden = visibleCount > 0
   }
 
-  for (const el of [search, level, language, dep, onlyFree]) {
-    el?.addEventListener('input', filter)
+  /* --- filtrele trăiesc în adresă -----------------------------------------
+   *
+   * Pagina cea mai folosită din portal era singura ale cărei filtre nu ajungeau
+   * niciodată în URL: nu puteai trimite unui coleg „cei patru coordonatori de
+   * master în engleză cu locuri libere”, deschiderea unui profil și Back te
+   * întorceau la o listă nefiltrată, iar o reîncărcare ștergea tot. Ecranul
+   * vecin, /profesor/facultate, face exact aceeași treabă cu parametri GET.
+   *
+   * `replaceState` la fiecare tastă ar umple istoricul; se scrie după o pauză
+   * scurtă, iar Back/Forward reașază controalele. */
+  const CAMPURI: [string, HTMLInputElement | HTMLSelectElement | null][] = [
+    ['q', search],
+    ['nivel', level],
+    ['limba', language],
+    ['departament', dep],
+  ]
+
+  let ceas: ReturnType<typeof setTimeout> | undefined
+
+  function scrieAdresa() {
+    const p = new URLSearchParams(location.search)
+    for (const [cheie, el] of CAMPURI) {
+      if (el?.value) p.set(cheie, el.value)
+      else p.delete(cheie)
+    }
+    if (onlyFree.checked) p.set('libere', '1')
+    else p.delete('libere')
+
+    const q = p.toString()
+    history.replaceState({}, '', q ? `${location.pathname}?${q}` : location.pathname)
   }
+
+  function citesteAdresa() {
+    const p = new URLSearchParams(location.search)
+    for (const [cheie, el] of CAMPURI) {
+      if (el && p.has(cheie)) el.value = p.get(cheie) ?? ''
+    }
+    onlyFree.checked = p.get('libere') === '1'
+  }
+
+  for (const el of [search, level, language, dep, onlyFree]) {
+    el?.addEventListener('input', () => {
+      filter()
+      clearTimeout(ceas)
+      ceas = setTimeout(scrieAdresa, 250)
+    })
+  }
+
+  // O adresă lipită în bară trebuie să arate exact lista pe care o descrie.
+  citesteAdresa()
+
+  window.addEventListener('popstate', () => {
+    citesteAdresa()
+    filter()
+  })
+
+  /* --- golirea filtrelor ---------------------------------------------------
+   *
+   * Ca să vezi tot trebuia să duci înapoi, manual, trei liste derulante. */
+  const reset = document.getElementById('goleste-filtre')
+  const resetGol = document.getElementById('goleste-filtre-gol')
+
+  function aratăReset() {
+    const active =
+      Boolean(search.value) ||
+      Boolean(level.value) ||
+      Boolean(language.value) ||
+      Boolean(dep?.value) ||
+      onlyFree.checked
+    if (reset) reset.hidden = !active
+  }
+
+  const goleste = () => {
+    search.value = ''
+    level.value = ''
+    language.value = ''
+    if (dep) dep.value = ''
+    onlyFree.checked = false
+    filter()
+    scrieAdresa()
+    aratăReset()
+    search.focus()
+  }
+
+  reset?.addEventListener('click', goleste)
+  resetGol?.addEventListener('click', goleste)
+
+  for (const el of [search, level, language, dep, onlyFree]) {
+    el?.addEventListener('input', aratăReset)
+  }
+  aratăReset()
 
   /* --- lista completă a studenților unui coordonator --------------------- */
 
@@ -498,7 +600,7 @@ const freeTeachers = teachers.filter((t) => !t.is_full).length
     padding: 1px 6px;
     border-radius: 999px;
     background: var(--surface-sunken);
-    font-size: 11px;
+    font-size: var(--t-xs);
     font-weight: 600;
     color: var(--ink-soft);
   }
@@ -507,14 +609,42 @@ const freeTeachers = teachers.filter((t) => !t.is_full).length
     color: var(--red);
   }
 
+  /* Câmpurile au etichetă deasupra, caseta nu — aliniate pe centru, caseta
+     plutea la mijlocul rândului, deasupra bazei celorlalte controale. Se aliniază
+     toate la bază, iar caseta primește exact înălțimea unui câmp. */
+  /* Fiecare filtru își cere lățimea de care are nevoie, iar rândul se rupe
+     singur. Cu `flex:1` egal pentru toate, „Toate departamentele” se tăia la
+     „Toate departamer”. */
+  .filtre__rand {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: var(--s-4);
+  }
+
+  .filtre__cauta {
+    flex: 3 1 240px;
+    min-width: 0;
+  }
+  .filtre__camp {
+    flex: 1 1 170px;
+    min-width: 0;
+  }
+  .filtre__camp--lat {
+    flex: 1 1 220px;
+  }
+
+  /* Caseta nu are etichetă deasupra, deci ar pluti peste controalele care au:
+     înălțimea unui câmp o așază pe aceeași linie de bază. */
   .doar-libere {
     display: flex;
     align-items: center;
     gap: var(--s-2);
+    min-height: var(--tap);
     font-size: var(--t-sm);
     color: var(--ink-soft);
     cursor: pointer;
-    padding-bottom: var(--s-2);
+    white-space: nowrap;
   }
 
   .lista-coord {
@@ -627,7 +757,7 @@ const freeTeachers = teachers.filter((t) => !t.is_full).length
     border-radius: 50%;
     background: var(--ink-soft);
     color: #fff;
-    font-size: 10px;
+    font-size: var(--t-xs);
     font-weight: 600;
     box-shadow: 0 0 0 2px var(--surface);
   }
@@ -806,7 +936,7 @@ const freeTeachers = teachers.filter((t) => !t.is_full).length
     font-size: var(--t-xs);
   }
   .card-tema__profesor small {
-    font-size: 11px;
+    font-size: var(--t-xs);
   }
   .card-tema__pied .btn,
   .card-tema__pied .badge {

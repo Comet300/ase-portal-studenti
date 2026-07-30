@@ -10,6 +10,8 @@ export interface CalendarEvent {
   title: string
   description?: string
   location?: string
+  /** Adresa întâlnirii online, dacă există. Devine butonul „Participă”. */
+  meetingUrl?: string
   start: Date
   end: Date
   organizerName: string
@@ -17,6 +19,20 @@ export interface CalendarEvent {
   attendeeName: string
   attendeeEmail: string
   cancelled?: boolean
+}
+
+/**
+ * Identitatea unui eveniment, pentru clientul de calendar.
+ *
+ * Trebuie să fie aceeași la creare, la modificare și la anulare — altfel
+ * `METHOD:CANCEL` nu găsește ce să anuleze și lasă în calendar o oră fantomă.
+ * Existau trei scheme diferite în trei fișiere; acum e una singură, aici.
+ *
+ * Un interval de grup are câte un eveniment pentru fiecare invitat, deci
+ * identitatea îl include și pe el.
+ */
+export function consultationUid(slotId: string, studentId: string): string {
+  return `consultatie-${slotId}-${studentId}@portal-studenti.ase.ro`
 }
 
 function utc(d: Date): string {
@@ -64,6 +80,11 @@ export function buildIcs(ev: CalendarEvent): string {
     `SUMMARY:${escapeText(ev.title)}`,
     ev.description ? `DESCRIPTION:${escapeText(ev.description)}` : '',
     ev.location ? `LOCATION:${escapeText(ev.location)}` : '',
+    /* Adresa întâlnirii, ca proprietate, nu doar îngropată în descriere:
+     * Google Calendar și Outlook scot din ea butonul „Participă”, iar
+     * `X-GOOGLE-CONFERENCE` este ce citește Google anume. */
+    ev.meetingUrl ? `URL:${escapeText(ev.meetingUrl)}` : '',
+    ev.meetingUrl ? `X-GOOGLE-CONFERENCE:${escapeText(ev.meetingUrl)}` : '',
     `ORGANIZER;CN=${escapeText(ev.organizerName)}:mailto:${ev.organizerEmail}`,
     `ATTENDEE;CN=${escapeText(ev.attendeeName)};ROLE=REQ-PARTICIPANT;PARTSTAT=NEEDS-ACTION;RSVP=TRUE:mailto:${ev.attendeeEmail}`,
     `STATUS:${ev.cancelled ? 'CANCELLED' : 'CONFIRMED'}`,

@@ -1,0 +1,78 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro'
+
+/**
+ * Ceva a căzut pe server.
+ *
+ * Se construiește pe BaseLayout, nu pe layout-ul cu meniu: dacă baza de date nu
+ * răspunde, orice interogare din bara de navigație ar arunca la rândul ei, iar
+ * pagina de eroare ar deveni ea însăși o eroare.
+ */
+
+Astro.response.status = 500
+---
+
+<BaseLayout title="Eroare de server" docTitle="500">
+  <main class="ecran" id="continut">
+    <div class="cutie">
+      <p class="cod numeric">500</p>
+      <h1 class="titlu">Portalul a întâmpinat o problemă</h1>
+      <p class="text">
+        Eroarea a fost înregistrată. Dacă tocmai trimiteai ceva, verifică mai întâi dacă a ajuns —
+        s-ar putea să fi fost salvat înainte de eroare.
+      </p>
+      <div class="drumuri">
+        <a class="btn btn--primary" href="/">Înapoi la portal</a>
+        <a class="btn btn--secondary" href="mailto:secretariat.marketing@ase.ro">
+          Scrie la secretariat
+        </a>
+      </div>
+    </div>
+  </main>
+</BaseLayout>
+
+<style>
+  .ecran {
+    min-height: 100svh;
+    display: grid;
+    place-items: center;
+    padding: var(--s-5);
+    background: var(--bg);
+  }
+
+  .cutie {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-4);
+    max-width: 56ch;
+    padding: var(--s-6);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--r-lg);
+    box-shadow: var(--shadow-card);
+  }
+
+  .cod {
+    font-family: var(--serif);
+    font-size: var(--t-2xl);
+    line-height: 1;
+    color: var(--danger);
+  }
+
+  .titlu {
+    font-family: var(--serif);
+    font-size: var(--t-2xl);
+  }
+
+  .text {
+    color: var(--ink-muted);
+    text-wrap: pretty;
+  }
+
+  .drumuri {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--s-3);
+    margin-top: var(--s-2);
+  }
+</style>

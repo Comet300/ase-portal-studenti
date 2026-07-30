@@ -2,7 +2,8 @@ import type { APIRoute } from 'astro'
 import { isTeacher } from '../../lib/auth'
 import { postEvent } from '../../lib/chat'
 import { execute, queryOne } from '../../lib/db'
-import { redirect, redirectWithNotice } from '../../lib/http'
+import { formAction } from '../../lib/forms'
+import { deadEnd, redirect, redirectWithNotice, sessionExpired } from '../../lib/http'
 import { INVITATION_WINDOW_DAYS, openInvitationFor } from '../../lib/lifecycle'
 import { html, quote, sendEmail, template } from '../../lib/mail'
 import { teacherSeats } from '../../lib/repo'
@@ -25,16 +26,16 @@ const TEACHER_PAGE = '/profesor/studenti?sectiune=invitatii'
 
 export const POST: APIRoute = async ({ request, locals, url }) => {
   const u = locals.user
-  if (!u) return new Response('Neautentificat', { status: 401 })
+  if (!u) return sessionExpired()
 
   const form = await request.formData()
-  const action = String(form.get('actiune') ?? '')
+  const action = formAction(form)
   const base = process.env.APP_BASE_URL ?? url.origin
 
   /* --- the coordinator invites --------------------------------------------- */
 
   if (action === 'trimite') {
-    if (!isTeacher(u)) return new Response('Neautorizat', { status: 403 })
+    if (!isTeacher(u)) return sessionExpired()
 
     const studentId = formId(form.get('student_id'))
     const topicId = formId(form.get('tema_id'))
@@ -75,11 +76,14 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
       )
     }
 
+    // Notificarea are nevoie de rândul creat, ca să poată duce exact la el.
+    let created: { id: string } | null = null
     try {
-      await execute(
+      created = await queryOne<{ id: string }>(
         `INSERT INTO invitations (academic_year_id, teacher_id, student_id, topic_id, message, expires_at)
          VALUES ((SELECT id FROM academic_years WHERE is_current), $1, $2, $3, $4,
-                 now() + ($5 || ' days')::interval)`,
+                 now() + ($5 || ' days')::interval)
+         RETURNING id`,
         [u.id, studentId, topicId, message, String(INVITATION_WINDOW_DAYS)],
       )
     } catch (err) {
@@ -96,6 +100,8 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
       eventType: 'invitation_sent',
       body: `${u.name} îți propune să îți coordoneze lucrarea. Răspunde din „Cererile mele”.\n\n${message}`,
       createConversation: true,
+      subjectKind: 'invitation',
+      subjectId: created?.id ?? null,
     })
 
     await sendEmail({
@@ -117,14 +123,14 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
   /* --- the student answers -------------------------------------------------- */
 
   if (action === 'raspunde') {
-    if (u.role !== 'student') return new Response('Neautorizat', { status: 403 })
+    if (u.role !== 'student') return sessionExpired()
 
     const invitationId = formId(form.get('invitatie_id'))
     const answer = String(form.get('raspuns') ?? '')
     const reason = String(form.get('motiv') ?? '').trim()
 
     if (answer !== 'accepted' && answer !== 'declined') {
-      return new Response('Răspuns invalid', { status: 400 })
+      return deadEnd(400, 'Răspuns neînțeles', 'Răspunsul trimis nu este unul dintre cele posibile.')
     }
 
     const invitation = await openInvitationFor(u.id, invitationId)
@@ -163,6 +169,8 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
         ? `${u.name} a acceptat propunerea de coordonare. Urmează depunerea cererii.`
         : `${u.name} a refuzat propunerea de coordonare.\n\nMotiv: ${reason}`,
       createConversation: true,
+      subjectKind: 'invitation',
+      subjectId: invitation.id,
     })
 
     const teacher = await queryOne<{ email: string; name: string }>(
@@ -191,5 +199,5 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
       : redirectWithNotice('/cererile-mele', 'Ai refuzat propunerea. Coordonatorul a fost anunțat.')
   }
 
-  return new Response('Acțiune necunoscută', { status: 400 })
+  return deadEnd(400, 'Cerere neînțeleasă', 'Portalul nu a recunoscut acțiunea cerută. Reia pasul din interfață.')
 }

@@ -1,5 +1,6 @@
 ---
 import Avatar from '../../components/Avatar.astro'
+import Metrica from '../../components/Metrica.astro'
 import ProfesorLayout from '../../layouts/ProfesorLayout.astro'
 import { isDepartmentHead } from '../../lib/auth'
 import { studentDirectory } from '../../lib/repo'
@@ -94,6 +95,14 @@ const STARI = [
   { value: 'asteptare', text: 'Cerere în așteptare' },
   { value: 'neinceput', text: 'Nu a depus cerere' },
 ]
+
+/* Unde se întoarce o salvare.
+ *
+ * Filtrele trăiau doar în adresă, iar `/api/studenti` redirecta la pagina curată:
+ * după fiecare corectură, directorul care lucra pe „master, fără cerere depusă”
+ * primea din nou toată facultatea, de la cap. Adresa curentă merge cu formularul.
+ */
+const inapoi = Astro.url.pathname + Astro.url.search
 ---
 
 <ProfesorLayout
@@ -107,22 +116,10 @@ const STARI = [
 
   <div class="stack stack--loose">
     <div class="grid-auto">
-      <div class="metric">
-        <span class="metric__value numeric">{totals.toti}</span>
-        <span class="metric__label">studenți în sesiune</span>
-      </div>
-      <div class="metric">
-        <span class="metric__value numeric">{totals.coordonati}</span>
-        <span class="metric__label">cu coordonator confirmat</span>
-      </div>
-      <div class="metric">
-        <span class="metric__value numeric">{totals.asteptare}</span>
-        <span class="metric__label">cu cerere în așteptare</span>
-      </div>
-      <div class:list={['metric', { 'metric--alert': neinceput > 0 }]}>
-        <span class="metric__value numeric">{neinceput}</span>
-        <span class="metric__label">fără cerere depusă</span>
-      </div>
+      <Metrica valoare={totals.toti} eticheta="studenți în sesiune" />
+      <Metrica valoare={totals.coordonati} eticheta="cu coordonator confirmat" />
+      <Metrica valoare={totals.asteptare} eticheta="cu cerere în așteptare" />
+      <Metrica valoare={neinceput} eticheta="fără cerere depusă" alerta={neinceput > 0} />
     </div>
 
     <form method="GET" class="panel">
@@ -167,10 +164,30 @@ const STARI = [
     {
       grouped.length === 0 ? (
         <section class="panel">
-          <div class="empty">
-            <p class="empty__title">Niciun student pentru filtrele alese</p>
-            <p class="empty__text">Schimbă nivelul, limba sau starea, ori golește căutarea.</p>
-          </div>
+          {/* „Niciun student pentru filtrele alese” era afișat și când facultatea
+              chiar nu are încă niciun student — două situații cu pași următori
+              complet diferiți. */}
+          {all.length === 0 ? (
+            <div class="empty">
+              <p class="empty__title">Niciun student în sesiune</p>
+              <p class="empty__text">
+                Studenții apar aici după ce sunt înscriși în anul universitar curent. Deschide un an
+                și adaugă programele de studiu ca să începi.
+              </p>
+              <a class="btn btn--primary btn--sm" href="/profesor/an-universitar">
+                Deschide anul universitar
+              </a>
+            </div>
+          ) : (
+            <div class="empty">
+              <p class="empty__title">Niciun student pentru filtrele alese</p>
+              <p class="empty__text">
+                Cei {all.length} studenți din sesiune nu se potrivesc cu filtrele active. Schimbă
+                nivelul, limba sau starea, ori golește căutarea.
+              </p>
+              <a class="btn btn--secondary btn--sm" href="/profesor/facultate">Golește filtrele</a>
+            </div>
+          )}
         </section>
       ) : (
         grouped.map((g) => (
@@ -180,32 +197,100 @@ const STARI = [
                 {levelLabel(g.level)} · {g.specialization}
                 {g.language !== 'ro' ? ` · ${languageLabel(g.language).toLowerCase()}` : ''}
               </h2>
-              <span class="muted" style="font-size:var(--t-sm)">
+              <span class="muted text-sm">
                 {g.coordonati} din {g.students.length} au coordonator
               </span>
             </div>
 
-            <div class="table-wrap">
+            {/* Un an întreg se corectează după listele de la secretariat:
+                treizeci de studenți din aceeași grupă, aceeași mutare de treizeci
+                de ori, cu o reîncărcare între fiecare două. Bara aplică o
+                schimbare tuturor celor bifați dintr-o instrucțiune.
+
+                Formularul stă în afara tabelului, iar bifele îl referă prin
+                `form=`: un `<form>` nu se poate întinde peste rânduri de tabel. */}
+            {poateAtribui && (
+              <form
+                method="POST"
+                action="/api/studenti"
+                id={`grup-${g.key}`}
+                class="selectie"
+                hidden
+              >
+                <input type="hidden" name="redirect" value={inapoi} />
+                <p class="selectie__contor" aria-live="polite">
+                  <strong data-contor-selectie>0</strong> selectați
+                </p>
+                <label class="label" for={`prog-grup-${g.key}`}>Mută în programul</label>
+                <select class="select select--sm" id={`prog-grup-${g.key}`} name="program_id">
+                  {programeleAnului.map((p) => (
+                    <option value={p.id} selected={p.level === g.level && p.name === g.specialization && p.language === g.language}>
+                      {LEVEL_LABELS[p.level]} · {p.name} · {LANGUAGE_LABELS[p.language]}
+                    </option>
+                  ))}
+                </select>
+                <label class="label" for={`an-grup-${g.key}`}>An</label>
+                <input class="input input--num" id={`an-grup-${g.key}`} name="an_studiu" type="number" min="1" max="6" placeholder="—" />
+                <label class="label" for={`gr-grup-${g.key}`}>Grupa</label>
+                <input class="input input--num" id={`gr-grup-${g.key}`} name="grupa" placeholder="Ex: RO-1503" />
+                {/* Câmp gol înseamnă „nu schimba”, la fel ca pe rândul singular. */}
+                <button class="btn btn--primary btn--sm" type="submit">Aplică selecției</button>
+                <button class="btn btn--ghost btn--sm" type="button" data-goleste-selectie>
+                  Deselectează
+                </button>
+              </form>
+            )}
+
+            <div class="table-wrap" tabindex="0" role="region" aria-label="Studenții facultății">
               <table class="table">
                 <thead>
                   <tr>
-                    <th>Student</th>
-                    <th>Grupa</th>
-                    <th>An</th>
-                    <th>Coordonator</th>
-                    <th>Stare</th>
-                    {poateAtribui && <th>Grupare</th>}
+                    {/* Bifa „toți” stă în capul coloanei de studenți, nu într-o
+                        coloană proprie: o coloană în plus ar fi cerut și un
+                        `colspan` mai mare pe rândul de editare, iar cele două se
+                        despart tăcut la prima schimbare. */}
+                    <th scope="col">
+                      <span class="cap-student">
+                        {poateAtribui && (
+                          <input
+                            class="bifa-toti"
+                            type="checkbox"
+                            aria-label="Selectează toți studenții din grup"
+                          />
+                        )}
+                        Student
+                      </span>
+                    </th>
+                    <th scope="col">Grupa</th>
+                    <th scope="col">An</th>
+                    <th scope="col">Coordonator</th>
+                    <th scope="col">Stare</th>
+                    {poateAtribui && <th scope="col">Grupare</th>}
                   </tr>
                 </thead>
                 <tbody>
                   {g.students.map((s) => (
-                    <tr>
+                    <>
+                    <tr id={`student-${s.id}`}>
                       <td>
                         <div class="row" style="gap:var(--s-3)">
+                          {/* Bifa este în afara formularului de rând, în cel de
+                              grup: un `<form>` nu se poate întinde peste rânduri
+                              de tabel, iar bifele trebuie să plece împreună. */}
+                          {poateAtribui && (
+                            <input
+                              class="bifa-student"
+                              type="checkbox"
+                              form={`grup-${g.key}`}
+                              name="studenti"
+                              value={s.id}
+                              aria-label={`Selectează ${s.name}`}
+                            />
+                          )}
                           <Avatar name={s.name} src={s.avatar_path} size="xs" href={`/profil/${s.id}`} />
                           <div class="stack stack--tight" style="gap:0">
                             <strong>{s.name}</strong>
-                            <span class="muted" style="font-size:var(--t-xs)">{s.student_number}</span>
+                            <span class="muted text-xs">{s.student_number}</span>
                           </div>
                         </div>
                       </td>
@@ -228,12 +313,31 @@ const STARI = [
                         )}
                       </td>
                       {poateAtribui && (
-                        <td>
+                        <td style="text-align:right">
+                          <button
+                            class="btn btn--secondary btn--sm"
+                            type="button"
+                            data-editeaza={s.id}
+                            aria-expanded="false"
+                            aria-controls={`editor-${s.id}`}
+                          >
+                            Grupare
+                          </button>
+                        </td>
+                      )}
+                    </tr>
+                    {/* Editorul stătea în celulă: un select de 210px plus două
+                        câmpuri plus un buton forțau tabelul la peste 1000px, iar
+                        „Salvează” rămânea tăiat la 1280px și tot documentul —
+                        nu doar tabelul — derula lateral pe telefon. Aici are un
+                        rând întreg, deschis doar când e nevoie. */}
+                    {poateAtribui && (
+                      <tr class="editor-rand" id={`editor-${s.id}`} hidden>
+                        <td colspan="6">
                           <form method="POST" action="/api/studenti" class="atribuire">
                             <input type="hidden" name="student_id" value={s.id} />
-                            <label class="visually-hidden" for={`prog-${s.id}`}>
-                              Program de studiu pentru {s.name}
-                            </label>
+                            <input type="hidden" name="redirect" value={`${inapoi}#student-${s.id}`} />
+                            <label class="label" for={`prog-${s.id}`}>Program de studiu</label>
                             <select class="select select--sm" id={`prog-${s.id}`} name="program_id">
                               {programeleAnului.map((p) => (
                                 <option
@@ -248,9 +352,7 @@ const STARI = [
                                 </option>
                               ))}
                             </select>
-                            <label class="visually-hidden" for={`an-${s.id}`}>
-                              An de studiu pentru {s.name}
-                            </label>
+                            <label class="label" for={`an-${s.id}`}>An</label>
                             <input
                               class="input input--num"
                               id={`an-${s.id}`}
@@ -260,21 +362,23 @@ const STARI = [
                               max="6"
                               value={s.study_year ?? ''}
                             />
-                            <label class="visually-hidden" for={`gr-${s.id}`}>
-                              Grupa pentru {s.name}
-                            </label>
+                            {/* Pe un rând deschis pe toată lățimea încape o
+                                etichetă adevărată; placeholderul ținea locul unei
+                                etichete și dispărea la prima tastă. */}
+                            <label class="label" for={`gr-${s.id}`}>Grupa</label>
                             <input
                               class="input input--num"
                               id={`gr-${s.id}`}
                               name="grupa"
                               value={s.study_group ?? ''}
-                              placeholder="Grupa"
+                              placeholder="Ex: RO-1503"
                             />
-                            <button class="btn btn--secondary btn--sm" type="submit">Salvează</button>
+                            <button class="btn btn--primary btn--sm" type="submit">Salvează</button>
                           </form>
                         </td>
-                      )}
-                    </tr>
+                      </tr>
+                    )}
+                    </>
                   ))}
                 </tbody>
               </table>
@@ -286,39 +390,131 @@ const STARI = [
   </div>
 </ProfesorLayout>
 
+<script>
+  // Editorul de grupare se deschide pe rândul de sub student, unul singur odată.
+  document.querySelectorAll<HTMLButtonElement>('[data-editeaza]').forEach((b) => {
+    b.addEventListener('click', () => {
+      const rand = document.getElementById(`editor-${b.dataset.editeaza}`)
+      if (!rand) return
+
+      const deschis = !rand.hidden
+      document.querySelectorAll<HTMLElement>('.editor-rand').forEach((r) => (r.hidden = true))
+      document
+        .querySelectorAll<HTMLButtonElement>('[data-editeaza]')
+        .forEach((x) => x.setAttribute('aria-expanded', 'false'))
+
+      if (deschis) return
+
+      rand.hidden = false
+      b.setAttribute('aria-expanded', 'true')
+      rand.querySelector<HTMLSelectElement>('select')?.focus()
+    })
+  })
+
+  /* --- selecția pentru mai mulți studenți ----------------------------------
+   *
+   * Bara stă ascunsă cât nu e nimeni bifat: un rând de controale permanent
+   * deasupra fiecărui grup ar fi mobilier pentru o acțiune rară. Fiecare grup are
+   * propria selecție, pentru că mutarea se face în programul unui grup — o
+   * selecție care traversa două tabele ar sugera altceva decât face. */
+  document.querySelectorAll<HTMLFormElement>('form.selectie').forEach((bara) => {
+    const bifele = [...document.querySelectorAll<HTMLInputElement>(`input[form="${bara.id}"]`)]
+    if (bifele.length === 0) return
+
+    const tabel = bifele[0].closest('table')
+    const toti = tabel?.querySelector<HTMLInputElement>('.bifa-toti') ?? null
+    const contor = bara.querySelector<HTMLElement>('[data-contor-selectie]')
+
+    const reimprospateaza = () => {
+      const alese = bifele.filter((b) => b.checked)
+      bara.hidden = alese.length === 0
+      if (contor) contor.textContent = String(alese.length)
+      if (toti) {
+        toti.checked = alese.length === bifele.length && bifele.length > 0
+        // Starea a treia: unele bifate. Fără ea, „toți” arată gol cu jumătate alese.
+        toti.indeterminate = alese.length > 0 && alese.length < bifele.length
+      }
+    }
+
+    bifele.forEach((b) => b.addEventListener('change', reimprospateaza))
+
+    toti?.addEventListener('change', () => {
+      bifele.forEach((b) => (b.checked = toti.checked))
+      reimprospateaza()
+    })
+
+    bara.querySelector<HTMLButtonElement>('[data-goleste-selectie]')?.addEventListener('click', () => {
+      bifele.forEach((b) => (b.checked = false))
+      reimprospateaza()
+      toti?.focus()
+    })
+
+    /* Shift-clic bifează tot intervalul, cum se așteaptă oricine a folosit o
+     * listă de fișiere: treizeci de studenți dintr-o grupă sunt consecutivi. */
+    let ultimul = -1
+    bifele.forEach((b, i) => {
+      b.addEventListener('click', (e) => {
+        if ((e as MouseEvent).shiftKey && ultimul >= 0) {
+          const [de, la] = i < ultimul ? [i, ultimul] : [ultimul, i]
+          for (let k = de; k <= la; k++) bifele[k].checked = b.checked
+          reimprospateaza()
+        }
+        ultimul = i
+      })
+    })
+
+    reimprospateaza()
+  })
+</script>
+
 <style>
-  .metric {
+  .cap-student {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--s-3);
+  }
+
+  .bifa-student,
+  .bifa-toti {
+    width: 16px;
+    height: 16px;
+    flex: none;
+    accent-color: var(--red);
+  }
+
+  /* Bara apare doar când există o selecție: un rând de controale permanent
+     deasupra fiecărui grup ar fi mobilier pentru o acțiune rară. */
+  .selectie {
     display: flex;
-    flex-direction: column;
-    gap: var(--s-1);
-    padding: var(--s-4);
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: var(--r-lg);
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: var(--s-3);
+    padding: var(--s-3) var(--s-4);
+    background: var(--surface-sunken);
+    border-block: 1px solid var(--border);
   }
-  .metric--alert {
-    border-color: var(--warn);
-  }
-  .metric__value {
-    font-size: var(--t-2xl);
-    font-weight: 600;
-    line-height: 1.15;
-  }
-  .metric__label {
+
+  .selectie__contor {
+    align-self: center;
     font-size: var(--t-sm);
     color: var(--ink-soft);
   }
 
+  .editor-rand td {
+    background: var(--surface-sunken);
+  }
+
   .atribuire {
     display: flex;
-    align-items: center;
-    gap: var(--s-2);
-    justify-content: flex-end;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: var(--s-3);
   }
   .atribuire .select--sm {
-    min-width: 210px;
-    font-size: var(--t-xs);
-    padding-block: var(--s-1);
+    /* Fără lățime minimă: în celulă împingea tabelul la peste 1000px. Pe un rând
+       întreg are loc oricum. */
+    flex: 1 1 260px;
+    font-size: var(--t-sm);
   }
   .atribuire .input--num {
     width: 72px;

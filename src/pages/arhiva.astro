@@ -1,5 +1,6 @@
 ---
 import AlegeAn from '../components/AlegeAn.astro'
+import Metrica from '../components/Metrica.astro'
 import StudentLayout from '../layouts/StudentLayout.astro'
 import { archiveRows, formatDate } from '../lib/repo'
 import { LEVEL_LABELS, allYears, languageLabel, levelLabel } from '../lib/years'
@@ -82,22 +83,16 @@ const levels = {
     </div>
 
     <div class="grid-auto">
-      <div class="metric">
-        <span class="metric__value numeric">{filtered.length}</span>
-        <span class="metric__label">lucrări în {year?.label}</span>
-      </div>
-      <div class="metric">
-        <span class="metric__value numeric">{levels.bachelor}</span>
-        <span class="metric__label">{LEVEL_LABELS.bachelor.toLowerCase()}</span>
-      </div>
-      <div class="metric">
-        <span class="metric__value numeric">{levels.master}</span>
-        <span class="metric__label">{LEVEL_LABELS.master.toLowerCase()}</span>
-      </div>
-      <div class="metric">
-        <span class="metric__value numeric">{grouped.length}</span>
-        <span class="metric__label">coordonatori</span>
-      </div>
+      <Metrica
+        valoare={filtered.length}
+        eticheta={`${filtered.length === 1 ? 'lucrare' : 'lucrări'} în ${year?.label ?? ''}`}
+      />
+      <Metrica valoare={levels.bachelor} eticheta={LEVEL_LABELS.bachelor.toLowerCase()} />
+      <Metrica valoare={levels.master} eticheta={LEVEL_LABELS.master.toLowerCase()} />
+      <Metrica
+        valoare={grouped.length}
+        eticheta={grouped.length === 1 ? 'coordonator' : 'coordonatori'}
+      />
     </div>
 
     {
@@ -121,7 +116,7 @@ const levels = {
           <section class="panel">
             <div class="panel__header">
               <h2 class="section-title">{teacher}</h2>
-              <span class="muted" style="font-size:var(--t-sm)">
+              <span class="muted text-sm">
                 {list.length} {list.length === 1 ? 'lucrare' : 'lucrări'}
               </span>
             </div>
@@ -130,7 +125,7 @@ const levels = {
                 <li>
                   <div class="stack stack--tight" style="gap:2px">
                     <strong class="lucrari__titlu">{r.title_ro}</strong>
-                    <span class="muted" style="font-size:var(--t-xs)">
+                    <span class="muted text-xs">
                       {r.student_name}
                       {r.student_number ? ` · ${r.student_number}` : ''}
                       {r.programme ? ` · ${r.programme}` : ''}
@@ -142,7 +137,7 @@ const levels = {
                   </div>
                   <span class="lucrari__meta">
                     {r.defended_on && (
-                      <span class="muted" style="font-size:var(--t-xs)">
+                      <span class="muted text-xs">
                         {formatDate(r.defended_on)}
                       </span>
                     )}
@@ -163,25 +158,6 @@ const levels = {
 </StudentLayout>
 
 <style>
-  .metric {
-    display: flex;
-    flex-direction: column;
-    gap: var(--s-1);
-    padding: var(--s-4);
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: var(--r-lg);
-  }
-  .metric__value {
-    font-size: var(--t-2xl);
-    font-weight: 600;
-    line-height: 1.15;
-  }
-  .metric__label {
-    font-size: var(--t-sm);
-    color: var(--ink-soft);
-  }
-
   .lucrari {
     list-style: none;
     margin: 0;

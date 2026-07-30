@@ -1,10 +1,13 @@
 ---
 import Avatar from '../../components/Avatar.astro'
+import ProfesorLayout from '../../layouts/ProfesorLayout.astro'
 import StudentLayout from '../../layouts/StudentLayout.astro'
+import { numeleEcranului } from '../../lib/navigare'
+import { internalPath } from '../../lib/http'
 import { ROLE_LABELS } from '../../lib/auth'
 import { queryOne, query } from '../../lib/db'
 import { id as routeId } from '../../lib/ids'
-import { formatDate, teacherSeats } from '../../lib/repo'
+import { formatDate, studentRequests, teacherSeats } from '../../lib/repo'
 import { groupLabel, languageLabel, levelLabel } from '../../lib/years'
 
 /**
@@ -23,7 +26,7 @@ const me = Astro.locals.user!
 
 // A hand-edited URL must read as "no such person", not as a database error.
 const id = routeId(Astro.params.id ?? null)
-if (!id) return new Response('Pagina nu a fost găsită', { status: 404 })
+if (!id) return Astro.rewrite('/404')
 
 const person = await queryOne<{
   id: string
@@ -51,12 +54,17 @@ const person = await queryOne<{
   [id],
 )
 
-if (!person) return new Response('Pagina nu a fost găsită', { status: 404 })
+if (!person) return Astro.rewrite('/404')
 
 const isTeacherProfile = person.role !== 'student'
 const isMe = person.id === me.id
 
 const seats = isTeacherProfile ? await teacherSeats(person.id) : null
+
+// Un student cu o cerere în lucru nu poate depune alta; butonul trebuie să știe.
+const areCerereActiva =
+  me.role === 'student' &&
+  (await studentRequests(me.id)).some((c) => c.status === 'pending' || c.status === 'approved')
 
 const topics = isTeacherProfile
   ? await query<{ id: string; title: string; level: string; language: string; methods: string | null }>(
@@ -96,10 +104,60 @@ const coordination = !isTeacherProfile
   : null
 
 const editHref = isTeacherProfile ? '/profesor/arhiva' : '/contul-meu'
+
+/* Pagina se randează în carcasa celui care o citește.
+ *
+ * Era mereu layout-ul de student, deci un cadru didactic care deschidea profilul
+ * unui student din coada de cereri își pierdea bara laterală și nu mai avea drum
+ * înapoi — pagina arăta ca alt portal.
+ *
+ * `?de_la=` poartă drumul de întoarcere, trecut prin `internalPath` ca o adresă
+ * externă strecurată acolo să nu poată scoate pe nimeni din portal. */
+const Carcasa = me.role === 'student' ? StudentLayout : ProfesorLayout
+
+/* Drumul înapoi, chiar și când cel care a trimis aici a uitat să îl scrie.
+ *
+ * `?de_la=` există, dar dintre cele opt legături către profil îl puneau două,
+ * așa că butonul „Înapoi” lipsea de pe majoritatea drumurilor — inclusiv de pe
+ * cel din coada de cereri, unde tocmai el trebuie. Când parametrul nu e dat, se
+ * ia din `Referer`, dacă e o pagină a portalului: același lucru pe care l-ar fi
+ * scris apelantul, doar că nu mai depinde de el să și-l amintească.
+ *
+ * Tot prin `internalPath`, tot cu aceeași rezervă: un `Referer` este text
+ * controlat de client. Nu se acceptă întoarcerea la profilul curent — ar fi un
+ * buton care nu face nimic. */
+const deLa = Astro.url.searchParams.get('de_la')
+const trimisDe = (() => {
+  if (deLa) return internalPath(deLa, '')
+  const referer = Astro.request.headers.get('referer')
+  if (!referer) return ''
+  try {
+    const adresa = new URL(referer)
+    if (adresa.origin !== Astro.url.origin) return ''
+    if (adresa.pathname === Astro.url.pathname) return ''
+    return internalPath(adresa.pathname + adresa.search, '')
+  } catch {
+    return ''
+  }
+})()
+const inapoi = trimisDe
+
+// Pagina depinde de antetul de la care a venit, deci intră în cheia de cache.
+Astro.response.headers.set('vary', 'referer')
 ---
 
-<StudentLayout title={person.name} description={`Profilul ${person.name}`}>
+<Carcasa title={person.name} description={`Profilul ${person.name}`} lede={undefined}>
   <div class="container stack stack--loose">
+    {inapoi && (
+      <a class="inapoi" href={inapoi}>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+          <path d="M19 12H5M12 19l-7-7 7-7" />
+        </svg>
+        {/* Butonul știe unde duce, deci o spune: „Înapoi” singur cere să ții minte
+            de unde ai venit, exact ce nu faci după trei profiluri deschise. */}
+        {numeleEcranului(inapoi) ? `Înapoi la ${numeleEcranului(inapoi)}` : 'Înapoi'}
+      </a>
+    )}
     <section class="panel">
       <div class="panel__body identitate">
         <Avatar name={person.name} src={person.avatar_path} size="lg" />
@@ -111,7 +169,7 @@ const editHref = isTeacherProfile ? '/profesor/arhiva' : '/contul-meu'
           </p>
           {
             !isTeacherProfile && (
-              <p class="muted" style="font-size:var(--t-sm)">
+              <p class="muted text-sm">
                 {person.student_number} · {groupLabel(person)}
                 {person.study_group ? ` · grupa ${person.study_group}` : ''}
               </p>
@@ -119,7 +177,7 @@ const editHref = isTeacherProfile ? '/profesor/arhiva' : '/contul-meu'
           }
           {
             isTeacherProfile && seats && (
-              <p class="muted" style="font-size:var(--t-sm)">
+              <p class="muted text-sm">
                 {seats.total_taken} din {seats.total_seats} locuri ocupate
                 {seats.free > 0 ? ` · ${seats.free} libere` : ' · fără locuri disponibile'}
               </p>
@@ -129,11 +187,25 @@ const editHref = isTeacherProfile ? '/profesor/arhiva' : '/contul-meu'
 
         <div class="row row--wrap" style="gap:var(--s-2)">
           {isMe && <a class="btn btn--secondary btn--sm" href={editHref}>Editează profilul</a>}
+          {/* Butonul nu ținea cont de faptul că studentul are deja o cerere:
+              cel mai vizibil control al paginii ducea într-un formular care
+              rămânea ascuns, fără niciun mesaj. */}
           {
-            !isMe && me.role === 'student' && isTeacherProfile && seats?.free !== 0 && (
-              <a class="btn btn--primary btn--sm" href={`/cererile-mele?coordonator=${person.id}`}>
-                Depune cerere
-              </a>
+            !isMe && me.role === 'student' && isTeacherProfile && (
+              areCerereActiva ? (
+                <span class="hint">
+                  Ai deja o cerere activă. Poți depune alta doar după ce o retragi sau primești o
+                  decizie.
+                </span>
+              ) : seats?.free === 0 ? (
+                <span class="hint">
+                  {person.name} nu mai are locuri libere în această sesiune.
+                </span>
+              ) : (
+                <a class="btn btn--primary btn--sm" href={`/cererile-mele?coordonator=${person.id}`}>
+                  Depune cerere
+                </a>
+              )
             )
           }
         </div>
@@ -205,7 +277,7 @@ const editHref = isTeacherProfile ? '/profesor/arhiva' : '/contul-meu'
         <section class="panel">
           <div class="panel__header">
             <h2 class="section-title">Teme propuse în sesiunea curentă</h2>
-            <span class="muted" style="font-size:var(--t-sm)">{topics.length}</span>
+            <span class="muted text-sm">{topics.length}</span>
           </div>
 
           {topics.length === 0 ? (
@@ -224,10 +296,10 @@ const editHref = isTeacherProfile ? '/profesor/arhiva' : '/contul-meu'
                   <div class="stack stack--tight" style="gap:2px">
                     <strong>{t.title}</strong>
                     {t.methods && (
-                      <span class="muted" style="font-size:var(--t-xs)">Metode: {t.methods}</span>
+                      <span class="muted text-xs">Metode: {t.methods}</span>
                     )}
                   </div>
-                  <span class="badge badge--info">
+                  <span class="badge badge--taxon">
                     {levelLabel(t.level)}
                     {t.language !== 'ro' ? ` · ${languageLabel(t.language)}` : ''}
                   </span>
@@ -244,7 +316,7 @@ const editHref = isTeacherProfile ? '/profesor/arhiva' : '/contul-meu'
         <section class="panel">
           <div class="panel__header">
             <h2 class="section-title">Studenți coordonați</h2>
-            <span class="muted" style="font-size:var(--t-sm)">{supervised.length}</span>
+            <span class="muted text-sm">{supervised.length}</span>
           </div>
           <ul class="teme">
             {supervised.map((s) => (
@@ -253,7 +325,7 @@ const editHref = isTeacherProfile ? '/profesor/arhiva' : '/contul-meu'
                   <strong>
                     <a href={`/profil/${s.student_id}`}>{s.student_name}</a>
                   </strong>
-                  <span class="muted" style="font-size:var(--t-xs)">{s.title_ro}</span>
+                  <span class="muted text-xs">{s.title_ro}</span>
                 </div>
               </li>
             ))}
@@ -274,7 +346,7 @@ const editHref = isTeacherProfile ? '/profesor/arhiva' : '/contul-meu'
               <strong style="font-family:var(--serif);font-size:var(--t-md)">
                 {coordination.title_ro}
               </strong>
-              <p class="muted" style="font-size:var(--t-sm)">
+              <p class="muted text-sm">
                 Coordonator:{' '}
                 <a href={`/profil/${coordination.teacher_id}`}>{coordination.teacher_name}</a>
                 {coordination.decided_at
@@ -297,9 +369,29 @@ const editHref = isTeacherProfile ? '/profesor/arhiva' : '/contul-meu'
       )
     }
   </div>
-</StudentLayout>
+</Carcasa>
 
 <style>
+  /* Drumul înapoi, când pagina a fost deschisă din altă parte a portalului. */
+  .inapoi {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--s-2);
+    align-self: flex-start;
+    min-height: var(--tap);
+    font-size: var(--t-sm);
+    font-weight: 500;
+    color: var(--ink-soft);
+    text-decoration: none;
+  }
+  .inapoi:hover {
+    color: var(--red);
+  }
+  .inapoi svg {
+    width: 15px;
+    height: 15px;
+  }
+
   .identitate {
     display: flex;
     align-items: center;

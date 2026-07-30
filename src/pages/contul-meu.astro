@@ -103,7 +103,10 @@ const saved = Astro.url.searchParams.get('salvat') === '1'
           <div class="field" style="flex:1;min-width:240px">
             <label class="label" for="poza">Poză de profil</label>
             <input class="input" id="poza" name="poza" type="file" accept="image/*" />
-            <span class="hint">JPG, PNG, WEBP sau GIF, maximum 2 MB.</span>
+            <span class="hint">
+              JPG, PNG, WEBP sau GIF, maximum 2 MB. Pozele mari sunt micșorate
+              automat înainte de trimitere — portalul le afișează la cel mult 72 px.
+            </span>
           </div>
         </div>
 
@@ -122,7 +125,7 @@ const saved = Astro.url.searchParams.get('salvat') === '1'
             maxlength="1200"
             placeholder="Unde lucrezi sau ai făcut practică, ce cursuri ți-au plăcut, ce vrei să faci după absolvire."
             set:text={u.bio ?? ''}
-          />
+          data-autogrow />
         </div>
 
         <div class="field">
@@ -132,7 +135,7 @@ const saved = Astro.url.searchParams.get('salvat') === '1'
           <span class="hint">Separate prin „·”.</span>
         </div>
 
-        <div class="row" style="justify-content:flex-end">
+        <div class="row row--end">
           <button class="btn btn--primary" type="submit">Salvează profilul</button>
         </div>
       </form>

@@ -1,10 +1,14 @@
 ---
 import BaseLayout from './BaseLayout.astro'
+import Clopotel from '../components/Clopotel.astro'
 import { initials, DEMO_MODE } from '../lib/auth'
+import { ECRANE } from '../lib/navigare'
 import { currentYearLabel } from '../lib/years'
 
 interface Props {
   title: string
+  /** Titlul din bara browserului, când cel din pagină e un salut, nu un nume de ecran. */
+  docTitle?: string
   lede?: string
   active?: string
   /**
@@ -18,25 +22,48 @@ interface Props {
   fill?: boolean
 }
 
-const { title, lede, active, fill = false } = Astro.props
+const { title, docTitle, lede, active, fill = false } = Astro.props
 const u = Astro.locals.user!
 const sesiune = await currentYearLabel()
 
-const linkuri = [
-  { href: '/profesor', cheie: 'dashboard', text: 'Dashboard', icon: 'grid' },
-  { href: '/profesor/studenti', cheie: 'studenti', text: 'Studenți & Cereri', icon: 'users' },
-  { href: '/profesor/teme', cheie: 'teme', text: 'Teme propuse', icon: 'book' },
-  { href: '/profesor/consultatii', cheie: 'consultatii', text: 'Consultații', icon: 'clock' },
-  { href: '/profesor/mesaje', cheie: 'mesaje', text: 'Mesaje', icon: 'chat' },
-  { href: '/profesor/facultate', cheie: 'facultate', text: 'Studenții facultății', icon: 'list' },
+/* Zece intrări la rând, fără nicio ierarhie, iar directorul primea încă trei
+ * amestecate printre ele. Se împart în ce faci zilnic, ce ține de facultate și
+ * ce se configurează o dată pe an.
+ *
+ * „Dashboard” era singurul cuvânt englezesc dintr-o navigație integral
+ * românească. */
+const grupuri = [
+  {
+    titlu: 'Coordonare',
+    linkuri: [
+      { href: '/profesor', cheie: 'dashboard', text: ECRANE['/profesor'], icon: 'grid' },
+      { href: '/profesor/studenti', cheie: 'studenti', text: ECRANE['/profesor/studenti'], icon: 'users' },
+      { href: '/profesor/teme', cheie: 'teme', text: ECRANE['/profesor/teme'], icon: 'book' },
+      { href: '/profesor/consultatii', cheie: 'consultatii', text: ECRANE['/profesor/consultatii'], icon: 'clock' },
+      { href: '/profesor/mesaje', cheie: 'mesaje', text: ECRANE['/profesor/mesaje'], icon: 'chat' },
+    ],
+  },
+  {
+    titlu: 'Facultate',
+    linkuri: [
+      { href: '/profesor/facultate', cheie: 'facultate', text: ECRANE['/profesor/facultate'], icon: 'list' },
+      { href: '/profesor/arhiva', cheie: 'arhiva', text: ECRANE['/profesor/arhiva'], icon: 'archive' },
+      ...(u.role === 'head'
+        ? [{ href: '/profesor/departament', cheie: 'departament', text: ECRANE['/profesor/departament'], icon: 'chart' }]
+        : []),
+    ],
+  },
   ...(u.role === 'head'
     ? [
-        { href: '/profesor/departament', cheie: 'departament', text: 'Departament', icon: 'chart' },
-        { href: '/profesor/calendar', cheie: 'calendar', text: 'Calendarul sesiunii', icon: 'calendar' },
-        { href: '/profesor/an-universitar', cheie: 'an', text: 'An universitar', icon: 'refresh' },
+        {
+          titlu: 'Administrare',
+          linkuri: [
+            { href: '/profesor/calendar', cheie: 'calendar', text: ECRANE['/profesor/calendar'], icon: 'calendar' },
+            { href: '/profesor/an-universitar', cheie: 'an', text: ECRANE['/profesor/an-universitar'], icon: 'refresh' },
+          ],
+        },
       ]
     : []),
-  { href: '/profesor/arhiva', cheie: 'arhiva', text: 'Arhivă & Profil', icon: 'archive' },
 ]
 
 const cai: Record<string, string> = {
@@ -53,7 +80,7 @@ const cai: Record<string, string> = {
 }
 ---
 
-<BaseLayout title={title}>
+<BaseLayout title={title} docTitle={docTitle}>
   <div class:list={['shell', { 'shell--fill': fill }]}>
     <aside class="sidebar" id="sidebar">
       <a href="/profesor" class="brand">
@@ -66,23 +93,45 @@ const cai: Record<string, string> = {
 
       <nav class="nav" aria-label="Navigație cadru didactic">
         {
-          linkuri.map((l) => (
-            <a href={l.href} class:list={['nav__link', { 'is-active': active === l.cheie }]}>
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
-                <path d={cai[l.icon]} />
-              </svg>
-              {l.text}
-            </a>
+          grupuri.map((g) => (
+            <div class="nav__grup">
+              <p class="nav__grup-titlu">{g.titlu}</p>
+              {/* `title` pentru tabletă în portret: acolo bara se strânge la
+                  pictograme, deci numele trebuie să rămână spus undeva. */}
+              {g.linkuri.map((l) => (
+                <a
+                  href={l.href}
+                  class:list={['nav__link', { 'is-active': active === l.cheie }]}
+                  aria-current={active === l.cheie ? 'page' : undefined}
+                  title={l.text}
+                >
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+                    <path d={cai[l.icon]} />
+                  </svg>
+                  <span class="nav__text">{l.text}</span>
+                </a>
+              ))}
+            </div>
           ))
         }
       </nav>
 
       <div class="sidebar__end">
-        <a href="/" class="nav__link nav__link--quiet">
+        {/* Ctrl+K nu se descoperă singur. Butonul spune scurtătura, ca a doua
+            dată să nu mai fie nevoie de el. */}
+        <button class="nav__link nav__link--quiet paleta-buton" type="button" data-paleta>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+            <path d="M11 19a8 8 0 1 0 0-16 8 8 0 0 0 0 16zM21 21l-4.35-4.35" />
+          </svg>
+          <span class="nav__text">Mergi la…</span>
+          <kbd class="nav__scurtatura">⌘K</kbd>
+        </button>
+
+        <a href="/" class="nav__link nav__link--quiet" title="Portalul studenților">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"
             ><path d="M3 12l9-9 9 9M5 10v10h14V10"></path></svg
           >
-          Portalul studenților
+          <span class="nav__text">Portalul studenților</span>
         </a>
         <div class="user">
           <span class="user__avatar">{initials(u.name)}</span>
@@ -90,6 +139,7 @@ const cai: Record<string, string> = {
             <strong>{u.name}</strong>
             <small>{u.role === 'head' ? 'Director de departament' : 'Cadru didactic'}</small>
           </span>
+          <Clopotel baseMesaje="/profesor/mesaje" />
           <form method="POST" action="/api/deconectare">
             <button class="btn btn--ghost btn--sm" type="submit" title="Deconectare" aria-label="Deconectare">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
@@ -102,55 +152,59 @@ const cai: Record<string, string> = {
     </aside>
 
     <div class="content">
-      <header class="content__header">
-        <button class="hamburger" aria-label="Deschide meniul" aria-expanded="false" aria-controls="sidebar">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-            ><path d="M3 6h18M3 12h18M3 18h18"></path></svg
-          >
-        </button>
-        <div>
-          <h1 class="page-title">{title}</h1>
-          {lede && <p class="page-lede">{lede}</p>}
+      {/* `main` începe deasupra titlului: altfel legătura „Sari la conținut”
+          sărea peste chiar titlul paginii, iar h1-ul rămânea în afara reperului
+          principal. */}
+      <main id="continut" tabindex="-1">
+        <header class="content__header">
+          <button class="hamburger" aria-label="Deschide meniul" aria-expanded="false" aria-controls="sidebar">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+              ><path d="M3 6h18M3 12h18M3 18h18"></path></svg
+            >
+          </button>
+          <div>
+            <h1 class="page-title">{title}</h1>
+            {lede && <p class="page-lede">{lede}</p>}
+          </div>
+          <slot name="actiuni" />
+        </header>
+
+        {
+          DEMO_MODE && (
+            <details class="demo-note">
+              <summary>
+                <strong>Mod demonstrativ activ.</strong> Datele sunt fictive.
+              </summary>
+              <p>
+                Autentificarea fără email este permisă, iar emailurile sunt redirecționate către o
+                singură adresă de test.
+              </p>
+            </details>
+          )
+        }
+
+        <div class="content__body">
+          <slot />
         </div>
-        <slot name="actiuni" />
-      </header>
-
-      {
-        DEMO_MODE && (
-          <p class="demo-note">
-            <strong>Mod demonstrativ activ.</strong> Datele sunt fictive, iar autentificarea fără email este
-            permisă. Emailurile sunt redirecționate către o singură adresă de test.
-          </p>
-        )
-      }
-
-      <main id="continut" class="content__body">
-        <slot />
       </main>
     </div>
   </div>
 </BaseLayout>
 
 <script>
-  const buton = document.querySelector<HTMLButtonElement>('.hamburger')
-  const bara = document.getElementById('sidebar')
-  buton?.addEventListener('click', () => {
-    const deschis = bara?.classList.toggle('is-open') ?? false
-    buton.setAttribute('aria-expanded', String(deschis))
-  })
-  document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') {
-      bara?.classList.remove('is-open')
-      buton?.setAttribute('aria-expanded', 'false')
-    }
-  })
+  import { porneste, panouri } from '../scripts/meniu'
+
+  // Bara rămâne pe ecran la lățime mare, deci nu primește `hidden` — doar clasa
+  // pe care o știu deja stilurile.
+  porneste({ buton: '.hamburger', panou: '#sidebar', clasa: 'is-open', ascunde: false })
+  panouri('details.clopotel')
 </script>
 
 <style>
   .shell {
     display: grid;
     grid-template-columns: var(--sidebar-w) minmax(0, 1fr);
-    min-height: 100vh;
+    min-height: 100svh;
   }
 
   /* Bara laterală este al doilea strat neutru: închisă, ca să nu concureze cu conținutul. */
@@ -159,11 +213,11 @@ const cai: Record<string, string> = {
     flex-direction: column;
     gap: var(--s-6);
     padding: var(--s-5) var(--s-4);
-    background: var(--navy);
-    color: #d7dbe0;
+    background: var(--dark-surface);
+    color: var(--dark-ink-soft);
     position: sticky;
     top: 0;
-    height: 100vh;
+    height: 100dvh;
     overflow-y: auto;
   }
 
@@ -200,7 +254,7 @@ const cai: Record<string, string> = {
   }
   .brand__text small {
     font-size: var(--t-xs);
-    color: #9aa2ab;
+    color: var(--dark-ink-muted);
   }
 
   .nav {
@@ -215,7 +269,7 @@ const cai: Record<string, string> = {
     gap: var(--s-3);
     padding: var(--s-3);
     border-radius: var(--r-md);
-    color: #c3c9d1;
+    color: var(--dark-ink-quiet);
     text-decoration: none;
     font-size: var(--t-sm);
     font-weight: 500;
@@ -230,23 +284,23 @@ const cai: Record<string, string> = {
   }
 
   .nav__link:hover {
-    background: rgba(255, 255, 255, 0.07);
+    background: var(--dark-hover);
     color: #fff;
   }
 
   .nav__link.is-active {
-    background: rgba(255, 255, 255, 0.1);
+    background: var(--dark-active);
     color: #fff;
     font-weight: 600;
   }
   .nav__link.is-active svg {
-    color: #ff8a80;
+    color: var(--dark-accent);
     opacity: 1;
   }
 
   .nav__link--quiet {
     font-size: var(--t-xs);
-    color: #9aa2ab;
+    color: var(--dark-ink-muted);
   }
 
   .sidebar__end {
@@ -259,9 +313,9 @@ const cai: Record<string, string> = {
   .user {
     display: flex;
     align-items: center;
-    gap: var(--s-2);
+    gap: var(--s-1);
     padding: var(--s-3) var(--s-2);
-    border-top: 1px solid rgba(255, 255, 255, 0.1);
+    border-top: 1px solid var(--dark-line);
   }
 
   .user__avatar {
@@ -270,7 +324,7 @@ const cai: Record<string, string> = {
     width: 32px;
     height: 32px;
     border-radius: 50%;
-    background: rgba(255, 255, 255, 0.12);
+    background: var(--dark-active);
     color: #fff;
     font-size: var(--t-xs);
     font-weight: 600;
@@ -291,17 +345,22 @@ const cai: Record<string, string> = {
     text-overflow: ellipsis;
     white-space: nowrap;
   }
+  /* Rolul se scrie pe un rând: cu avatarul, clopoțelul și deconectarea în
+     aceeași bară de 260px, „Cadru didactic” se rupea în două. */
   .user__meta small {
     font-size: var(--t-xs);
-    color: #9aa2ab;
+    color: var(--dark-ink-muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .user .btn--ghost {
-    color: #9aa2ab;
+    color: var(--dark-ink-muted);
     padding: 0 var(--s-2);
   }
   .user .btn--ghost:hover {
-    background: rgba(255, 255, 255, 0.08);
+    background: var(--dark-hover);
     color: #fff;
   }
 
@@ -312,10 +371,27 @@ const cai: Record<string, string> = {
   }
 
   .shell--fill {
-    height: 100vh;
+    height: 100dvh;
   }
   .shell--fill .content {
-    height: 100vh;
+    height: 100dvh;
+    overflow: hidden;
+  }
+  /* `main` stă între `.content` și `.content__body`, iar el lipsea din lanț.
+   *
+   * Fiind `display: block` cu `min-height: auto`, creștea cu conținutul: la un fir
+   * de patruzeci de mesaje ajungea 3904px într-o fereastră de 900, iar
+   * `.content` — mărginit și cu `overflow: hidden` — tăia restul. Mesajele de
+   * dedesubt nu erau doar sub linie: nu se putea ajunge la ele nici derulând
+   * pagina, nici derulând firul, pentru că firul nu mai avea o înălțime de la
+   * care să deruleze.
+   *
+   * Nu se vedea, pentru că firele din datele de test au șase mesaje. */
+  .shell--fill main {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
     overflow: hidden;
   }
   .shell--fill .content__body {
@@ -345,6 +421,9 @@ const cai: Record<string, string> = {
     flex: 1;
   }
 
+  /* Trei rânduri de avertisment mâncau o treime din ecranul unui telefon, de
+     fiecare dată, ca să spună acelaşi lucru. Prima propoziție rămâne; restul se
+     desface la cerere. */
   .demo-note {
     margin: var(--s-5) var(--s-6) 0;
     padding: var(--s-3) var(--s-4);
@@ -352,6 +431,67 @@ const cai: Record<string, string> = {
     color: var(--warn);
     border-radius: var(--r-md);
     font-size: var(--t-sm);
+  }
+  .demo-note summary {
+    cursor: pointer;
+    list-style-position: inside;
+  }
+  .demo-note p {
+    margin-top: var(--s-2);
+    padding-left: var(--s-4);
+  }
+
+  /* Clopoțelul stă în josul unei bare închise: panoul se deschide în sus, altfel
+     ar cădea sub marginea ecranului, iar iconița ia cerneala suprafeței închise.
+     Stilurile lui sunt scoped în componentă, deci ajung la el prin `:global`. */
+  .user :global(.clopotel summary) {
+    color: var(--dark-ink-quiet);
+  }
+  .user :global(.clopotel summary:hover) {
+    background: var(--dark-hover);
+    color: #fff;
+  }
+  .user :global(.clopotel__panou) {
+    top: auto;
+    bottom: calc(100% + var(--s-2));
+    right: auto;
+    left: 0;
+  }
+
+  .nav__grup {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .nav__grup + .nav__grup {
+    margin-top: var(--s-4);
+  }
+
+  .nav__grup-titlu {
+    padding: 0 var(--s-3) var(--s-2);
+    font-size: var(--t-xs);
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--dark-ink-muted);
+  }
+
+  .paleta-buton {
+    width: 100%;
+    border: 0;
+    background: none;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+  }
+  .nav__scurtatura {
+    margin-left: auto;
+    padding: 1px 5px;
+    border: 1px solid var(--dark-line);
+    border-radius: var(--r-sm);
+    font-family: var(--sans);
+    font-size: var(--t-xs);
+    color: var(--dark-ink-muted);
   }
 
   .hamburger {
@@ -371,7 +511,66 @@ const cai: Record<string, string> = {
     height: 18px;
   }
 
+  /* Sub 900px firul nu mai umple ecranul, deci carcasa nu are voie să îl taie.
+   *
+   * `shell--fill` mărginește totul la 100dvh cu `overflow: hidden`, iar regula de
+   * telefon a conversației îi dă `height: auto` cu `min-height: 70vh`: cele două
+   * se băteau, deci un fir de patruzeci de mesaje avea zona de scris sub linia de
+   * tăiere și nimic nu derula până la ea — nici pagina, nici firul. Pe ecran mic
+   * derulează pagina, cum face oriunde altundeva în portal. */
   @media (max-width: 900px) {
+    .shell--fill,
+    .shell--fill .content,
+    .shell--fill main,
+    .shell--fill .content__body {
+      height: auto;
+      min-height: 0;
+      overflow: visible;
+    }
+  }
+
+  /* Tabletă în portret: bara se strânge, nu dispare.
+   *
+   * Sub 900px navigația devenea un sertar în spatele unui hamburger — și un iPad
+   * în portret are 810px, adică lățime destul pentru unsprezece pictograme și
+   * conținut. Cine ținea tableta vertical pierdea toată navigația și un clic în
+   * plus pentru fiecare pas, degeaba. Sub 640px, unde chiar nu încape, rămâne
+   * sertarul. */
+  @media (min-width: 641px) and (max-width: 900px) {
+    .shell {
+      grid-template-columns: 68px minmax(0, 1fr);
+    }
+    .sidebar {
+      padding: var(--s-4) var(--s-2);
+      gap: var(--s-5);
+      align-items: center;
+    }
+    .nav__text,
+    .nav__grup-titlu,
+    .brand__text,
+    .user__meta {
+      display: none;
+    }
+    .nav__link {
+      justify-content: center;
+      padding: var(--s-3);
+    }
+    /* Grupurile rămân distinse fără titluri: o linie, nu un cuvânt. */
+    .nav__grup + .nav__grup {
+      padding-top: var(--s-3);
+      border-top: 1px solid var(--dark-line);
+    }
+    .brand {
+      justify-content: center;
+    }
+    .user {
+      flex-direction: column;
+      gap: var(--s-2);
+      padding: var(--s-3) 0;
+    }
+  }
+
+  @media (max-width: 640px) {
     .shell {
       grid-template-columns: minmax(0, 1fr);
     }

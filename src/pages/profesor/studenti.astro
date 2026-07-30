@@ -1,6 +1,7 @@
 ---
 import Avatar from '../../components/Avatar.astro'
 import ProfesorLayout from '../../layouts/ProfesorLayout.astro'
+import Taburi from '../../components/Taburi.astro'
 import { INVITATION_WINDOW_DAYS, teacherInvitations } from '../../lib/lifecycle'
 import {
   STATUS_CLASS,
@@ -11,7 +12,6 @@ import {
   teacherRequests,
   formatDate,
   requestMilestones,
-  formatTime,
   studentDirectory,
   teacherSeats,
   supervisedStudents,
@@ -20,7 +20,10 @@ import {
 import { allYears, groupLabel } from '../../lib/years'
 
 const u = Astro.locals.user!
-const sectiune = Astro.url.searchParams.get('sectiune') ?? 'cereri'
+// Vezi departament.astro: o valoare necunoscută nu are voie să golească pagina.
+const SECTIUNI = ['cereri', 'studenti', 'progres', 'invitatii'] as const
+const cerut = Astro.url.searchParams.get('sectiune') ?? ''
+const sectiune = (SECTIUNI as readonly string[]).includes(cerut) ? cerut : 'cereri'
 const studentDeschis = Astro.url.searchParams.get('student')
 
 const [toateCererile, studenti, teme, locuri, invitatii, directorStudenti, ani] =
@@ -57,7 +60,6 @@ const sectiuni = [
 
 const caleCurenta = `/profesor/studenti?sectiune=${sectiune}`
 const azi = new Date().toISOString().slice(0, 10)
-const cuStudent = Astro.url.searchParams.get('cu') ?? ''
 
 /**
  * How long is left to answer a request.
@@ -71,7 +73,7 @@ function deadline(expiresAt: string | null | undefined) {
   const days = Math.ceil((new Date(expiresAt).getTime() - Date.now()) / 86_400_000)
   const text =
     days <= 0 ? 'expiră astăzi' : days === 1 ? '1 zi rămasă' : `${days} zile rămase`
-  return { days, text, clasa: days <= 2 ? 'badge--respinsa' : 'badge--asteptare' }
+  return { days, text, clasa: days <= 2 ? 'badge--urgent' : 'badge--asteptare' }
 }
 ---
 
@@ -80,20 +82,11 @@ function deadline(expiresAt: string | null | undefined) {
   lede="Triajul cererilor primite, studenții pe care îi coordonezi și termenele lucrărilor lor."
   active="studenti"
 >
-  <nav class="taburi" aria-label="Secțiuni">
-    {
-      sectiuni.map((s) => (
-        <a
-          href={`/profesor/studenti?sectiune=${s.cheie}`}
-          class:list={['tab', { 'is-activ': sectiune === s.cheie }]}
-          aria-current={sectiune === s.cheie ? 'page' : undefined}
-        >
-          {s.text}
-          {s.contor !== null && s.contor > 0 && <span class="tab__contor numeric">{s.contor}</span>}
-        </a>
-      ))
-    }
-  </nav>
+  <Taburi
+    taburi={sectiuni.map((s) => ({ ...s, href: `/profesor/studenti?sectiune=${s.cheie}` }))}
+    activ={sectiune}
+    eticheta="Secțiuni"
+  />
 
   {/* ---------------------------------------------------------------- cereri */}
   {
@@ -102,10 +95,18 @@ function deadline(expiresAt: string | null | undefined) {
         <section class="panel">
           <div class="panel__header">
             <h2 class="section-title">În așteptare</h2>
-            <span class="muted" style="font-size:var(--t-sm)">
+            <span class="muted text-sm">
               {inAsteptare.length} {inAsteptare.length === 1 ? 'cerere' : 'cereri'}
             </span>
           </div>
+
+          {locuri.free === 0 && inAsteptare.length > 0 && (
+            <p class="fara-locuri">
+              <strong>Toate locurile sunt ocupate</strong> ({locuri.total_taken}/{locuri.total_seats}).
+              Nu poți accepta o cerere nouă până nu primești locuri suplimentare.
+              <a class="link" href="/profesor/arhiva#locuri">Cere locuri directorului</a>
+            </p>
+          )}
 
           {inAsteptare.length === 0 ? (
             <div class="empty">
@@ -119,7 +120,7 @@ function deadline(expiresAt: string | null | undefined) {
               {inAsteptare.map((c) => {
                 const termen = deadline(c.expires_at)
                 return (
-                  <li class="cerere">
+                  <li class="cerere" id={`cerere-${c.id}`}>
                     <div class="cerere__cap">
                       <Avatar name={c.student_name} />
                       <div class="cerere__ident">
@@ -148,12 +149,21 @@ function deadline(expiresAt: string | null | undefined) {
                     )}
 
                     <div class="cerere__actiuni">
+                      {/* Fără locuri libere, serverul refuză acceptarea — dar abia
+                          după ce coordonatorul a scris mesajul. Refuzul se mută
+                          înaintea muncii, nu după. */}
                       <button
                         class="btn btn--primary btn--sm"
                         type="button"
                         data-decizie="approved"
                         data-cerere={c.id}
                         data-nume={c.student_name}
+                        disabled={locuri.free === 0}
+                        title={
+                          locuri.free === 0
+                            ? `Toate cele ${locuri.total_seats} locuri sunt ocupate. Cere locuri suplimentare directorului.`
+                            : undefined
+                        }
                       >
                         Acceptă coordonarea
                       </button>
@@ -166,7 +176,7 @@ function deadline(expiresAt: string | null | undefined) {
                       >
                         Respinge
                       </button>
-                      <a class="btn btn--ghost btn--sm" href={`/profil/${c.student_id}`}>
+                      <a class="btn btn--ghost btn--sm" href={`/profil/${c.student_id}?de_la=${encodeURIComponent(caleCurenta)}`}>
                         Vezi profilul
                       </a>
                     </div>
@@ -182,16 +192,16 @@ function deadline(expiresAt: string | null | undefined) {
             <div class="panel__header">
               <h2 class="section-title">Cereri decise</h2>
             </div>
-            <div class="table-wrap">
+            <div class="table-wrap" tabindex="0" role="region" aria-label="Cereri decise">
               <table class="table">
                 <thead>
                   <tr>
-                    <th>Cerere</th>
-                    <th>Student</th>
-                    <th>Titlul lucrării</th>
-                    <th>Stare</th>
-                    <th>Decisă</th>
-                    <th><span class="visually-hidden">Document</span></th>
+                    <th scope="col">Cerere</th>
+                    <th scope="col">Student</th>
+                    <th scope="col">Titlul lucrării</th>
+                    <th scope="col">Stare</th>
+                    <th scope="col">Decisă</th>
+                    <th scope="col"><span class="visually-hidden">Document</span></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -230,11 +240,23 @@ function deadline(expiresAt: string | null | undefined) {
       <section class="panel">
         <div class="panel__header">
           <h2 class="section-title">Studenți coordonați</h2>
-          <span class="muted" style="font-size:var(--t-sm)">
+          <span class="muted text-sm">
             {locuri.total_taken} din {locuri.total_seats} locuri · licență{' '}
             {locuri.bachelor_taken}/{locuri.bachelor_seats} · master{' '}
             {locuri.master_taken}/{locuri.master_seats}
           </span>
+          {/* Exportul propriu exista de la început în endpoint și nu era legat de
+              nicăieri: singurele butoane duceau la el din ecranele directorului,
+              deci un coordonator care avea nevoie de lista lui pe hârtie — pentru
+              procesul-verbal, care încă circulă tipărit — o copia din tabel. */}
+          {studenti.length > 0 && (
+            <a
+              class="btn btn--secondary btn--sm"
+              href="/profesor/export-coordonari?doar_ale_mele=1"
+            >
+              Descarcă lista (CSV)
+            </a>
+          )}
         </div>
 
         {studenti.length === 0 ? (
@@ -246,16 +268,16 @@ function deadline(expiresAt: string | null | undefined) {
             </p>
           </div>
         ) : (
-          <div class="table-wrap">
+          <div class="table-wrap" tabindex="0" role="region" aria-label="Directorul studenților">
             <table class="table">
               <thead>
                 <tr>
-                  <th>Student</th>
-                  <th>Titlul lucrării</th>
-                  <th>Progres</th>
-                  <th>Susținere</th>
-                  <th>Mesaje</th>
-                  <th><span class="visually-hidden">Acțiuni</span></th>
+                  <th scope="col">Student</th>
+                  <th scope="col">Titlul lucrării</th>
+                  <th scope="col">Progres</th>
+                  <th scope="col">Susținere</th>
+                  <th scope="col">Mesaje</th>
+                  <th scope="col"><span class="visually-hidden">Acțiuni</span></th>
                 </tr>
               </thead>
               <tbody>
@@ -267,7 +289,7 @@ function deadline(expiresAt: string | null | undefined) {
                     <tr>
                       <td>
                         <div class="row" style="gap:var(--s-3)">
-                          <Avatar name={s.student_name} href={`/profil/${s.student_id}`} />
+                          <Avatar name={s.student_name} href={`/profil/${s.student_id}?de_la=${encodeURIComponent(caleCurenta)}`} />
                           <div class="celula-student">
                             <strong>{s.student_name}</strong>
                             <span class="muted" title={`${s.student_number} · ${groupLabel(s)}`}>
@@ -282,7 +304,7 @@ function deadline(expiresAt: string | null | undefined) {
                           <div class="bara" role="img" aria-label={`Progres ${procent}%`}>
                             <span class="bara__fill" style={`--procent:${procent / 100}`} />
                           </div>
-                          <span class="muted numeric" style="font-size:var(--t-xs)">
+                          <span class="muted numeric text-xs">
                             {s.milestones_done}/{s.milestones_total}
                           </span>
                         </div>
@@ -290,7 +312,9 @@ function deadline(expiresAt: string | null | undefined) {
                       {/* Sesiunea susținerii nu este neapărat cea în care a
                           început coordonarea, iar arhiva o folosește pe prima. */}
                       <td>
-                        <form method="POST" action="/api/sustinere" class="row" style="gap:var(--s-2)">
+                        {/* Valoarea se tipărește separat, mai jos: selectorul ar
+                            lăți tabelul dincolo de foaie fără să adauge nimic. */}
+                        <form method="POST" action="/api/sustinere" class="row" style="gap:var(--s-2)" data-tipar="fără">
                           <input type="hidden" name="cerere_id" value={s.id} />
                           <label class="visually-hidden" for={`sus-${s.id}`}>
                             Sesiunea susținerii pentru {s.student_name}
@@ -315,6 +339,13 @@ function deadline(expiresAt: string | null | undefined) {
                             <button class="btn btn--ghost btn--sm" type="submit">Salvează</button>
                           </noscript>
                         </form>
+                        {/* Pe hârtie formularul dispare; sesiunea rămâne. */}
+                        <span class="doar-tipar numeric">
+                          {ani.find((a) =>
+                            (s.graduation_year_id ?? '') === a.id ||
+                            (!s.graduation_year_id && a.is_current),
+                          )?.label ?? ''}
+                        </span>
                       </td>
                       <td>
                         {s.unread > 0 ? (
@@ -340,6 +371,18 @@ function deadline(expiresAt: string | null | undefined) {
                           >
                             Programează consultație
                           </a>
+                          {/* Terminarea lucrării nu avea nicio stare: coordonarea
+                              rămânea „aprobată” pentru totdeauna, locul rămânea
+                              ocupat, iar arhiva trecea data aprobării drept dată
+                              a susținerii. */}
+                          <button
+                            class="btn btn--secondary btn--sm"
+                            type="button"
+                            data-sustinuta={s.id}
+                            data-nume={s.student_name}
+                          >
+                            A susținut
+                          </button>
                         </div>
                       </td>
                     </tr>
@@ -398,7 +441,7 @@ function deadline(expiresAt: string | null | undefined) {
             <section class="panel">
               <div class="panel__header">
                 <h2 class="section-title">Termenele lucrării</h2>
-                <span class="muted" style="font-size:var(--t-sm)">
+                <span class="muted text-sm">
                   {milestones.filter((j) => j.status === 'done').length} din {milestones.length} finalizate
                 </span>
               </div>
@@ -418,7 +461,7 @@ function deadline(expiresAt: string | null | undefined) {
                               j.status === 'done'
                                 ? 'badge--aprobata'
                                 : j.status === 'in_progress'
-                                  ? 'badge--asteptare'
+                                  ? 'badge--in-lucru'
                                   : 'badge--ciorna',
                             ]}
                           >
@@ -427,9 +470,12 @@ function deadline(expiresAt: string | null | undefined) {
                         </span>
                       </summary>
 
-                      <form method="POST" action="/api/jaloane" class="jalon__editor">
-                        <input type="hidden" name="actiune" value="actualizeaza" />
-                        <input type="hidden" name="jalon_id" value={j.id} />
+                      <form method="POST" action="/api/termene" class="jalon__editor">
+                        {/* Vezi comentariul din lib/forms.ts: butonul „Șterge” poartă
+                            propriul „actiune”, iar două câmpuri cu același nume s-ar
+                            fi anulat — ștergerea raporta succes fără să șteargă. */}
+                        <input type="hidden" name="actiune_implicita" value="actualizeaza" />
+                        <input type="hidden" name="termen_id" value={j.id} />
                         <input
                           type="hidden"
                           name="redirect"
@@ -469,8 +515,7 @@ function deadline(expiresAt: string | null | undefined) {
                             id={`desc-${j.id}`}
                             name="descriere"
                             rows="2"
-                            style="min-height:64px"
-                          >{j.description ?? ''}</textarea>
+                            style="min-height:64px" data-autogrow>{j.description ?? ''}</textarea>
                         </div>
 
                         <div class="row" style="gap:var(--s-2)">
@@ -478,7 +523,7 @@ function deadline(expiresAt: string | null | undefined) {
                           <button
                             class="btn btn--danger btn--sm"
                             type="submit"
-                            formaction="/api/jaloane"
+                            formaction="/api/termene"
                             name="actiune"
                             value="sterge"
                           >
@@ -492,7 +537,7 @@ function deadline(expiresAt: string | null | undefined) {
               </ol>
 
               <div class="panel__footer">
-                <form method="POST" action="/api/jaloane" class="row row--wrap" style="gap:var(--s-3);align-items:flex-end">
+                <form method="POST" action="/api/termene" class="row row--wrap" style="gap:var(--s-3);align-items:flex-end">
                   <input type="hidden" name="actiune" value="adauga" />
                   <input type="hidden" name="cerere_id" value={timelineRequest?.id} />
                   <input
@@ -531,7 +576,7 @@ function deadline(expiresAt: string | null | undefined) {
         <section class="panel">
           <div class="panel__header">
             <h2 class="section-title">Propune coordonarea unui student</h2>
-            <span class="muted" style="font-size:var(--t-sm)">
+            <span class="muted text-sm">
               {locuri.free} {locuri.free === 1 ? 'loc liber' : 'locuri libere'}
             </span>
           </div>
@@ -549,23 +594,39 @@ function deadline(expiresAt: string | null | undefined) {
             <form method="POST" action="/api/invitatii" class="panel__body stack">
               <input type="hidden" name="actiune" value="trimite" />
 
-              <div class="row row--wrap" style="gap:var(--s-3)">
-                <div class="field" style="flex:2;min-width:260px">
-                  <label class="label" for="student_id">Student</label>
-                  <select class="select" id="student_id" name="student_id" required>
-                    <option value="">Alege un student fără coordonator…</option>
+              {/* Două coloane egale, aliniate sus. Într-un rând flex, textul
+                  ajutător de sub un câmp împingea doar coloana lui, iar cele două
+                  controale nu mai stăteau pe aceeași linie. */}
+              <div class="invitatie__rand">
+                <div class="field">
+                  <label class="label" for="student_nume">Student</label>
+                  {/* Un `<datalist>` face lista căutabilă fără să înceteze să fie
+                      o listă: se poate scrie ca să filtrezi, sau se poate răsfoi.
+                      Cu douăzeci și cinci de nume, derularea era singura opțiune. */}
+                  <input
+                    class="input"
+                    id="student_nume"
+                    list="lista-invitabili"
+                    placeholder="Scrie un nume sau alege din listă…"
+                    autocomplete="off"
+                    aria-describedby="ajutor-invitabili"
+                  />
+                  <datalist id="lista-invitabili">
                     {invitabili.map((s) => (
-                      <option value={s.id}>
-                        {s.name} — {groupLabel(s)}
-                        {s.request_status === 'pending' ? ' · are o cerere depusă' : ''}
-                      </option>
+                      <option
+                        value={`${s.name} — ${groupLabel(s)}${s.request_status === 'pending' ? ' · are o cerere depusă' : ''}`}
+                        data-id={s.id}
+                      />
                     ))}
-                  </select>
-                  <span class="hint">
-                    Apar doar studenții care nu au încă un coordonator confirmat.
+                  </datalist>
+                  <input type="hidden" id="student_id" name="student_id" required />
+                  <span class="hint" id="ajutor-invitabili">
+                    {invitabili.length}{' '}
+                    {invitabili.length === 1 ? 'student disponibil' : 'studenți disponibili'} — doar
+                    cei fără coordonator confirmat.
                   </span>
                 </div>
-                <div class="field" style="flex:2;min-width:240px">
+                <div class="field">
                   <label class="label" for="tema_id">Temă propusă <span class="muted">(opțional)</span></label>
                   <select class="select" id="tema_id" name="tema_id">
                     <option value="">Fără temă anume</option>
@@ -575,6 +636,7 @@ function deadline(expiresAt: string | null | undefined) {
                         <option value={t.id}>{t.title}</option>
                       ))}
                   </select>
+                  <span class="hint">Studentul o vede în propunere, dar nu este obligată.</span>
                 </div>
               </div>
 
@@ -588,14 +650,14 @@ function deadline(expiresAt: string | null | undefined) {
                   minlength="30"
                   required
                   placeholder="Spune-i de ce l-ai ales și ce temă ai în minte. Studentul decide pe baza acestui mesaj."
-                />
+                data-autogrow />
                 <span class="hint">
                   Studentul primește propunerea pe email și în conversație. Expiră după{' '}
                   {INVITATION_WINDOW_DAYS} de zile.
                 </span>
               </div>
 
-              <div class="row" style="justify-content:flex-end">
+              <div class="row row--end">
                 <button class="btn btn--primary" type="submit">Trimite propunerea</button>
               </div>
             </form>
@@ -623,8 +685,8 @@ function deadline(expiresAt: string | null | undefined) {
                     <div class="row" style="gap:var(--s-3)">
                       <Avatar name={i.student_name} size="xs" />
                       <div class="stack stack--tight" style="gap:0">
-                        <strong style="font-size:var(--t-sm)">{i.student_name}</strong>
-                        <span class="muted" style="font-size:var(--t-xs)">
+                        <strong class="text-sm">{i.student_name}</strong>
+                        <span class="muted text-xs">
                           {i.student_number} · trimisă {timeAgo(i.created_at)}
                         </span>
                       </div>
@@ -635,7 +697,7 @@ function deadline(expiresAt: string | null | undefined) {
                         i.status === 'accepted'
                           ? 'badge--aprobata'
                           : i.status === 'pending'
-                            ? 'badge--asteptare'
+                            ? 'badge--in-lucru'
                             : 'badge--respinsa',
                       ]}
                     >
@@ -644,7 +706,7 @@ function deadline(expiresAt: string | null | undefined) {
                   </div>
 
                   {i.topic_title && (
-                    <p class="muted" style="font-size:var(--t-xs)">Temă propusă: {i.topic_title}</p>
+                    <p class="muted text-xs">Temă propusă: {i.topic_title}</p>
                   )}
                   <p class="invitatii__mesaj">{i.message}</p>
 
@@ -665,10 +727,43 @@ function deadline(expiresAt: string | null | undefined) {
   {/* Ambele decizii trec prin aceeași fereastră, pentru că ambele merită un
       mesaj: o respingere fără motiv lasă studentul să ghicească, iar o acceptare
       fără un cuvânt e o schimbare de stare acolo unde se aștepta o propoziție. */}
-  <dialog id="dialog-decizie">
+  {/* Susținerea, ca fapt: data reală și, opțional, nota. Coordonarea se închide,
+      locul se eliberează, iar lucrarea intră în arhivă sub data corectă. */}
+  <dialog id="dialog-sustinere" aria-labelledby="titlu-sustinere">
+    <form method="POST" action="/api/sustinere" class="dialog">
+      <h2 id="titlu-sustinere" class="section-title">Înregistrează susținerea</h2>
+      <input type="hidden" name="actiune" value="sustinuta" />
+      <input type="hidden" name="cerere_id" id="sustinere-id" />
+
+      <p class="muted text-sm">
+        Confirmi că <strong id="sustinere-nume">studentul</strong> și-a susținut lucrarea. Coordonarea
+        se închide, locul se eliberează, iar lucrarea intră în arhivă cu data susținerii.
+      </p>
+
+      <div class="row row--wrap" style="gap:var(--s-3)">
+        <div class="field" style="flex:1;min-width:170px">
+          <label class="label" for="sustinere-data">
+            Data susținerii <span class="label__req" aria-hidden="true">*</span>
+          </label>
+          <input class="input" id="sustinere-data" name="data" type="date" max={azi} required />
+        </div>
+        <div class="field" style="flex:1;min-width:130px">
+          <label class="label" for="sustinere-nota">Nota <span class="muted">(opțional)</span></label>
+          <input class="input" id="sustinere-nota" name="nota" type="number" min="1" max="10" step="0.01" />
+        </div>
+      </div>
+
+      <div class="row row--end" style="gap:var(--s-2)">
+        <button class="btn btn--ghost btn--sm" type="button" data-inchide-sustinere>Renunț</button>
+        <button class="btn btn--primary btn--sm" type="submit">Înregistrează</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="dialog-decizie" aria-labelledby="titlu-decizie">
     <form method="POST" action="/api/cereri/decizie" class="dialog">
       <h2 class="section-title" id="dialog-titlu">Decizia ta</h2>
-      <p class="muted" style="font-size:var(--t-sm)" id="dialog-explicatie">
+      <p class="muted text-sm" id="dialog-explicatie">
         Mesajul ajunge la student prin email și rămâne în conversație.
       </p>
 
@@ -678,7 +773,7 @@ function deadline(expiresAt: string | null | undefined) {
 
       <div class="field">
         <label class="label" for="motiv" id="dialog-eticheta">Mesaj pentru student</label>
-        <textarea class="textarea" id="motiv" name="motiv" rows="4"></textarea>
+        <textarea class="textarea" id="motiv" name="motiv" rows="4" data-autogrow></textarea>
         <span class="hint" id="dialog-hint" />
       </div>
 
@@ -769,9 +864,67 @@ function deadline(expiresAt: string | null | undefined) {
     mod.addEventListener('change', sync)
     sync()
   })
+
+  /* --- susținerea ---------------------------------------------------------- */
+  const dSustinere = document.getElementById('dialog-sustinere') as HTMLDialogElement | null
+
+  document.querySelectorAll<HTMLButtonElement>('[data-sustinuta]').forEach((b) => {
+    b.addEventListener('click', () => {
+      const camp = document.getElementById('sustinere-id') as HTMLInputElement | null
+      const nume = document.getElementById('sustinere-nume')
+      if (camp) camp.value = b.dataset.sustinuta ?? ''
+      if (nume) nume.textContent = b.dataset.nume ?? 'studentul'
+      dSustinere?.showModal()
+      document.getElementById('sustinere-data')?.focus()
+    })
+  })
+
+  dSustinere
+    ?.querySelectorAll('[data-inchide-sustinere]')
+    .forEach((b) => b.addEventListener('click', () => dSustinere.close()))
+
+  /* --- alegerea studentului de invitat ------------------------------------
+   *
+   * Câmpul vizibil poartă numele, ca să poată fi căutat; formularul are nevoie
+   * de id, deci se traduce dintr-unul în altul. Dacă textul nu corespunde
+   * niciunei opțiuni, id-ul rămâne gol și `required` de pe el oprește
+   * trimiterea — deci un nume scris pe jumătate nu poate ajunge la server. */
+  const campNume = document.getElementById('student_nume') as HTMLInputElement | null
+  const campId = document.getElementById('student_id') as HTMLInputElement | null
+  const lista = document.getElementById('lista-invitabili')
+
+  if (campNume && campId && lista) {
+    const potrivire = () => {
+      const opt = [...lista.querySelectorAll<HTMLOptionElement>('option')].find(
+        (o) => o.value === campNume.value,
+      )
+      campId.value = opt?.dataset.id ?? ''
+      campNume.setAttribute('aria-invalid', campNume.value && !opt ? 'true' : 'false')
+    }
+
+    campNume.addEventListener('input', potrivire)
+    campNume.addEventListener('change', potrivire)
+    campNume.form?.addEventListener('reluat', potrivire)
+    potrivire()
+  }
 </script>
 
 <style>
+  /* Câmpurile își încep eticheta pe aceeași linie și își încheie controlul pe
+     aceeași linie; textul ajutător crește în jos, nu împinge vecinul. */
+  .invitatie__rand {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: var(--s-4);
+    align-items: start;
+  }
+
+  @media (max-width: 640px) {
+    .invitatie__rand {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+
   .taburi {
     display: flex;
     gap: var(--s-1);
@@ -808,7 +961,7 @@ function deadline(expiresAt: string | null | undefined) {
     padding: 1px 6px;
     border-radius: 999px;
     background: var(--surface-sunken);
-    font-size: 11px;
+    font-size: var(--t-xs);
     font-weight: 600;
     color: var(--ink-soft);
   }
@@ -878,20 +1031,6 @@ function deadline(expiresAt: string | null | undefined) {
     display: flex;
     gap: var(--s-2);
     flex-wrap: wrap;
-  }
-
-  .avatar {
-    display: grid;
-    place-items: center;
-    width: 34px;
-    height: 34px;
-    border-radius: 50%;
-    background: var(--surface-sunken);
-    border: 1px solid var(--border);
-    font-size: var(--t-xs);
-    font-weight: 600;
-    color: var(--ink-soft);
-    flex: none;
   }
 
   .select--compact {
@@ -991,8 +1130,8 @@ function deadline(expiresAt: string | null | undefined) {
     border-color: var(--ok);
   }
   .termen--in_progress .jalon__punct {
-    background: var(--red);
-    border-color: var(--red);
+    background: var(--info);
+    border-color: var(--info);
   }
 
   .jalon__corp {

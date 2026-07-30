@@ -1,0 +1,249 @@
+---
+import { recentEvents, unreadEvents } from '../lib/chat'
+import { timeAgo } from '../lib/repo'
+
+/**
+ * Ce s-a întâmplat cât ai fost plecat.
+ *
+ * Emailul era singurul canal prin care portalul anunța ceva. Cine nu își
+ * verifica inboxul — sau îl avea plin — nu afla că o cerere a fost aprobată, că
+ * a primit o propunere sau că i s-a programat o consultație, decât dacă
+ * deschidea din întâmplare ecranul potrivit.
+ *
+ * Evenimentele există deja, scrise în firele de discuție de fiecare decizie.
+ * Aici sunt doar adunate la un loc.
+ */
+
+interface Props {
+  /** Unde duce fiecare rând: firul de discuție, din perspectiva rolului. */
+  baseMesaje: string
+}
+
+const { baseMesaje } = Astro.props
+const u = Astro.locals.user!
+
+const [evenimente, necitite] = await Promise.all([recentEvents(u.id), unreadEvents(u.id)])
+
+const ETICHETE: Record<string, string> = {
+  request_approved: 'Cerere aprobată',
+  request_rejected: 'Cerere respinsă',
+  request_expired: 'Cerere expirată',
+  request_withdrawn: 'Cerere retrasă',
+  invitation_sent: 'Propunere de coordonare',
+  invitation_accepted: 'Propunere acceptată',
+  invitation_declined: 'Propunere refuzată',
+  consultation_scheduled: 'Consultație programată',
+  consultation_cancelled: 'Consultație anulată',
+}
+
+/**
+ * Unde duce o notificare.
+ *
+ * Toate duceau în firul de discuție, pentru că asta e tot ce știa un eveniment
+ * despre sine. Dar „Cerere aprobată” înseamnă o decizie cu un motiv scris, iar
+ * ea se citește în „Cererile mele”, nu în chat; „Consultație programată”
+ * înseamnă un interval din program.
+ *
+ * Subiectul e păstrat ca tip și id, nu ca adresă, tocmai pentru că răspunsul
+ * depinde de cine citește: același interval e pe două ecrane diferite pentru
+ * student și pentru coordonator. Când nu se știe, rămâne firul — care conține
+ * oricum evenimentul, scris în el la momentul deciziei.
+ */
+const eStudent = u.role === 'student'
+
+function destinatie(e: { subject_kind: string | null; subject_id: string | null; conversation_id: string }) {
+  const fir = `${baseMesaje}?conversatie=${e.conversation_id}`
+  switch (e.subject_kind) {
+    case 'request':
+      return eStudent
+        ? `/cererile-mele${e.subject_id ? `#cerere-${e.subject_id}` : ''}`
+        : `/profesor/studenti?sectiune=cereri${e.subject_id ? `#cerere-${e.subject_id}` : ''}`
+    /* Fără ancoră: propunerile se afișează doar cât sunt deschise, în capul
+       paginii. Una acceptată sau refuzată nu mai are rând, iar un fragment către
+       el ar fi o legătură care nu duce nicăieri. */
+    case 'invitation':
+      return eStudent ? '/cererile-mele' : '/profesor/studenti?sectiune=invitatii'
+    case 'slot':
+      return eStudent ? '/consultatii' : '/profesor/consultatii'
+    default:
+      return fir
+  }
+}
+---
+
+<details class="clopotel">
+  <summary aria-label={necitite > 0 ? `Notificări — ${necitite} necitite` : 'Notificări'}>
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true">
+      <path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9M13.7 21a2 2 0 0 1-3.4 0" />
+    </svg>
+    {necitite > 0 && <span class="clopotel__punct numeric">{necitite > 9 ? '9+' : necitite}</span>}
+  </summary>
+
+  <div class="clopotel__panou">
+    <p class="clopotel__titlu">Notificări</p>
+
+    {
+      evenimente.length === 0 ? (
+        <p class="clopotel__gol">
+          Nimic nou. Aici ajung deciziile, propunerile și consultațiile programate.
+        </p>
+      ) : (
+        <ul class="clopotel__lista">
+          {evenimente.map((e) => (
+            <li>
+              <a
+                class:list={['notificare', { 'is-necitit': !e.read_at }]}
+                href={destinatie(e)}
+              >
+                <span class="notificare__eticheta">
+                  {ETICHETE[e.event_type ?? ''] ?? 'Actualizare'}
+                </span>
+                <span class="notificare__corp">{e.body}</span>
+                <span class="notificare__jos">
+                  {e.peer_name} · <time datetime={e.created_at} data-relativ>{timeAgo(e.created_at)}</time>
+                </span>
+              </a>
+            </li>
+          ))}
+        </ul>
+      )
+    }
+  </div>
+</details>
+
+<style>
+  .clopotel {
+    position: relative;
+    flex: none;
+  }
+
+  .clopotel summary {
+    display: grid;
+    place-items: center;
+    position: relative;
+    width: var(--tap);
+    height: var(--tap);
+    border-radius: var(--r-md);
+    color: var(--ink-soft);
+    cursor: pointer;
+    list-style: none;
+    transition: background var(--fast) var(--ease);
+  }
+  .clopotel summary::-webkit-details-marker {
+    display: none;
+  }
+  .clopotel summary:hover {
+    background: var(--surface-sunken);
+    color: var(--ink);
+  }
+  .clopotel summary svg {
+    width: 19px;
+    height: 19px;
+  }
+
+  /* Punctul poartă numărul: „ai ceva” și „ai patru lucruri” cer reacții diferite. */
+  .clopotel__punct {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    min-width: 18px;
+    height: 18px;
+    padding: 1px 5px;
+    display: grid;
+    place-items: center;
+    border-radius: 999px;
+    background: var(--red);
+    color: #fff;
+    font-size: var(--t-xs);
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .clopotel__panou {
+    position: absolute;
+    top: calc(100% + var(--s-2));
+    right: 0;
+    z-index: var(--z-drawer);
+    width: min(360px, calc(100vw - var(--s-5) * 2));
+    max-height: 60vh;
+    overflow-y: auto;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--r-lg);
+    box-shadow: var(--shadow-overlay);
+    animation: clopotel-intra var(--base) var(--ease);
+  }
+
+  @keyframes clopotel-intra {
+    from {
+      opacity: 0;
+      transform: translateY(-6px);
+    }
+  }
+
+  .clopotel__titlu {
+    padding: var(--s-3) var(--s-4);
+    border-bottom: 1px solid var(--border);
+    font-size: var(--t-xs);
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--ink-muted);
+  }
+
+  .clopotel__gol {
+    padding: var(--s-5) var(--s-4);
+    font-size: var(--t-sm);
+    color: var(--ink-muted);
+    text-wrap: pretty;
+  }
+
+  .clopotel__lista {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  .notificare {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: var(--s-3) var(--s-4);
+    border-bottom: 1px solid var(--border);
+    color: var(--ink);
+    text-decoration: none;
+    transition: background var(--fast) var(--ease);
+  }
+  .notificare:hover {
+    background: var(--surface-sunken);
+    color: var(--ink);
+  }
+  .clopotel__lista li:last-child .notificare {
+    border-bottom: 0;
+  }
+
+  /* Necitit este un marcaj pe margine, nu o spălare a rândului cu roșu. */
+  .notificare.is-necitit {
+    box-shadow: inset 3px 0 0 var(--info);
+  }
+
+  .notificare__eticheta {
+    font-size: var(--t-xs);
+    font-weight: 700;
+    color: var(--ink-soft);
+  }
+
+  .notificare__corp {
+    font-size: var(--t-sm);
+    color: var(--ink-soft);
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  .notificare__jos {
+    font-size: var(--t-xs);
+    color: var(--ink-muted);
+  }
+</style>

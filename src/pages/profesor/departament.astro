@@ -1,6 +1,8 @@
 ---
 import Avatar from '../../components/Avatar.astro'
+import Metrica from '../../components/Metrica.astro'
 import ProfesorLayout from '../../layouts/ProfesorLayout.astro'
+import Taburi from '../../components/Taburi.astro'
 import { query, queryOne } from '../../lib/db'
 import { seatRequests } from '../../lib/lifecycle'
 import { STATUS_CLASS, STATUS_LABELS, formatDate, programLabel, timeAgo } from '../../lib/repo'
@@ -15,7 +17,12 @@ import { LEVEL_LABELS, currentYear } from '../../lib/years'
  * else in the portal.
  */
 
-const sectiune = Astro.url.searchParams.get('sectiune') ?? 'situatie'
+/* Un `?sectiune` necunoscut lăsa pagina cu bara de taburi, antetul și zero
+ * conținut: ambele gărzi erau false și nimic nu prelua. Orice valoare
+ * nerecunoscută cade pe secțiunea implicită. */
+const SECTIUNI = ['situatie', 'locuri'] as const
+const cerut = Astro.url.searchParams.get('sectiune') ?? ''
+const sectiune = (SECTIUNI as readonly string[]).includes(cerut) ? cerut : 'situatie'
 
 const teacherFilter = Astro.url.searchParams.get('coordonator') ?? ''
 const programFilter = Astro.url.searchParams.get('program') ?? ''
@@ -63,7 +70,14 @@ const totals = await queryOne<{
 }>(
   `SELECT
      (SELECT count(*)::int FROM users WHERE role = 'student') AS students,
-     (SELECT count(DISTINCT student_id)::int FROM requests WHERE academic_year_id = $1) AS with_request,
+     /* „A depus” însemna orice cerere din an, inclusiv una respinsă, expirată
+        sau retrasă — deci un student rămas fără coordonator era numărat printre
+        cei rezolvați, iar acest ecran anunța „Toți studenții au depus” în timp
+        ce celălalt ecran al aceluiași director arăta patru fără cerere. Se
+        numără doar cererile vii. */
+     (SELECT count(DISTINCT student_id)::int
+        FROM requests
+       WHERE academic_year_id = $1 AND status IN ('approved', 'pending')) AS with_request,
      count(*) FILTER (WHERE status = 'approved')::int AS approved,
      count(*) FILTER (WHERE status = 'pending')::int  AS pending,
      count(*) FILTER (WHERE status = 'rejected')::int AS rejected,
@@ -135,25 +149,16 @@ const sectiuni = [
   lede={`Situația întregii sesiuni ${year?.label ?? ''}: acoperire, încărcare pe coordonatori și alocarea locurilor.`}
   active="departament"
 >
-  <div slot="actiuni" class="row" style="gap:var(--s-2)">
+  <div slot="actiuni" class="row row--wrap" style="gap:var(--s-2)">
     <a class="btn btn--secondary btn--sm" href="/profesor/export-coordonari">Export coordonări</a>
     <a class="btn btn--ghost btn--sm" href={exportUrl}>Export cereri</a>
   </div>
 
-  <nav class="taburi" aria-label="Secțiuni">
-    {
-      sectiuni.map((s) => (
-        <a
-          href={`/profesor/departament?sectiune=${s.cheie}`}
-          class:list={['tab', { 'is-activ': sectiune === s.cheie }]}
-          aria-current={sectiune === s.cheie ? 'page' : undefined}
-        >
-          {s.text}
-          {s.contor !== null && s.contor > 0 && <span class="tab__contor numeric">{s.contor}</span>}
-        </a>
-      ))
-    }
-  </nav>
+  <Taburi
+    taburi={sectiuni.map((s) => ({ ...s, href: `/profesor/departament?sectiune=${s.cheie}` }))}
+    activ={sectiune}
+    eticheta="Secțiuni"
+  />
 
   {/* ---------------------------------------------------------- situație */}
   {
@@ -162,31 +167,42 @@ const sectiuni = [
         <section class="stack">
           <h2 class="section-title">Acoperire</h2>
           <div class="grid-auto">
-            <div class="metric">
-              <span class="metric__value numeric">{totals?.students ?? 0}</span>
-              <span class="metric__label">studenți în sesiune</span>
-            </div>
-            <div class:list={['metric', { 'metric--alert': unassigned > 0 }]}>
-              <span class="metric__value numeric">{unassigned}</span>
-              <span class="metric__label">fără cerere depusă</span>
-              <span class="metric__note">
-                {unassigned > 0 ? 'Nu au început procedura' : 'Toți studenții au depus'}
-              </span>
-            </div>
-            <div class="metric">
-              <span class="metric__value numeric">{totals?.pending ?? 0}</span>
-              <span class="metric__label">cereri în așteptare</span>
-              <span class="metric__note">
-                la {load.filter((t) => t.pending > 0).length} coordonatori
-              </span>
-            </div>
-            <div class="metric">
-              <span class="metric__value numeric">{totals?.approved ?? 0}</span>
-              <span class="metric__label">coordonări confirmate</span>
-              <span class="metric__note">
-                {totals?.expired ? `${totals.expired} cereri au expirat fără răspuns` : ''}
-              </span>
-            </div>
+            <Metrica valoare={totals?.students ?? 0} eticheta="studenți în sesiune" />
+            <Metrica
+              valoare={unassigned}
+              eticheta="fără cerere activă"
+              alerta={unassigned > 0}
+              nota={
+                (totals?.students ?? 0) === 0
+                  ? 'Niciun student înscris în sesiune'
+                  : unassigned > 0
+                    ? 'Fie nu au depus, fie cererea a fost respinsă'
+                    : 'Toți au o cerere în lucru sau aprobată'
+              }
+            />
+            {/* Respinsele și expirările nu mai dispar în „a depus”: sunt exact
+                studenții pe care directorul trebuie să îi caute. */}
+            <Metrica
+              valoare={(totals?.rejected ?? 0) + (totals?.expired ?? 0)}
+              eticheta="cereri respinse sau expirate"
+              nota={
+                (totals?.expired ?? 0) > 0
+                  ? `${totals?.expired} expirate fără răspuns`
+                  : 'toate cu motivul comunicat'
+              }
+            />
+            <Metrica
+              valoare={totals?.pending ?? 0}
+              eticheta="cereri în așteptare"
+              nota={`la ${load.filter((t) => t.pending > 0).length} coordonatori`}
+            />
+            <Metrica
+              valoare={totals?.approved ?? 0}
+              eticheta="coordonări confirmate"
+              nota={
+                totals?.expired ? `${totals.expired} cereri au expirat fără răspuns` : undefined
+              }
+            />
           </div>
         </section>
 
@@ -208,20 +224,20 @@ const sectiuni = [
         <section class="panel">
           <div class="panel__header">
             <h2 class="section-title">Încărcare pe coordonatori</h2>
-            <span class="muted" style="font-size:var(--t-sm)">
+            <span class="muted text-sm">
               {fullyBooked.length} din {load.length} au locurile ocupate
             </span>
           </div>
-          <div class="table-wrap">
+          <div class="table-wrap" tabindex="0" role="region" aria-label="Locurile alocate pe cadru didactic">
             <table class="table">
               <thead>
                 <tr>
-                  <th>Coordonator</th>
-                  <th>Licență</th>
-                  <th>Master</th>
-                  <th>Total</th>
-                  <th>În așteptare</th>
-                  <th>Teme nepreluate</th>
+                  <th scope="col">Coordonator</th>
+                  <th scope="col">Licență</th>
+                  <th scope="col">Master</th>
+                  <th scope="col">Total</th>
+                  <th scope="col">În așteptare</th>
+                  <th scope="col">Teme nepreluate</th>
                 </tr>
               </thead>
               <tbody>
@@ -236,7 +252,7 @@ const sectiuni = [
                     <td class="numeric">{t.bachelor_taken} / {t.bachelor_seats}</td>
                     <td class="numeric">{t.master_taken} / {t.master_seats}</td>
                     <td class="numeric">
-                      <span class:list={{ 'over-capacity': t.seats > 0 && t.taken >= t.seats }}>
+                      <span class:list={{ 'la-limita': t.seats > 0 && t.taken === t.seats, 'over-capacity': t.seats > 0 && t.taken > t.seats }}>
                         {t.taken} / {t.seats}
                       </span>
                     </td>
@@ -258,7 +274,7 @@ const sectiuni = [
         <section class="panel">
           <div class="panel__header">
             <h2 class="section-title">Cereri</h2>
-            <span class="muted" style="font-size:var(--t-sm)">{rows.length} afișate</span>
+            <span class="muted text-sm">{rows.length} afișate</span>
           </div>
 
           <form method="GET" class="panel__body row row--wrap" style="gap:var(--s-3);align-items:flex-end">
@@ -302,16 +318,16 @@ const sectiuni = [
               <p class="empty__text">Schimbă coordonatorul, programul sau starea.</p>
             </div>
           ) : (
-            <div class="table-wrap">
+            <div class="table-wrap" tabindex="0" role="region" aria-label="Cereri de locuri suplimentare">
               <table class="table">
                 <thead>
                   <tr>
-                    <th>Student</th>
-                    <th>Program</th>
-                    <th>Coordonator</th>
-                    <th>Titlul lucrării</th>
-                    <th>Stare</th>
-                    <th>Depusă</th>
+                    <th scope="col">Student</th>
+                    <th scope="col">Program</th>
+                    <th scope="col">Coordonator</th>
+                    <th scope="col">Titlul lucrării</th>
+                    <th scope="col">Stare</th>
+                    <th scope="col">Depusă</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -320,7 +336,7 @@ const sectiuni = [
                       <td>
                         <div class="stack stack--tight" style="gap:0">
                           <strong>{r.student_name}</strong>
-                          <span class="muted" style="font-size:var(--t-xs)">{r.student_number}</span>
+                          <span class="muted text-xs">{r.student_number}</span>
                         </div>
                       </td>
                       <td>
@@ -350,7 +366,7 @@ const sectiuni = [
         <section class="panel">
           <div class="panel__header">
             <h2 class="section-title">Cereri de locuri suplimentare</h2>
-            <span class="muted" style="font-size:var(--t-sm)">
+            <span class="muted text-sm">
               {locuriInAsteptare.length} în așteptare
             </span>
           </div>
@@ -369,11 +385,11 @@ const sectiuni = [
                 <li>
                   <div class="row row--between row--wrap" style="gap:var(--s-2)">
                     <strong>{r.teacher_name}</strong>
-                    <span class="muted" style="font-size:var(--t-xs)">
+                    <span class="muted text-xs">
                       cerută {timeAgo(r.created_at)}
                     </span>
                   </div>
-                  <p style="font-size:var(--t-sm)">
+                  <p class="text-sm">
                     Solicită <strong>{r.extra_seats}</strong> locuri la{' '}
                     {LEVEL_LABELS[r.level].toLowerCase()}.
                   </p>
@@ -404,7 +420,7 @@ const sectiuni = [
         <section class="panel">
           <div class="panel__header">
             <h2 class="section-title">Alocarea locurilor</h2>
-            <span class="muted" style="font-size:var(--t-sm)">{year?.label}</span>
+            <span class="muted text-sm">{year?.label}</span>
           </div>
 
           <p class="panel__body hint">
@@ -426,15 +442,15 @@ const sectiuni = [
             ))
           }
 
-          <div class="table-wrap">
+          <div class="table-wrap" tabindex="0" role="region" aria-label="Cererile de coordonare din departament">
             <table class="table">
               <thead>
                 <tr>
-                  <th>Coordonator</th>
-                  <th>Ocupate</th>
-                  <th>Locuri licență</th>
-                  <th>Locuri master</th>
-                  <th><span class="visually-hidden">Salvează</span></th>
+                  <th scope="col">Coordonator</th>
+                  <th scope="col">Ocupate</th>
+                  <th scope="col">Locuri licență</th>
+                  <th scope="col">Locuri master</th>
+                  <th scope="col"><span class="visually-hidden">Salvează</span></th>
                 </tr>
               </thead>
               <tbody>
@@ -447,7 +463,7 @@ const sectiuni = [
                       </div>
                     </td>
                     <td class="numeric">
-                      <span class:list={{ 'over-capacity': t.seats > 0 && t.taken >= t.seats }}>
+                      <span class:list={{ 'la-limita': t.seats > 0 && t.taken === t.seats, 'over-capacity': t.seats > 0 && t.taken > t.seats }}>
                         {t.taken} / {t.seats}
                       </span>
                     </td>
@@ -498,15 +514,15 @@ const sectiuni = [
             <div class="panel__header">
               <h2 class="section-title">Decizii anterioare</h2>
             </div>
-            <div class="table-wrap">
+            <div class="table-wrap" tabindex="0" role="region" aria-label="Situația pe programe de studiu">
               <table class="table">
                 <thead>
                   <tr>
-                    <th>Coordonator</th>
-                    <th>Cerea</th>
-                    <th>Decizie</th>
-                    <th>Data</th>
-                    <th>Notă</th>
+                    <th scope="col">Coordonator</th>
+                    <th scope="col">Cerea</th>
+                    <th scope="col">Decizie</th>
+                    <th scope="col">Data</th>
+                    <th scope="col">Notă</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -577,39 +593,13 @@ const sectiuni = [
     padding: 1px 6px;
     border-radius: 999px;
     background: var(--surface-sunken);
-    font-size: 11px;
+    font-size: var(--t-xs);
     font-weight: 600;
     color: var(--ink-soft);
   }
   .tab.is-activ .tab__contor {
     background: var(--red-tint);
     color: var(--red);
-  }
-
-  .metric {
-    display: flex;
-    flex-direction: column;
-    gap: var(--s-1);
-    padding: var(--s-4);
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: var(--r-lg);
-  }
-  .metric--alert {
-    border-color: var(--warn);
-  }
-  .metric__value {
-    font-size: var(--t-3xl);
-    font-weight: 600;
-    line-height: 1.1;
-  }
-  .metric__label {
-    font-size: var(--t-sm);
-    color: var(--ink-soft);
-  }
-  .metric__note {
-    font-size: var(--t-xs);
-    color: var(--ink-muted);
   }
 
   .alert {
@@ -621,6 +611,14 @@ const sectiuni = [
   }
   .alert a {
     color: inherit;
+  }
+
+  /* Exact plin nu este o problemă — este planul îndeplinit. Roșul era pus pe
+     `taken >= seats`, deci un coordonator cu 8 din 8 arăta ca o depășire, pe
+     același ecran care mai sus scria că totul e în regulă. */
+  .la-limita {
+    color: var(--warn);
+    font-weight: 600;
   }
 
   .over-capacity {

@@ -33,7 +33,7 @@ export interface RequestRow {
   title_en: string | null
   objectives: string
   motivation: string | null
-  status: 'draft' | 'pending' | 'approved' | 'rejected' | 'expired' | 'withdrawn'
+  status: 'draft' | 'pending' | 'approved' | 'rejected' | 'expired' | 'withdrawn' | 'defended'
   rejection_reason: string | null
   decision_note: string | null
   expires_at: string | null
@@ -80,6 +80,7 @@ export const STATUS_LABELS: Record<string, string> = {
   rejected: 'Respinsă',
   expired: 'Expirată',
   withdrawn: 'Retrasă',
+  defended: 'Susținută',
 }
 
 export const STATUS_CLASS: Record<string, string> = {
@@ -87,8 +88,10 @@ export const STATUS_CLASS: Record<string, string> = {
   pending: 'badge--asteptare',
   approved: 'badge--aprobata',
   rejected: 'badge--respinsa',
-  expired: 'badge--respinsa',
+  // Expirarea nu este un refuz: nimeni nu a spus nu, doar a trecut termenul.
+  expired: 'badge--ciorna',
   withdrawn: 'badge--ciorna',
+  defended: 'badge--aprobata',
 }
 
 export const INVITATION_LABELS: Record<string, string> = {
@@ -102,6 +105,45 @@ export const MILESTONE_LABELS: Record<string, string> = {
   planned: 'Planificat',
   in_progress: 'În lucru',
   done: 'Finalizat',
+}
+
+/**
+ * Starea reală a unui termen, nu doar cea salvată.
+ *
+ * În bază există trei stări, niciuna dintre ele „întârziat”, așa că un termen
+ * ratat arăta identic cu unul viitor: pe 29 iulie, „Predarea formei finale ·
+ * 14 iulie” scria în continuare „Planificat”, iar pagina de start anunța drept
+ * „următorul termen” unul trecut de cinci luni.
+ *
+ * Întârzierea nu se scrie în bază — se citește din calendar de fiecare dată,
+ * pentru că altfel ar trebui ținută la zi de cineva.
+ */
+export type StareTermen = 'planned' | 'in_progress' | 'done' | 'overdue'
+
+export function milestoneState(
+  status: string,
+  dueOn: string | null | undefined,
+): StareTermen {
+  if (status === 'done') return 'done'
+  if (!dueOn) return status === 'in_progress' ? 'in_progress' : 'planned'
+
+  const azi = new Date()
+  azi.setHours(0, 0, 0, 0)
+  return new Date(dueOn) < azi ? 'overdue' : status === 'in_progress' ? 'in_progress' : 'planned'
+}
+
+export const MILESTONE_STATE_LABELS: Record<StareTermen, string> = {
+  planned: 'Planificat',
+  in_progress: 'În lucru',
+  done: 'Finalizat',
+  overdue: 'Termen depășit',
+}
+
+export const MILESTONE_STATE_CLASS: Record<StareTermen, string> = {
+  planned: 'badge--ciorna',
+  in_progress: 'badge--in-lucru',
+  done: 'badge--aprobata',
+  overdue: 'badge--respinsa',
 }
 
 export function programLabel(program: string | null): string {
@@ -367,7 +409,7 @@ export function studentMilestones(studentId: string) {
     `SELECT m.id, m.request_id, m.title, m.description, m.due_on, m.status, m.position
        FROM milestones m
        JOIN requests r ON r.id = m.request_id
-      WHERE r.student_id = $1 AND r.status = 'approved'
+      WHERE r.student_id = $1 AND r.status IN ('approved', 'defended')
       ORDER BY m.position, m.due_on NULLS LAST`,
     [studentId],
   )
@@ -577,13 +619,20 @@ export interface ArchiveRow {
  */
 export function archiveRows(yearId: string): Promise<ArchiveRow[]> {
   return query<ArchiveRow>(
+    /* Data susținerii, nu data aprobării.
+     *
+     * Aici se scria `decided_at`, adică ziua în care coordonatorul a acceptat
+     * cererea — o lucrare aprobată în martie și susținută în iulie apărea în
+     * arhivă cu martie. Sunt două evenimente la câteva luni distanță, iar arhiva
+     * unei facultăți este exact locul unde diferența contează. Când susținerea nu
+     * e încă înregistrată, coloana rămâne goală în loc să mintă. */
     `SELECT 'portal'::text AS source, s.name AS student_name, s.student_number,
             s.specialization AS programme, s.program AS level, s.study_language AS language,
-            t.name AS teacher_name, r.title_ro, r.decided_at::date::text AS defended_on
+            t.name AS teacher_name, r.title_ro, r.defended_on::text AS defended_on
        FROM requests r
        JOIN users s ON s.id = r.student_id
        JOIN users t ON t.id = r.teacher_id
-      WHERE r.status = 'approved'
+      WHERE r.status IN ('approved', 'defended')
         AND COALESCE(r.graduation_year_id, r.academic_year_id) = $1
       UNION ALL
      SELECT 'import'::text, a.student_name, a.student_number, a.programme, a.level, a.language,
@@ -609,6 +658,70 @@ export function formatDate(iso: string | null, withTime = false): string {
   return withTime ? `${base}, ${formatTime(iso)}` : base
 }
 
+/**
+ * Luni, ca reper de grupare.
+ *
+ * Un program de consultații se citește pe săptămâni — „ce am săptămâna asta” —
+ * nu pe treizeci de rânduri la rând. Săptămâna începe luni, ca în calendarul
+ * românesc, iar `getDay()` pune duminica la zero, deci ea se împinge la coada
+ * săptămânii care se încheie.
+ */
+export function startOfWeek(iso: string): string {
+  const d = new Date(iso)
+  d.setHours(0, 0, 0, 0)
+  const zi = d.getDay()
+  d.setDate(d.getDate() - (zi === 0 ? 6 : zi - 1))
+  return d.toISOString().slice(0, 10)
+}
+
+/**
+ * Cum se numește o săptămână, față de cea în care ești.
+ *
+ * „Săptămâna 4–10 august” este exact, dar „săptămâna aceasta” este ce caută
+ * ochiul, iar cele două nu se exclud: prima rămâne ca subtitlu.
+ */
+export function weekLabel(mondayIso: string, todayIso = new Date().toISOString().slice(0, 10)) {
+  const luni = new Date(mondayIso + 'T00:00:00')
+  const duminica = new Date(luni)
+  duminica.setDate(duminica.getDate() + 6)
+
+  const aceasta = startOfWeek(todayIso)
+  const diferenta = Math.round(
+    (luni.getTime() - new Date(aceasta + 'T00:00:00').getTime()) / (7 * 86_400_000),
+  )
+
+  const nume =
+    diferenta === 0
+      ? 'Săptămâna aceasta'
+      : diferenta === 1
+        ? 'Săptămâna viitoare'
+        : diferenta === -1
+          ? 'Săptămâna trecută'
+          : null
+
+  const interval =
+    luni.getMonth() === duminica.getMonth()
+      ? `${luni.getDate()}–${duminica.getDate()} ${MONTHS[luni.getMonth()]}`
+      : `${luni.getDate()} ${MONTHS[luni.getMonth()]} – ${duminica.getDate()} ${MONTHS[duminica.getMonth()]}`
+
+  return { nume: nume ?? interval, interval: nume ? interval : null }
+}
+
+/**
+ * „august 2026”, pentru capul unui grup de fișiere.
+ *
+ * Fișierele unei coordonări se adună o dată pe lună — un capitol, un set de date
+ * — deci luna este singura despărțire naturală într-o listă care crește. Anul se
+ * scrie doar când nu e cel curent, altfel se repetă în fiecare cap de grup.
+ */
+export function monthLabel(iso: string, todayIso = new Date().toISOString()): string {
+  const d = new Date(iso)
+  const anCurent = new Date(todayIso).getFullYear()
+  return d.getFullYear() === anCurent
+    ? MONTHS[d.getMonth()]
+    : `${MONTHS[d.getMonth()]} ${d.getFullYear()}`
+}
+
 export function formatTime(iso: string): string {
   const d = new Date(iso)
   return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
@@ -628,4 +741,25 @@ export function timeAgo(iso: string | null): string {
 
 export function shortMonth(iso: string): string {
   return MONTHS[new Date(iso).getMonth()].slice(0, 3)
+}
+
+/**
+ * Are studentul o cerere aprobată în sesiunea curentă?
+ *
+ * Bara de navigație o folosește ca să spună „Lucrarea mea” în loc de „Cererile
+ * mele”: după ce coordonarea e confirmată, ecranul nu mai este despre cereri.
+ */
+export async function hasApprovedRequest(studentId: string): Promise<boolean> {
+  const row = await queryOne<{ exista: boolean }>(
+    `SELECT EXISTS (
+       SELECT 1 FROM requests
+        WHERE student_id = $1
+          -- O lucrare susținută rămâne lucrarea studentului: nu a pierdut-o
+          -- terminând-o, deci bara spune în continuare „Lucrarea mea”.
+          AND status IN ('approved', 'defended')
+          AND academic_year_id = (SELECT id FROM academic_years WHERE is_current)
+     ) AS exista`,
+    [studentId],
+  )
+  return row?.exista ?? false
 }

@@ -1,0 +1,79 @@
+---
+import { formatDate, formatTime, type Slot } from '../lib/repo'
+
+/**
+ * Un interval de consultație, ca rând de tabel.
+ *
+ * Rândul se scrie o dată și se folosește în două locuri: în săptămâna care
+ * urmează și în grupul celor încheiate. Cât era scris pe loc, a doua listă ar fi
+ * însemnat aceleași cincizeci de linii încă o dată — adică două rânduri care
+ * încep imediat să se abată unul de la altul.
+ */
+interface Props {
+  /* Nu `slot`: acela este un atribut rezervat în Astro, iar tipul propriu al
+     componentei ajunge intersectat cu `string`. */
+  interval: Slot
+  /** Un interval încheiat nu se mai anulează și nu mai cere atenție. */
+  incheiat?: boolean
+}
+
+const { interval: s, incheiat = false } = Astro.props
+---
+
+<tr class:list={{ 'is-incheiat': incheiat }}>
+  <td>{formatDate(s.starts_at)}</td>
+  <td class="numeric">{formatTime(s.starts_at)}–{formatTime(s.ends_at)}</td>
+  <td>
+    <div class="stack stack--tight" style="gap:0">
+      <span>{s.mode === 'online' ? 'Online' : (s.location ?? 'Cabinet')}</span>
+      {
+        s.meeting_url && !incheiat && (
+          <a href={s.meeting_url} class="muted text-xs" target="_blank" rel="noopener">
+            link întâlnire
+          </a>
+        )
+      }
+      {s.note && <span class="muted text-xs">{s.note}</span>}
+    </div>
+  </td>
+  <td>
+    {
+      s.is_cancelled ? (
+        <span class="badge badge--neutru">Anulat</span>
+      ) : s.booked > 0 ? (
+        <div class="stack stack--tight" style="gap:2px;align-items:flex-start">
+          <span class:list={['badge', incheiat ? 'badge--neutru' : 'badge--aprobata']}>
+            {s.capacity > 1 ? `${s.booked} din ${s.capacity} locuri` : 'Rezervat'}
+          </span>
+          <span class="muted text-xs">{s.student_names.join(', ')}</span>
+        </div>
+      ) : s.invited_name ? (
+        <span class="badge badge--asteptare">rezervat pentru {s.invited_name}</span>
+      ) : incheiat ? (
+        <span class="muted">Nimeni nu a venit</span>
+      ) : s.capacity > 1 ? (
+        <span class="muted">{s.capacity} locuri libere</span>
+      ) : (
+        <span class="muted">Liber</span>
+      )
+    }
+  </td>
+  <td style="text-align:right">
+    {
+      !s.is_cancelled && !incheiat && (
+        <form method="POST" action="/api/sloturi">
+          <input type="hidden" name="actiune" value="anuleaza" />
+          <input type="hidden" name="slot_id" value={s.id} />
+          <button class="btn btn--ghost btn--sm" type="submit">Anulează</button>
+        </form>
+      )
+    }
+  </td>
+</tr>
+
+<style>
+  /* Ce s-a încheiat rămâne lizibil, dar nu mai concurează cu ce urmează. */
+  .is-incheiat td {
+    color: var(--ink-muted);
+  }
+</style>

@@ -1,7 +1,7 @@
 import type { APIRoute } from 'astro'
 import { execute } from '../../lib/db'
 import { saveFile } from '../../lib/files'
-import { redirect, redirectWithNotice } from '../../lib/http'
+import { redirect, redirectWithNotice, sessionExpired } from '../../lib/http'
 
 /**
  * Profile settings, for every role.
@@ -20,7 +20,7 @@ const IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif']
 
 export const POST: APIRoute = async ({ request, locals }) => {
   const u = locals.user
-  if (!u) return new Response('Neautentificat', { status: 401 })
+  if (!u) return sessionExpired()
 
   const home = u.role === 'student' ? '/contul-meu' : '/profesor/arhiva'
   const form = await request.formData()

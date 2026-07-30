@@ -46,18 +46,18 @@ const DOCS = [
       <button class="tab is-activ" role="tab" aria-selected="true" aria-controls="p-redactare" id="t-redactare">
         Redactare
       </button>
-      <button class="tab" role="tab" aria-selected="false" aria-controls="p-ia" id="t-ia">
+      <button class="tab" role="tab" aria-selected="false" tabindex="-1" aria-controls="p-ia" id="t-ia">
         Regulament IA
       </button>
-      <button class="tab" role="tab" aria-selected="false" aria-controls="p-antiplagiat" id="t-antiplagiat">
+      <button class="tab" role="tab" aria-selected="false" tabindex="-1" aria-controls="p-antiplagiat" id="t-antiplagiat">
         Antiplagiat
       </button>
-      <button class="tab" role="tab" aria-selected="false" aria-controls="p-documente" id="t-documente">
+      <button class="tab" role="tab" aria-selected="false" tabindex="-1" aria-controls="p-documente" id="t-documente">
         Documente
       </button>
     </div>
 
-    <section class="panel" role="tabpanel" id="p-redactare" aria-labelledby="t-redactare">
+    <section class="panel" role="tabpanel" id="p-redactare" aria-labelledby="t-redactare" tabindex="-1">
       <div class="panel__body prose stack">
         <h2 class="section-title">Structura lucrării</h2>
         <ol class="lista-num">
@@ -77,14 +77,14 @@ const DOCS = [
           <div><dt>Citare</dt><dd>APA, ediția a 7-a</dd></div>
         </dl>
 
-        <p class="muted" style="font-size:var(--t-sm)">
+        <p class="muted text-sm">
           Varianta completă, tipăribilă:
           <a href="/documente/ghid-redactare.html">Ghid de redactare</a>.
         </p>
       </div>
     </section>
 
-    <section class="panel" role="tabpanel" id="p-ia" aria-labelledby="t-ia" hidden>
+    <section class="panel" role="tabpanel" id="p-ia" aria-labelledby="t-ia" tabindex="-1" hidden>
       <div class="panel__body prose stack">
         <h2 class="section-title">Utilizarea instrumentelor de inteligență artificială</h2>
         <p>
@@ -122,7 +122,7 @@ const DOCS = [
       </div>
     </section>
 
-    <section class="panel" role="tabpanel" id="p-antiplagiat" aria-labelledby="t-antiplagiat" hidden>
+    <section class="panel" role="tabpanel" id="p-antiplagiat" aria-labelledby="t-antiplagiat" tabindex="-1" hidden>
       <div class="panel__body prose stack">
         <h2 class="section-title">Procedura antiplagiat</h2>
         <p>
@@ -130,11 +130,17 @@ const DOCS = [
           decide dacă lucrarea poate fi susținută.
         </p>
 
+        {/* Ghidul descria o încărcare care nu există în portal: pasul întâi
+            trimitea studentul să caute un buton inexistent. Se descrie procesul
+            real, cu legătura chiar lângă instrucțiune. */}
         <ol class="lista-num">
-          <li>Încarci forma finală în portal, în format PDF, până la termenul din calendar.</li>
-          <li>Lucrarea este trimisă automat spre verificare.</li>
-          <li>Coordonatorul primește raportul și îl analizează împreună cu tine.</li>
-          <li>Dacă sunt necesare corecturi, primești termen pentru o nouă încărcare.</li>
+          <li>
+            Trimiți forma finală în format PDF coordonatorului, prin{' '}
+            <a class="link" href="/mesaje">Mesaje</a>, până la termenul din calendar.
+          </li>
+          <li>Coordonatorul o încarcă în platforma antiplagiat a universității.</li>
+          <li>Raportul ajunge la coordonator, care îl analizează împreună cu tine.</li>
+          <li>Dacă sunt necesare corecturi, primești un termen nou și trimiți din nou fișierul.</li>
         </ol>
 
         <h3 class="section-title" style="font-size:var(--t-md)">Ce contează în raport</h3>
@@ -154,7 +160,7 @@ const DOCS = [
       </div>
     </section>
 
-    <section class="panel" role="tabpanel" id="p-documente" aria-labelledby="t-documente" hidden>
+    <section class="panel" role="tabpanel" id="p-documente" aria-labelledby="t-documente" tabindex="-1" hidden>
       <div class="panel__body stack">
         <h2 class="section-title">Documente</h2>
         <ul class="documente">
@@ -196,32 +202,63 @@ const DOCS = [
   const tabs = [...document.querySelectorAll<HTMLButtonElement>('[role="tab"]')]
   const panels = tabs.map((t) => document.getElementById(t.getAttribute('aria-controls')!)!)
 
-  function showTab(index: number) {
+  /**
+   * Schimbarea filei, cu sau fără intrare în istoric.
+   *
+   * Era `replaceState` mereu: patru file citite pe rând nu lăsau nicio urmă, iar
+   * Înapoi ducea afară din ghid, nu la fila anterioară. Cine ajungea la
+   * „Antiplagiat” din regulament și voia să se întoarcă pierdea pagina.
+   *
+   * Un clic sau o săgeată este o navigare și intră în istoric; sincronizarea de
+   * la încărcare sau de la Înapoi doar reflectă starea, deci nu.
+   */
+  function showTab(index: number, istoric: 'push' | 'replace' | 'niciun' = 'replace') {
     tabs.forEach((t, i) => {
       const active = i === index
       t.classList.toggle('is-activ', active)
       t.setAttribute('aria-selected', String(active))
+      /* Un tablist are un singur opritor de tabulare: săgețile trec între file,
+         Tab iese din grup. Fără asta, patru file însemnau patru apăsări de Tab
+         înainte de a ajunge la conținut. */
+      t.setAttribute('tabindex', active ? '0' : '-1')
       panels[i].hidden = !active
     })
-    history.replaceState({}, '', `#${tabs[index].id.replace('t-', '')}`)
+    if (istoric === 'niciun') return
+    const adresa = `#${tabs[index].id.replace('t-', '')}`
+    if (istoric === 'push') history.pushState({}, '', adresa)
+    else history.replaceState({}, '', adresa)
   }
 
   tabs.forEach((t, i) => {
-    t.addEventListener('click', () => showTab(i))
+    t.addEventListener('click', () => showTab(i, 'push'))
     // Săgețile stânga/dreapta trec între file, cum se așteaptă la un tablist.
     t.addEventListener('keydown', (e) => {
       if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return
       e.preventDefault()
       const next = (i + (e.key === 'ArrowRight' ? 1 : tabs.length - 1)) % tabs.length
       tabs[next].focus()
-      showTab(next)
+      showTab(next, 'push')
     })
   })
 
+  function dinAdresa(avertizeaza: boolean) {
+    const anchor = location.hash.replace('#', '')
+    if (!anchor) {
+      showTab(0, 'niciun')
+      return
+    }
+    const fila = tabs.findIndex((t) => t.id === `t-${anchor}`)
+    if (fila >= 0) showTab(fila, 'niciun')
+    // O ancoră care nu duce nicăieri lăsa pagina pe prima filă, fără niciun
+    // semn — așa a trăit `#formulare` până acum, deși fila se numește altfel.
+    else if (avertizeaza) {
+      console.warn(`[ghid] nu există fila „${anchor}”; linkul care trimite aici e vechi.`)
+    }
+  }
+
   // Linkurile din alte pagini (/ghid#antiplagiat) deschid fila potrivită.
-  const anchor = location.hash.replace('#', '')
-  const initialTab = tabs.findIndex((t) => t.id === `t-${anchor}`)
-  if (initialTab >= 0) showTab(initialTab)
+  dinAdresa(true)
+  window.addEventListener('popstate', () => dinAdresa(false))
 </script>
 
 <style>
@@ -347,7 +384,7 @@ const DOCS = [
   }
 
   .document__tip {
-    font-size: 10px;
+    font-size: var(--t-xs);
     font-weight: 600;
     letter-spacing: 0.04em;
     text-transform: uppercase;

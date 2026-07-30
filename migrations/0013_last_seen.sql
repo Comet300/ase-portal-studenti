@@ -1,0 +1,13 @@
+-- Când a fost cineva ultima dată în portal.
+--
+-- Un student trimite un capitol și așteaptă. Nu are cum să știe dacă
+-- coordonatorul e în portal chiar acum — deci fie mai scrie „ați văzut?”, fie
+-- așteaptă două zile degeaba. Coordonatorul, la fel, când amână un răspuns pentru
+-- „mai târziu”: nu are cum să vadă dacă studentul mai e acolo.
+--
+-- Se păstrează un singur moment, nu un istoric: nu se poate reconstitui din el
+-- când a intrat cineva și cât a stat, doar dacă e prin apropiere acum. Se vede
+-- exclusiv între cei doi dintr-o conversație — deja legați printr-o coordonare —
+-- și scris gros: „acum”, „acum câteva minute”, „astăzi”. Nota de informare o
+-- spune, ca peste tot în portalul acesta.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS last_seen_at timestamptz;

@@ -1,7 +1,7 @@
 import type { APIRoute } from 'astro'
 import { SESSION_COOKIE, createSession, DEMO_MODE } from '../../lib/auth'
 import { queryOne } from '../../lib/db'
-import { redirect } from '../../lib/http'
+import { deadEnd, redirect } from '../../lib/http'
 
 /**
  * Intrare fără email pentru conturile demonstrative.
@@ -13,7 +13,7 @@ import { redirect } from '../../lib/http'
  */
 export const POST: APIRoute = async ({ request, cookies, url }) => {
   if (!DEMO_MODE) {
-    return new Response('Pagina nu a fost găsită', { status: 404 })
+    return deadEnd(404, 'Pagina nu a fost găsită', 'Adresa aceasta nu duce nicăieri în portal.')
   }
 
   const date = await request.formData()

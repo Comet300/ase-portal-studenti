@@ -1,41 +1,62 @@
 ---
 import BaseLayout from './BaseLayout.astro'
 import Avatar from '../components/Avatar.astro'
+import Clopotel from '../components/Clopotel.astro'
+import { ECRANE } from '../lib/navigare'
 import { currentYearLabel } from '../lib/years'
+import { hasApprovedRequest } from '../lib/repo'
 
 interface Props {
   title: string
+  /** Titlul din bara browserului, când cel din pagină nu e bun de semn de carte. */
+  docTitle?: string
   description?: string
   active?: string
 }
 
-const { title, description, active } = Astro.props
+const { title, docTitle, description, active } = Astro.props
 const u = Astro.locals.user
 const sesiune = await currentYearLabel()
 
-// Arhiva și coordonările sunt publice pentru oricine autentificat, dar nu au ce
-// căuta în bara unui vizitator care nici nu le poate deschide.
+const areLucrare = u?.role === 'student' && (await hasApprovedRequest(u.id))
+
+/* Un vizitator primea în bară patru legături care îl trimiteau direct în ecranul
+ * de autentificare — inclusiv „Cererile Mele”, care pentru el nu înseamnă nimic.
+ * Tot ce cere sesiune stă acum într-un singur loc, în spatele lui `u`.
+ *
+ * Iar odată ce cererea e aprobată, pagina nu mai este despre cereri: este despre
+ * lucrare, și se numește așa. */
 const linkuri = [
-  { href: '/', text: 'Acasă', cheie: 'acasa' },
-  { href: '/coordonatori', text: 'Coordonatori', cheie: 'coordonatori' },
-  { href: '/cererile-mele', text: 'Cererile Mele', cheie: 'cereri' },
-  { href: '/mesaje', text: 'Mesaje', cheie: 'mesaje' },
-  { href: '/consultatii', text: 'Consultații', cheie: 'consultatii' },
+  { href: '/', text: ECRANE['/'], cheie: 'acasa' },
+  { href: '/coordonatori', text: ECRANE['/coordonatori'], cheie: 'coordonatori' },
   ...(u
     ? [
-        { href: '/coordonari', text: 'Coordonări', cheie: 'coordonari' },
-        { href: '/arhiva', text: 'Arhivă', cheie: 'arhiva' },
+        {
+          href: '/cererile-mele',
+          text: areLucrare ? 'Lucrarea mea' : ECRANE['/cererile-mele'],
+          cheie: 'cereri',
+        },
+        { href: '/mesaje', text: ECRANE['/mesaje'], cheie: 'mesaje' },
+        { href: '/consultatii', text: ECRANE['/consultatii'], cheie: 'consultatii' },
+        { href: '/arhiva', text: ECRANE['/arhiva'], cheie: 'arhiva' },
       ]
     : []),
-  { href: '/ghid', text: 'Ghid', cheie: 'ghid' },
+  { href: '/ghid', text: ECRANE['/ghid'], cheie: 'ghid' },
 ]
 
-// Shown only in the mobile menu: on a phone the avatar is easy to miss, and it
-// is the only route to signing out.
-const linkCont = { href: '/contul-meu', text: 'Contul meu', cheie: 'cont' }
+/* Doar în meniul de telefon: pe ecran mic avatarul se pierde ușor, iar el este
+ * singurul drum către cont și deconectare. Butonul „Zona cadrelor didactice” nu
+ * încape în bară alături de marcă și de meniu — un cadru didactic care deschidea
+ * o pagină de student pe telefon împingea antetul cu 89px în afara ecranului. */
+const linkuriCont = [
+  ...(u && u.role !== 'student'
+    ? [{ href: '/profesor', text: 'Zona cadrelor didactice', cheie: 'profesor' }]
+    : []),
+  { href: '/contul-meu', text: ECRANE['/contul-meu'], cheie: 'cont' },
+]
 ---
 
-<BaseLayout title={title} description={description}>
+<BaseLayout title={title} docTitle={docTitle} description={description}>
   <header class="topbar">
     <div class="topbar__inner container">
       <a href="/" class="brand">
@@ -49,7 +70,11 @@ const linkCont = { href: '/contul-meu', text: 'Contul meu', cheie: 'cont' }
       <nav class="nav" aria-label="Navigație principală">
         {
           linkuri.map((l) => (
-            <a href={l.href} class:list={['nav__link', { 'is-active': active === l.cheie }]}>
+            <a
+              href={l.href}
+              class:list={['nav__link', { 'is-active': active === l.cheie }]}
+              aria-current={active === l.cheie ? 'page' : undefined}
+            >
               {l.text}
             </a>
           ))
@@ -65,11 +90,40 @@ const linkCont = { href: '/contul-meu', text: 'Contul meu', cheie: 'cont' }
                   Zona cadrelor didactice
                 </a>
               )}
-              <Avatar
-                name={u.name}
-                src={u.avatar_path}
-                href={u.role === 'student' ? '/contul-meu' : '/profesor/arhiva'}
-              />
+              <Clopotel baseMesaje="/mesaje" />
+
+              {/* Avatarul era un link de 34px, fără nume și fără etichetă, iar
+                  deconectarea nu exista nicăieri pe desktop: se ajungea la ea
+                  doar prin pagina contului. Aceeași mecanică de `<details>` ca
+                  la selectorul de an — fără JavaScript. */}
+              <details class="cont">
+                <summary class="cont__buton" aria-label={`Meniul contului, ${u.name}`}>
+                  <Avatar name={u.name} src={u.avatar_path} />
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                    <path d="M6 9l6 6 6-6" />
+                  </svg>
+                </summary>
+
+                <div class="cont__panou">
+                  <p class="cont__cine">
+                    <strong>{u.name}</strong>
+                    <small>{u.email}</small>
+                  </p>
+                  {/* Ctrl+K nu se descoperă singur, iar bara de sus nu are loc
+                      pentru încă un buton: intră în meniul contului, unde se
+                      caută oricum lucrurile care nu sunt navigație. */}
+                  <button class="cont__optiune" type="button" data-paleta>
+                    Mergi la… <kbd class="cont__scurtatura">⌘K</kbd>
+                  </button>
+                  <a class="cont__optiune" href="/contul-meu">Contul meu</a>
+                  <a class="cont__optiune" href={`/profil/${u.id}`}>Profilul public</a>
+                  <form method="POST" action="/api/deconectare">
+                    <button class="cont__optiune cont__optiune--iesire" type="submit">
+                      Deconectare
+                    </button>
+                  </form>
+                </div>
+              </details>
             </>
           ) : (
             <a href="/autentificare" class="btn btn--primary btn--sm">
@@ -87,12 +141,23 @@ const linkCont = { href: '/contul-meu', text: 'Contul meu', cheie: 'cont' }
 
     <nav class="meniu-mobil" id="meniu-mobil" aria-label="Navigație mobilă" hidden>
       {
-        [...linkuri, ...(u ? [linkCont] : [])].map((l) => (
-          <a href={l.href} class:list={['meniu-mobil__link', { 'is-active': active === l.cheie }]}>
+        [...linkuri, ...(u ? linkuriCont : [])].map((l) => (
+          <a
+            href={l.href}
+            class:list={['meniu-mobil__link', { 'is-active': active === l.cheie }]}
+            aria-current={active === l.cheie ? 'page' : undefined}
+          >
             {l.text}
           </a>
         ))
       }
+      {/* Deconectarea trebuie să existe și aici: pe telefon meniul este singurul
+          loc în care se ajunge la ea. */}
+      {u && (
+        <form method="POST" action="/api/deconectare">
+          <button class="meniu-mobil__link meniu-mobil__iesire" type="submit">Deconectare</button>
+        </form>
+      )}
     </nav>
   </header>
 
@@ -102,24 +167,23 @@ const linkCont = { href: '/contul-meu', text: 'Contul meu', cheie: 'cont' }
 
   <footer class="footer">
     <div class="container row row--between row--wrap" style="gap:var(--s-4)">
-      <p class="muted" style="font-size:var(--t-sm)">
+      <p class="muted text-sm">
         Academia de Studii Economice din București · Facultatea de Marketing
       </p>
-      <p class="muted" style="font-size:var(--t-sm)">
+      <p class="muted text-sm">
         Sesiunea de Finalizare a Studiilor {sesiune}
       </p>
+      {/* Nota de informare trebuie să fie găsibilă de pe orice pagină. */}
+      <a class="muted text-sm link" href="/confidentialitate">Confidențialitate</a>
     </div>
   </footer>
 </BaseLayout>
 
 <script>
-  const buton = document.querySelector<HTMLButtonElement>('.hamburger')
-  const meniu = document.getElementById('meniu-mobil')
-  buton?.addEventListener('click', () => {
-    const deschis = buton.getAttribute('aria-expanded') === 'true'
-    buton.setAttribute('aria-expanded', String(!deschis))
-    if (meniu) meniu.hidden = deschis
-  })
+  import { porneste, panouri } from '../scripts/meniu'
+
+  porneste({ buton: '.hamburger', panou: '#meniu-mobil' })
+  panouri('details.cont')
 </script>
 
 <style>
@@ -144,7 +208,15 @@ const linkCont = { href: '/contul-meu', text: 'Contul meu', cheie: 'cont' }
     gap: var(--s-3);
     text-decoration: none;
     color: var(--ink);
-    flex: none;
+    /* `flex: none` pe ambele capete însemna că bara nu putea scădea sub suma
+       lor: pe telefon depășea ecranul în loc să se strângă. */
+    min-width: 0;
+  }
+  .brand__text strong,
+  .brand__text small {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .brand__mark {
@@ -205,33 +277,110 @@ const linkCont = { href: '/contul-meu', text: 'Contul meu', cheie: 'cont' }
     display: flex;
     align-items: center;
     gap: var(--s-3);
+    margin-left: auto;
     flex: none;
   }
 
-  .avatar {
-    display: grid;
-    place-items: center;
-    width: 34px;
-    height: 34px;
-    border-radius: 50%;
-    background: var(--surface-sunken);
-    border: 1px solid var(--border-strong);
-    color: var(--ink-soft);
-    font-size: var(--t-xs);
-    font-weight: 600;
-    text-decoration: none;
+  /* --- meniul contului ----------------------------------------------------- */
+
+  .cont {
+    position: relative;
+    flex: none;
   }
-  .avatar:hover {
-    border-color: var(--ink-muted);
+
+  .cont__buton {
+    display: flex;
+    align-items: center;
+    gap: var(--s-1);
+    min-height: var(--tap);
+    padding-right: var(--s-1);
+    border-radius: var(--r-md);
+    color: var(--ink-muted);
+    cursor: pointer;
+    list-style: none;
+  }
+  .cont__buton::-webkit-details-marker {
+    display: none;
+  }
+  .cont__buton svg {
+    width: 14px;
+    height: 14px;
+    transition: transform var(--fast) var(--ease);
+  }
+  .cont[open] .cont__buton svg {
+    transform: rotate(180deg);
+  }
+
+  .cont__panou {
+    position: absolute;
+    top: calc(100% + var(--s-1));
+    right: 0;
+    z-index: var(--z-drawer);
+    min-width: 220px;
+    display: flex;
+    flex-direction: column;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--r-lg);
+    box-shadow: var(--shadow-overlay);
+    overflow: hidden;
+  }
+
+  .cont__cine {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    padding: var(--s-3) var(--s-4);
+    border-bottom: 1px solid var(--border);
+  }
+  .cont__cine strong {
+    font-size: var(--t-sm);
+  }
+  .cont__cine small {
+    font-size: var(--t-xs);
+    color: var(--ink-muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .cont__scurtatura {
+    float: right;
+    padding: 1px 5px;
+    border: 1px solid var(--border);
+    border-radius: var(--r-sm);
+    font-family: var(--sans);
+    font-size: var(--t-xs);
+    color: var(--ink-muted);
+  }
+
+  .cont__optiune {
+    display: block;
+    width: 100%;
+    padding: var(--s-3) var(--s-4);
+    border: 0;
+    background: none;
+    font: inherit;
+    font-size: var(--t-sm);
+    color: var(--ink-soft);
+    text-align: left;
+    text-decoration: none;
+    cursor: pointer;
+  }
+  .cont__optiune:hover {
+    background: var(--surface-sunken);
     color: var(--ink);
+  }
+  .cont__optiune--iesire {
+    border-top: 1px solid var(--border);
+    color: var(--danger);
   }
 
   .hamburger {
     display: none;
     align-items: center;
     justify-content: center;
-    width: 38px;
-    height: 38px;
+    width: var(--tap);
+    height: var(--tap);
     border: 1px solid var(--border-strong);
     border-radius: var(--r-md);
     background: var(--surface);
@@ -242,11 +391,51 @@ const linkCont = { href: '/contul-meu', text: 'Contul meu', cheie: 'cont' }
     height: 18px;
   }
 
+  /* Un panou care intră dinspre margine, nu o listă care apare brusc sub bară. */
   .meniu-mobil {
     display: none;
     flex-direction: column;
-    padding: var(--s-2) var(--s-5) var(--s-4);
+    padding: var(--s-4) var(--s-5) var(--s-6);
     border-top: 1px solid var(--border);
+  }
+
+  @media (max-width: 900px) {
+    .meniu-mobil {
+      position: fixed;
+      inset: var(--topbar-h) 0 auto 0;
+      z-index: var(--z-drawer);
+      max-height: calc(100dvh - var(--topbar-h));
+      overflow-y: auto;
+      background: var(--surface);
+      box-shadow: var(--shadow-overlay);
+      transform: translateY(-8px);
+      opacity: 0;
+      transition:
+        transform var(--base) var(--ease),
+        opacity var(--base) var(--ease);
+    }
+    .meniu-mobil.is-deschis {
+      transform: none;
+      opacity: 1;
+    }
+  }
+
+  .meniu-mobil__link {
+    min-height: var(--tap);
+    display: flex;
+    align-items: center;
+  }
+
+  .meniu-mobil__iesire {
+    width: 100%;
+    border: 0;
+    border-bottom: 1px solid var(--border);
+    background: none;
+    font: inherit;
+    font-weight: 500;
+    color: var(--danger);
+    text-align: left;
+    cursor: pointer;
   }
 
   .meniu-mobil__link {
@@ -262,7 +451,7 @@ const linkCont = { href: '/contul-meu', text: 'Contul meu', cheie: 'cont' }
   }
 
   main {
-    min-height: calc(100vh - var(--topbar-h) - 72px);
+    min-height: calc(100dvh - var(--topbar-h) - 72px);
     padding-block: var(--s-6) var(--s-7);
   }
 
@@ -283,6 +472,11 @@ const linkCont = { href: '/contul-meu', text: 'Contul meu', cheie: 'cont' }
       display: flex;
     }
     .brand__text small {
+      display: none;
+    }
+    /* „Zona cadrelor didactice” trece în meniu: alături de marcă, avatar și
+       hamburger nu încăpea, și împingea antetul în afara ecranului. */
+    .topbar__end .btn--secondary {
       display: none;
     }
   }

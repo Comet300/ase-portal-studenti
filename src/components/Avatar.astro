@@ -20,6 +20,27 @@ const { name, src, size = 'sm', href, class: extra } = Astro.props
  * the initials set in the interface face.
  */
 const Tag = href ? 'a' : 'span'
+
+/**
+ * O nuanță proprie fiecărui nume.
+ *
+ * O listă de treizeci de studenți era o coloană de cercuri identice, în care
+ * ochiul nu se putea agăța de nimic. Culoarea vine din nume, deci este stabilă
+ * între pagini și între sesiuni, și rămâne în registrul instituției: tonuri
+ * șterse, nu paletă de aplicație de chat.
+ */
+const NUANTE = [
+  { fundal: '#eceef3', text: '#3c4a63' },
+  { fundal: '#eff1ea', text: '#4a5537' },
+  { fundal: '#f4ece8', text: '#6b463a' },
+  { fundal: '#eaeff1', text: '#37535c' },
+  { fundal: '#f1ecf1', text: '#5a3f58' },
+  { fundal: '#f2efe6', text: '#5f5230' },
+]
+
+let suma = 0
+for (const ch of name) suma = (suma + ch.codePointAt(0)!) % 4096
+const nuanta = NUANTE[suma % NUANTE.length]
 ---
 
 <Tag
@@ -27,6 +48,7 @@ const Tag = href ? 'a' : 'span'
   href={href}
   title={href ? name : undefined}
   data-photo={src ? '' : undefined}
+  style={src ? undefined : `--fundal:${nuanta.fundal};--text:${nuanta.text}`}
 >
   {
     src ? (
@@ -42,10 +64,11 @@ const Tag = href ? 'a' : 'span'
     display: grid;
     place-items: center;
     border-radius: 50%;
-    background: var(--surface-sunken);
+    background: var(--fundal, var(--surface-sunken));
     border: 1px solid var(--border);
-    color: var(--ink-soft);
+    color: var(--text, var(--ink-soft));
     font-weight: 600;
+    letter-spacing: 0.02em;
     text-decoration: none;
     flex: none;
     overflow: hidden;
@@ -66,7 +89,7 @@ const Tag = href ? 'a' : 'span'
   .avatar--xs {
     width: 28px;
     height: 28px;
-    font-size: 10px;
+    font-size: var(--t-xs);
   }
   .avatar--sm {
     width: 34px;

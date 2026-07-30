@@ -1,7 +1,9 @@
 import type { APIRoute } from 'astro'
 import { isDepartmentHead } from '../../lib/auth'
-import { execute, queryOne } from '../../lib/db'
-import { redirectWithNotice } from '../../lib/http'
+import { execute, queryOne, transaction } from '../../lib/db'
+import { deadEnd, redirectWithNotice } from '../../lib/http'
+import { citesteRanduriArhiva, nivelArhiva } from '../../lib/arhiva'
+import { formAction } from '../../lib/forms'
 import { openYear } from '../../lib/years'
 import { id as formId } from '../../lib/ids'
 
@@ -19,10 +21,10 @@ const PAGE = '/profesor/an-universitar'
 
 export const POST: APIRoute = async ({ request, locals }) => {
   const u = locals.user
-  if (!isDepartmentHead(u)) return new Response('Pagina nu a fost găsită', { status: 404 })
+  if (!isDepartmentHead(u)) return deadEnd(404, 'Pagina nu a fost găsită', 'Adresa aceasta nu duce nicăieri în portal.')
 
   const form = await request.formData()
-  const action = String(form.get('actiune') ?? '')
+  const action = formAction(form)
   const back = (message: string, isError = false) => redirectWithNotice(PAGE, message, isError)
 
   if (action === 'deschide_an') {
@@ -41,10 +43,37 @@ export const POST: APIRoute = async ({ request, locals }) => {
     )
     if (existing) return back(`Anul „${label}” există deja.`, true)
 
+    /* Trecerea anului nu se dezface.
+     *
+     * Sesiunea curentă intră în arhivă cu tot ce conține, coordonările se
+     * încheie, catalogul se golește — la un singur clic, dintr-un formular care
+     * stă deschis pe ecran. Confirmarea nu este o casetă de bifat, ci denumirea
+     * anului care se închide, scrisă de mână: singurul gest care nu se poate face
+     * din reflex. Se compară cu anul curent din baza de date, nu cu ce a trimis
+     * pagina. */
+    const anCurent = await queryOne<{ label: string }>(
+      `SELECT label FROM academic_years WHERE is_current`,
+    )
+    /* Cratima ține locul liniuței de dialog.
+     *
+     * Denumirea este „2025–2026”, cu liniuță en — un caracter care nu există pe
+     * tastatura românească. Cerând-o exact, gardul ar fi fost imposibil de trecut
+     * fără copiere din pagină, ceea ce transformă confirmarea în copiere, adică în
+     * exact reflexul pe care încearcă să îl oprească. */
+    const fara = (t: string) => t.replace(/[\u2010-\u2015]/g, '-')
+    const confirmare = String(form.get('confirmare') ?? '').trim()
+    if (anCurent && fara(confirmare) !== fara(anCurent.label)) {
+      return back(
+        `Scrie exact „${anCurent.label}” în câmpul de confirmare ca să închizi sesiunea în curs.`,
+        true,
+      )
+    }
+
     await openYear(label, startsOn, endsOn, {
       copyStages: form.get('preia_etape') === 'da',
       copyTopics: form.get('preia_teme') === 'da',
       copyProgrammes: form.get('preia_programe') === 'da',
+      copySeats: form.get('preia_locuri') === 'da',
     })
 
     return back(`Anul ${label} este deschis. Sesiunea anterioară a trecut în arhivă.`)
@@ -93,54 +122,60 @@ export const POST: APIRoute = async ({ request, locals }) => {
     if (!year) return back('Alege anul universitar în care se importă.', true)
     if (!raw) return back('Lipsesc rândurile de importat.', true)
 
-    // Deliberately a paste box, not a file upload: the source is almost always a
-    // spreadsheet column selection, and a paste skips the export-and-upload
-    // round trip. Separator is the semicolon, because Romanian names and titles
-    // contain commas far more often than semicolons.
-    const rows = raw
-      .split('\n')
-      .map((line) => line.trim())
-      .filter(Boolean)
-      .map((line) => line.split(';').map((cell) => cell.trim()))
+    /* Aceeași citire ca în previzualizare.
+     *
+     * Lipirea este intenționat o casetă de text, nu un fișier: sursa este aproape
+     * întotdeauna o selecție de coloane din foaia de calcul, iar lipirea scutește
+     * drumul export–încărcare.
+     *
+     * Ce a arătat previzualizarea nu este de încredere — se recitește aici textul
+     * trimis, cu aceeași funcție, deci cele două nu pot să se despartă. */
+    const { bune, respinse: respinseCitite } = citesteRanduriArhiva(raw)
+    const respinse = respinseCitite.map((r) => `rândul ${r.numar}: ${r.motiv}`)
 
-    let imported = 0
-    const rejected: string[] = []
-
-    for (const [index, cells] of rows.entries()) {
-      const [studentName, studentNumber, programme, level, language, teacherName, title, defended] = cells
-
-      if (!studentName || !teacherName || !title) {
-        rejected.push(`rândul ${index + 1}`)
-        continue
-      }
-
-      const n = await execute(
-        `INSERT INTO archive_entries (academic_year_id, student_name, student_number, programme,
-                                      level, language, teacher_name, title_ro, defended_on, created_by)
-         SELECT $1, $2, NULLIF($3, ''), NULLIF($4, ''),
-                CASE WHEN lower($5) IN ('master', 'm') THEN 'master' ELSE 'bachelor' END,
-                NULLIF($6, ''), $7, $8, NULLIF($9, '')::date, $10
-          WHERE NOT EXISTS (
-            SELECT 1 FROM archive_entries
-             WHERE academic_year_id = $1 AND student_name = $2 AND title_ro = $8
-          )`,
-        [
-          yearId, studentName, studentNumber ?? '', programme ?? '', level ?? '', language ?? '',
-          teacherName, title, defended ?? '', u!.id,
-        ],
+    if (bune.length === 0) {
+      return back(
+        `Niciun rând nu a putut fi importat. ${respinse.slice(0, 3).join('; ')}${respinse.length > 3 ? `; și încă ${respinse.length - 3}` : ''}.`,
+        true,
       )
-      imported += n
     }
 
-    const skipped = rows.length - imported
+    // O singură tranzacție: dacă pică ceva la ultimul rând, nu rămâne nimic pe
+    // jumătate în arhiva publică.
+    const imported = await transaction(async (client) => {
+      let n = 0
+      for (const r of bune) {
+        const { rowCount } = await client.query(
+          `INSERT INTO archive_entries (academic_year_id, student_name, student_number, programme,
+                                        level, language, teacher_name, title_ro, defended_on, created_by)
+           SELECT $1, $2, NULLIF($3, ''), NULLIF($4, ''),
+                  $5,
+                  NULLIF($6, ''), $7, $8, NULLIF($9, '')::date, $10
+            WHERE NOT EXISTS (
+              SELECT 1 FROM archive_entries
+               WHERE academic_year_id = $1 AND student_name = $2 AND title_ro = $8
+            )`,
+          [
+            yearId, r.studentName, r.studentNumber, r.programme, nivelArhiva(r.level), r.language,
+            r.teacherName, r.title, r.defended, u!.id,
+          ],
+        )
+        n += rowCount ?? 0
+      }
+      return n
+    })
+
+    const duplicate = bune.length - imported
+
     return back(
       `${imported} ${imported === 1 ? 'înregistrare importată' : 'înregistrări importate'} în ${year.label}.` +
-        (skipped > 0
-          ? ` ${skipped} ${skipped === 1 ? 'rând ignorat' : 'rânduri ignorate'} (duplicate sau incomplete${rejected.length ? `: ${rejected.slice(0, 5).join(', ')}` : ''}).`
+        (duplicate > 0 ? ` ${duplicate} ${duplicate === 1 ? 'exista deja' : 'existau deja'}.` : '') +
+        (respinse.length > 0
+          ? ` ${respinse.length} ${respinse.length === 1 ? 'rând respins' : 'rânduri respinse'} — ${respinse.slice(0, 3).join('; ')}${respinse.length > 3 ? '; …' : ''}.`
           : ''),
-      imported === 0,
+      imported === 0 || respinse.length > 0,
     )
   }
 
-  return new Response('Acțiune necunoscută', { status: 400 })
+  return deadEnd(400, 'Cerere neînțeleasă', 'Portalul nu a recunoscut acțiunea cerută. Reia pasul din interfață.')
 }

@@ -1,7 +1,7 @@
 import type { APIRoute } from 'astro'
 import { isDepartmentHead } from '../../lib/auth'
-import { execute, queryOne } from '../../lib/db'
-import { redirectWithNotice } from '../../lib/http'
+import { execute, query, queryOne } from '../../lib/db'
+import { deadEnd, internalPath, redirectWithNotice } from '../../lib/http'
 import { id as formId } from '../../lib/ids'
 
 /**
@@ -18,22 +18,41 @@ const PAGE = '/profesor/facultate'
 
 export const POST: APIRoute = async ({ request, locals }) => {
   if (!isDepartmentHead(locals.user)) {
-    return new Response('Pagina nu a fost găsită', { status: 404 })
+    return deadEnd(404, 'Pagina nu a fost găsită', 'Adresa aceasta nu duce nicăieri în portal.')
   }
 
   const form = await request.formData()
-  const studentId = formId(form.get('student_id'))
   const programmeId = formId(form.get('program_id'))
-  const studyYear = Number(form.get('an_studiu') ?? 0)
+  const anBrut = form.get('an_studiu')
   const studyGroup = String(form.get('grupa') ?? '').trim()
 
-  const back = (message: string, isError = false) => redirectWithNotice(PAGE, message, isError)
+  /* Unul sau mai mulți.
+   *
+   * Un an întreg se corectează după listele de la secretariat: treizeci de
+   * studenți din aceeași grupă, aceeași mutare de treizeci de ori. `getAll`, nu
+   * `get`: cu bifele din tabel vin mai multe câmpuri cu același nume, iar `get`
+   * ar întoarce doar primul. */
+  const studentIds = [...form.getAll('student_id'), ...form.getAll('studenti')]
+    .map((v) => formId(v))
+    .filter((v): v is string => v !== null)
 
-  const student = await queryOne<{ name: string }>(
-    `SELECT name FROM users WHERE id = $1 AND role = 'student'`,
-    [studentId],
+  /* Filtrele și locul din pagină se păstrează.
+   *
+   * Se întorcea la `/profesor/facultate` curat: după fiecare salvare, directorul
+   * care lucra pe „master, fără cerere depusă” primea din nou toată facultatea și
+   * capul listei. Adresa vine din pagină și trece prin `internalPath`, ca un
+   * parametru scris de mână să nu poată trimite pe nimeni în altă parte. */
+  const inapoi = internalPath(String(form.get('redirect') ?? ''), PAGE)
+
+  const back = (message: string, isError = false) => redirectWithNotice(inapoi, message, isError)
+
+  if (studentIds.length === 0) return back('Niciun student selectat.', true)
+
+  const studenti = await query<{ id: string; name: string; programme_id: string | null }>(
+    `SELECT id, name, programme_id FROM users WHERE id = ANY($1::uuid[]) AND role = 'student'`,
+    [studentIds],
   )
-  if (!student) return back('Studentul nu a fost găsit.', true)
+  if (studenti.length === 0) return back('Studentul nu a fost găsit.', true)
 
   // A programme from another academic year would put the student in a cohort
   // that is not running, so the lookup is scoped to the current one.
@@ -45,8 +64,29 @@ export const POST: APIRoute = async ({ request, locals }) => {
   )
   if (!programme) return back('Alege un program de studiu din anul curent.', true)
 
-  const year = Number.isFinite(studyYear) ? Math.min(6, Math.max(1, Math.trunc(studyYear))) : null
+  /* Câmp gol înseamnă „nu schimba”, nu „anul 1”.
+   *
+   * `Number('')` este 0, `Number.isFinite(0)` este adevărat, iar limitarea la
+   * 1–6 îl ridica la 1 — deci `COALESCE` nu vedea niciodată NULL. Câmpul se
+   * randează gol pentru orice student fără an înregistrat, așa că un director
+   * care corecta doar grupa îi ștergea anul, fără ca mesajul de confirmare să
+   * pomenească nimic. */
+  const anText = anBrut === null ? '' : String(anBrut).trim()
+  let year: number | null = null
 
+  if (anText !== '') {
+    const n = Number(anText)
+    if (!Number.isFinite(n) || n < 1 || n > 6) {
+      return back('Anul de studiu trebuie să fie un număr între 1 și 6.', true)
+    }
+    year = Math.trunc(n)
+  }
+
+  // Ce s-a schimbat de fapt, ca mesajul să nu anunțe o mutare care nu a avut loc.
+  const mutati = studenti.filter((s) => s.programme_id !== programme.id).length
+
+  /* O singură instrucțiune pentru toți: treizeci de UPDATE-uri într-o buclă ar
+   * lăsa jumătatea dintâi mutată și restul nu, dacă a doua jumătate eșuează. */
   await execute(
     `UPDATE users
         SET programme_id   = $2,
@@ -54,10 +94,25 @@ export const POST: APIRoute = async ({ request, locals }) => {
             specialization = $4,
             study_language = $5,
             study_year     = COALESCE($6, study_year),
-            study_group    = NULLIF($7, '')
-      WHERE id = $1 AND role = 'student'`,
-    [studentId, programme.id, programme.level, programme.name, programme.language, year, studyGroup],
+            study_group    = COALESCE(NULLIF($7, ''), study_group)
+      WHERE id = ANY($1::uuid[]) AND role = 'student'`,
+    [studenti.map((s) => s.id), programme.id, programme.level, programme.name, programme.language, year, studyGroup],
   )
 
-  return back(`${student.name} a fost mutat la ${programme.name}.`)
+  /* Mesajul spunea „a fost mutat la X” la fiecare salvare, chiar când programul
+   * nu se schimbase și se corectase doar grupa — și punea participiul la
+   * masculin pentru oricine. Formularea neutră evită și una, și alta. */
+  if (studenti.length === 1) {
+    return back(
+      mutati === 1
+        ? `${studenti[0].name}: program schimbat în ${programme.name}.`
+        : `Datele lui ${studenti[0].name} au fost salvate.`,
+    )
+  }
+
+  return back(
+    mutati > 0
+      ? `${studenti.length} studenți salvați, dintre care ${mutati} mutați la ${programme.name}.`
+      : `${studenti.length} studenți salvați.`,
+  )
 }

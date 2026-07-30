@@ -108,6 +108,7 @@ export const GET: APIRoute = async ({ params, locals }) => {
        <p class="note">Document generat automat din Portalul Studenți pe baza cererii înregistrate
        electronic. Se tipărește, se semnează de ambele părți și se depune la secretariatul
        facultății.</p>`,
+      `Cererea ${r.number} · ${r.student_name}`,
     ),
     { headers: { 'content-type': 'text/html; charset=utf-8' } },
   )

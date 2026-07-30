@@ -3,6 +3,7 @@ import Chat from '../../components/Chat.astro'
 import ProfesorLayout from '../../layouts/ProfesorLayout.astro'
 import {
   conversationMessages,
+  MESAJE_PE_PAGINA,
   markRead,
   myConversation,
   myConversations,
@@ -38,7 +39,20 @@ const requested =
 const active = requested ? await myConversation(u.id, requested) : (conversations[0] ?? null)
 
 if (active) await markRead(u.id, active.id)
-const messages = active ? await conversationMessages(u.id, active.id) : []
+/* Câte mesaje se cer.
+ *
+ * Firul se deschide pe ultimele; „mai vechi” dublează fereastra și ancorează la
+ * mesajul care era primul, ca să nu se piardă locul din citire. Plafonat, ca un
+ * parametru scris de mână să nu poată cere toată baza. */
+const cerute = Number(Astro.url.searchParams.get('mesaje') ?? '')
+const cateMesaje = Number.isFinite(cerute)
+  ? Math.min(Math.max(cerute, MESAJE_PE_PAGINA), MESAJE_PE_PAGINA * 16)
+  : MESAJE_PE_PAGINA
+
+const fir = active
+  ? await conversationMessages(u.id, active.id, cateMesaje)
+  : { mesaje: [], maiVechi: 0 }
+const messages = fir.mesaje
 
 /**
  * The context column.
@@ -120,8 +134,11 @@ function fileSize(bytes: string | null): string {
     conversations={conversations}
     active={active}
     messages={messages}
+    maiVechi={fir.maiVechi}
+    cateMesaje={cateMesaje}
     userId={u.id}
     base="/profesor/mesaje"
+    files={files.map((f) => ({ ...f, size_label: fileSize(f.size_bytes) }))}
     emptyText="Firele de discuție apar pe măsură ce accepți cereri de coordonare."
     hasContext
   >
@@ -366,7 +383,7 @@ function fileSize(bytes: string | null): string {
     color: var(--ink-muted);
   }
   .ctx-termen__corp small {
-    font-size: 11px;
+    font-size: var(--t-xs);
   }
 
   .fisiere {
@@ -411,6 +428,6 @@ function fileSize(bytes: string | null): string {
     white-space: nowrap;
   }
   .fisiere__corp small {
-    font-size: 11px;
+    font-size: var(--t-xs);
   }
 </style>

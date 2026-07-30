@@ -3,11 +3,13 @@ import Chat from '../components/Chat.astro'
 import StudentLayout from '../layouts/StudentLayout.astro'
 import {
   conversationMessages,
+  MESAJE_PE_PAGINA,
   ensureSupervisorConversation,
   markRead,
   myConversation,
   myConversations,
 } from '../lib/chat'
+import { query } from '../lib/db'
 
 const u = Astro.locals.user!
 
@@ -21,7 +23,45 @@ const requested = Astro.url.searchParams.get('conversatie')
 const active = requested ? await myConversation(u.id, requested) : (conversations[0] ?? null)
 
 if (active) await markRead(u.id, active.id)
-const messages = active ? await conversationMessages(u.id, active.id) : []
+/* Câte mesaje se cer.
+ *
+ * Firul se deschide pe ultimele; „mai vechi” dublează fereastra și ancorează la
+ * mesajul care era primul, ca să nu se piardă locul din citire. Plafonat, ca un
+ * parametru scris de mână să nu poată cere toată baza. */
+const cerute = Number(Astro.url.searchParams.get('mesaje') ?? '')
+const cateMesaje = Number.isFinite(cerute)
+  ? Math.min(Math.max(cerute, MESAJE_PE_PAGINA), MESAJE_PE_PAGINA * 16)
+  : MESAJE_PE_PAGINA
+
+const fir = active
+  ? await conversationMessages(u.id, active.id, cateMesaje)
+  : { mesaje: [], maiVechi: 0 }
+const messages = fir.mesaje
+
+/** Everything exchanged in the open thread, newest first — the files drawer. */
+const files = active
+  ? (
+      await query<{
+        id: string
+        original_name: string
+        size_bytes: string | null
+        created_at: string
+        uploaded_by: string
+      }>(
+        `SELECT f.id, f.original_name, f.size_bytes, f.created_at, f.uploaded_by
+           FROM files f WHERE f.conversation_id = $1 ORDER BY f.created_at DESC`,
+        [active.id],
+      )
+    ).map((f) => ({ ...f, size_label: fileSize(f.size_bytes) }))
+  : []
+
+function fileSize(bytes: string | null): string {
+  const n = Number(bytes ?? 0)
+  if (!n) return ''
+  if (n < 1024) return `${n} B`
+  if (n < 1024 * 1024) return `${Math.round(n / 1024)} KB`
+  return `${(n / (1024 * 1024)).toFixed(1)} MB`
+}
 ---
 
 <StudentLayout title="Mesaje" active="mesaje">
@@ -33,20 +73,32 @@ const messages = active ? await conversationMessages(u.id, active.id) : []
       </p>
     </header>
 
-    <Chat
-      conversations={conversations}
-      active={active}
-      messages={messages}
-      userId={u.id}
-      base="/mesaje"
-      emptyText="Firul de discuție se deschide după ce un coordonator îți aprobă cererea."
-    />
+    <div class="chat-wrap">
+      <Chat
+        conversations={conversations}
+        active={active}
+        messages={messages}
+        maiVechi={fir.maiVechi}
+        cateMesaje={cateMesaje}
+        userId={u.id}
+        base="/mesaje"
+        files={files}
+        emptyText="Firul de discuție se deschide după ce un coordonator îți aprobă cererea."
+      />
+    </div>
   </div>
 </StudentLayout>
 
 <style>
-  /* The chat fills its own box now, so the page has to give it one. */
+  /* Firul își umple propria cutie, deci pagina trebuie să îi dea una: altfel
+     `height: 100%` se măsoară față de un părinte fără înălțime, iar pagina
+     derulează în locul conversației. */
+  .chat-wrap {
+    height: min(74vh, 780px);
+    min-height: 420px;
+  }
+
   .chat-wrap :global(.chat) {
-    height: min(72vh, 760px);
+    height: 100%;
   }
 </style>
