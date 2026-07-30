@@ -1,4 +1,5 @@
 import type { APIRoute } from 'astro'
+import { noteazaAcces } from '../../lib/audit'
 import { isDepartmentHead, isTeacher } from '../../lib/auth'
 import { query } from '../../lib/db'
 import { languageLabel, levelLabel } from '../../lib/years'
@@ -42,7 +43,7 @@ function cell(value: unknown): string {
   return /[";\n\r]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text
 }
 
-export const GET: APIRoute = async ({ locals, url }) => {
+export const GET: APIRoute = async ({ locals, url, request }) => {
   const u = locals.user
   if (!isTeacher(u)) return new Response('Pagina nu a fost găsită', { status: 404 })
 
@@ -92,6 +93,8 @@ export const GET: APIRoute = async ({ locals, url }) => {
   ]
 
   const filename = all ? 'coordonari-departament.csv' : 'coordonarile-mele.csv'
+
+  await noteazaAcces({ userId: u!.id, action: 'export_coordonari', subject: url.pathname + url.search, rowCount: rows.length, request })
 
   return new Response('﻿' + lines.join('\r\n') + '\r\n', {
     headers: {

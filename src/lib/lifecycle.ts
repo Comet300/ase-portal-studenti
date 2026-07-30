@@ -1,4 +1,5 @@
 import { query, queryOne, transaction } from './db'
+import { curataJurnalul } from './audit'
 import { postEvent } from './chat'
 import { html, sendEmail, template } from './mail'
 
@@ -286,6 +287,7 @@ export async function sweepDeadlines(
       })
     }
 
+    await curataJurnalul()
     const amintite = await trimiteMementouri(baseUrl)
 
     if (expired.length || lapsed.length || amintite) {

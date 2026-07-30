@@ -1,4 +1,5 @@
 import type { APIRoute } from 'astro'
+import { noteazaAcces } from '../../lib/audit'
 import { queryOne } from '../../lib/db'
 import { openFile } from '../../lib/files'
 import { id as routeId } from '../../lib/ids'
@@ -19,7 +20,7 @@ import { id as routeId } from '../../lib/ids'
  */
 const INLINE = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/gif', 'application/pdf'])
 
-export const GET: APIRoute = async ({ params, locals, url }) => {
+export const GET: APIRoute = async ({ params, locals, url, request }) => {
   const u = locals.user
   if (!u) return new Response('Neautentificat', { status: 401 })
 
@@ -45,6 +46,17 @@ export const GET: APIRoute = async ({ params, locals, url }) => {
   if (!stored) return new Response('Fișierul nu a fost găsit', { status: 404 })
 
   const inline = url.searchParams.get('inline') === '1' && INLINE.has(file.mime ?? '')
+
+  // Descărcarea unui document al altcuiva lasă urmă; previzualizarea inline din
+  // fir nu, altfel fiecare derulare a conversației ar scrie un rând.
+  if (!inline) {
+    await noteazaAcces({
+      userId: u.id,
+      action: 'descarca_fisier',
+      subject: `${fileId} · ${file.original_name}`,
+      request,
+    })
+  }
 
   return new Response(stored.stream, {
     headers: {

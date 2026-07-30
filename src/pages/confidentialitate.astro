@@ -1,0 +1,164 @@
+---
+import StudentLayout from '../layouts/StudentLayout.astro'
+import { DECISION_WINDOW_DAYS } from '../lib/lifecycle'
+
+/**
+ * Nota de informare.
+ *
+ * Portalul păstrează, pentru o promoție întreagă: nume, numere matricole, adrese
+ * instituționale, titluri de lucrări, motivații scrise de mână, conversații
+ * private și documente încărcate. Nu exista nicio pagină care să spună asta,
+ * niciun termen de păstrare și niciun mod de a-ți lua datele.
+ *
+ * Pentru o instituție publică sub GDPR, absența ei nu este o scăpare de interfață:
+ * este motivul pentru care un portal se închide. Textul de aici descrie exact ce
+ * face codul — nu ce ar fi frumos să facă — pentru că o notă care nu corespunde
+ * este mai rea decât niciuna.
+ */
+
+const u = Astro.locals.user
+---
+
+<StudentLayout
+  title="Confidențialitate"
+  docTitle="Confidențialitate"
+  description="Ce date păstrează Portalul Studenți, cât timp și cine le poate vedea."
+>
+  <div class="container">
+    <article class="prose stack stack--loose nota">
+      <header class="stack stack--tight">
+        <h1 class="page-title">Notă de informare privind datele personale</h1>
+        <p class="page-lede">
+          Ce păstrează portalul, cât timp, cine poate vedea ce, și ce poți cere.
+          Descrie funcționarea reală a aplicației, nu o intenție.
+        </p>
+      </header>
+
+      <section class="stack">
+        <h2 class="section-title">Operatorul</h2>
+        <p>
+          Academia de Studii Economice din București, Facultatea de Marketing, în calitate de
+          operator, prelucrează datele de mai jos pentru organizarea sesiunii de finalizare a
+          studiilor. Temeiul este îndeplinirea unei sarcini care ține de interesul public
+          (art. 6 alin. 1 lit. e din Regulamentul 2016/679), nu consimțământul — de aceea nu îți
+          cerem să bifezi nimic, dar nici nu putem folosi datele în alte scopuri.
+        </p>
+      </section>
+
+      <section class="stack">
+        <h2 class="section-title">Ce se păstrează</h2>
+        <dl class="specificatii">
+          <div>
+            <dt>Contul</dt>
+            <dd>Nume, adresă instituțională, rol, număr matricol, program, grupă, an de studiu.</dd>
+          </div>
+          <div>
+            <dt>Profilul</dt>
+            <dd>Fotografia și descrierea, dacă le încarci. Ambele sunt opționale.</dd>
+          </div>
+          <div>
+            <dt>Cererea de coordonare</dt>
+            <dd>Titlul lucrării, obiectivele, motivația scrisă de tine, decizia și motivul ei.</dd>
+          </div>
+          <div>
+            <dt>Conversațiile</dt>
+            <dd>Mesajele schimbate cu coordonatorul și fișierele atașate.</dd>
+          </div>
+          <div>
+            <dt>Consultațiile</dt>
+            <dd>Intervalele rezervate, subiectul declarat, prezența la ele.</dd>
+          </div>
+          <div>
+            <dt>Autentificarea</dt>
+            <dd>
+              Adresa și adresa IP a cererilor de link de acces, păstrate 24 de ore, doar ca să
+              limiteze abuzul.
+            </dd>
+          </div>
+          <div>
+            <dt>Accesul la date</dt>
+            <dd>
+              Exporturile și descărcările de fișiere: cine, ce a atins, câte înregistrări și când.
+              Păstrat un an.
+            </dd>
+          </div>
+        </dl>
+      </section>
+
+      <section class="stack">
+        <h2 class="section-title">Cine vede ce</h2>
+        <ul>
+          <li>
+            <strong>Coordonatorul tău</strong> vede cererea, conversația, fișierele și termenele
+            lucrării tale.
+          </li>
+          <li>
+            <strong>Orice cadru didactic</strong> vede numele, numărul matricol, grupa și dacă ai
+            un coordonator — informația din catalogul facultății.
+          </li>
+          <li>
+            <strong>Directorul de departament</strong> vede în plus situația pe programe și
+            alocarea locurilor.
+          </li>
+          <li>
+            <strong>Nimeni</strong> nu vede conversațiile altei perechi. Mesajele și fișierele sunt
+            accesibile doar celor doi, verificat la fiecare cerere.
+          </li>
+          <li>
+            Titlurile lucrărilor susținute devin publice în arhivă, cum se întâmplă și cu
+            registrele tipărite ale facultății.
+          </li>
+        </ul>
+      </section>
+
+      <section class="stack">
+        <h2 class="section-title">Cât timp</h2>
+        <p>
+          Cererile, deciziile și lucrările rămân în arhiva sesiunii — este un registru academic, iar
+          rostul lui este să poată fi consultat ani mai târziu. Conversațiile și fișierele se
+          păstrează pe durata coordonării și doi ani după susținere. Linkurile de acces expiră în
+          20 de minute; o cerere nedecisă se închide singură după {DECISION_WINDOW_DAYS} zile.
+        </p>
+      </section>
+
+      <section class="stack">
+        <h2 class="section-title">Ce poți cere</h2>
+        <p>
+          Ai dreptul de acces, rectificare, restricționare și opoziție, iar la ștergere în limitele
+          obligațiilor de arhivare ale universității.
+        </p>
+        {
+          u ? (
+            <p>
+              Copia datelor tale se descarcă direct, fără cerere:
+              <a class="link" href="/api/datele-mele">datele-mele.json</a>.
+            </p>
+          ) : (
+            <p>
+              Autentifică-te ca să îți descarci direct copia datelor, sau scrie la adresa de mai jos.
+            </p>
+          )
+        }
+        <p>
+          Pentru orice altceva, inclusiv o plângere: <a href="mailto:dpo@ase.ro">dpo@ase.ro</a>.
+          Te poți adresa și Autorității Naționale de Supraveghere a Prelucrării Datelor cu Caracter
+          Personal.
+        </p>
+      </section>
+    </article>
+  </div>
+</StudentLayout>
+
+<style>
+  .nota {
+    max-width: 72ch;
+    padding-block: var(--s-4) var(--s-8);
+  }
+
+  .nota ul {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-2);
+    padding-left: var(--s-5);
+  }
+</style>
