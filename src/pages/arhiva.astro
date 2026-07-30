@@ -84,7 +84,9 @@ const levels = {
     <div class="grid-auto">
       <div class="metric">
         <span class="metric__value numeric">{filtered.length}</span>
-        <span class="metric__label">lucrări în {year?.label}</span>
+        <span class="metric__label">
+          {filtered.length === 1 ? "lucrare" : "lucrări"} în {year?.label}
+        </span>
       </div>
       <div class="metric">
         <span class="metric__value numeric">{levels.bachelor}</span>
@@ -96,7 +98,9 @@ const levels = {
       </div>
       <div class="metric">
         <span class="metric__value numeric">{grouped.length}</span>
-        <span class="metric__label">coordonatori</span>
+        <span class="metric__label">
+          {grouped.length === 1 ? "coordonator" : "coordonatori"}
+        </span>
       </div>
     </div>
 

@@ -4,7 +4,7 @@ import StudentLayout from '../../layouts/StudentLayout.astro'
 import { ROLE_LABELS } from '../../lib/auth'
 import { queryOne, query } from '../../lib/db'
 import { id as routeId } from '../../lib/ids'
-import { formatDate, teacherSeats } from '../../lib/repo'
+import { formatDate, studentRequests, teacherSeats } from '../../lib/repo'
 import { groupLabel, languageLabel, levelLabel } from '../../lib/years'
 
 /**
@@ -57,6 +57,11 @@ const isTeacherProfile = person.role !== 'student'
 const isMe = person.id === me.id
 
 const seats = isTeacherProfile ? await teacherSeats(person.id) : null
+
+// Un student cu o cerere în lucru nu poate depune alta; butonul trebuie să știe.
+const areCerereActiva =
+  me.role === 'student' &&
+  (await studentRequests(me.id)).some((c) => c.status === 'pending' || c.status === 'approved')
 
 const topics = isTeacherProfile
   ? await query<{ id: string; title: string; level: string; language: string; methods: string | null }>(
@@ -129,11 +134,25 @@ const editHref = isTeacherProfile ? '/profesor/arhiva' : '/contul-meu'
 
         <div class="row row--wrap" style="gap:var(--s-2)">
           {isMe && <a class="btn btn--secondary btn--sm" href={editHref}>Editează profilul</a>}
+          {/* Butonul nu ținea cont de faptul că studentul are deja o cerere:
+              cel mai vizibil control al paginii ducea într-un formular care
+              rămânea ascuns, fără niciun mesaj. */}
           {
-            !isMe && me.role === 'student' && isTeacherProfile && seats?.free !== 0 && (
-              <a class="btn btn--primary btn--sm" href={`/cererile-mele?coordonator=${person.id}`}>
-                Depune cerere
-              </a>
+            !isMe && me.role === 'student' && isTeacherProfile && (
+              areCerereActiva ? (
+                <span class="hint">
+                  Ai deja o cerere activă. Poți depune alta doar după ce o retragi sau primești o
+                  decizie.
+                </span>
+              ) : seats?.free === 0 ? (
+                <span class="hint">
+                  {person.name} nu mai are locuri libere în această sesiune.
+                </span>
+              ) : (
+                <a class="btn btn--primary btn--sm" href={`/cererile-mele?coordonator=${person.id}`}>
+                  Depune cerere
+                </a>
+              )
             )
           }
         </div>

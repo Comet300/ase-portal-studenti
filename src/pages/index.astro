@@ -14,7 +14,20 @@ const [stageList, currentStageRow, sesiune] = await Promise.all([
 const requests = u?.role === 'student' ? await studentRequests(u.id) : []
 const activeRequest = requests.find((c) => c.status === 'approved' || c.status === 'pending')
 const milestones = u?.role === 'student' ? await studentMilestones(u.id) : []
-const nextMilestone = milestones.find((j) => j.status !== 'done')
+/* „Următorul termen” trebuie să fie în viitor.
+ *
+ * Se lua primul nefinalizat, în ordine, deci pe 29 iulie pagina anunța drept
+ * următor un termen din 1 martie. Dacă tot ce a rămas este restant, se spune
+ * asta — nu se prezintă trecutul ca viitor. */
+const neterminate = milestones.filter((j) => j.status !== 'done')
+const azi = new Date()
+azi.setHours(0, 0, 0, 0)
+
+const nextMilestone =
+  neterminate.find((j) => j.due_on && new Date(j.due_on) >= azi) ?? neterminate[0]
+const nextMilestoneOverdue = Boolean(
+  nextMilestone?.due_on && new Date(nextMilestone.due_on) < azi,
+)
 
 /**
  * Prima propoziție de pe ecran.
@@ -48,7 +61,11 @@ const intro = (() => {
     return {
       titlu: activeRequest.title_ro,
       text: `Coordonezi lucrarea cu ${activeRequest.teacher_name}.${
-        nextMilestone ? ` Următorul termen: ${nextMilestone.title}, ${formatDate(nextMilestone.due_on)}.` : ''
+        nextMilestone
+          ? nextMilestoneOverdue
+            ? ` Termenul „${nextMilestone.title}” a trecut pe ${formatDate(nextMilestone.due_on)}.`
+            : ` Următorul termen: ${nextMilestone.title}, ${formatDate(nextMilestone.due_on)}.`
+          : ''
       }`,
       actiune: { href: '/cererile-mele', text: 'Vezi termenele lucrării' },
       secundar: { href: '/mesaje', text: 'Scrie coordonatorului' },
@@ -115,8 +132,12 @@ const RESOURCES = [
                 </p>
                 {nextMilestone && (
                   <p class="situatie__linie">
-                    <span class="muted">Următorul termen</span>
-                    <strong>{nextMilestone.title} · {formatDate(nextMilestone.due_on)}</strong>
+                    <span class="muted">
+                      {nextMilestoneOverdue ? 'Termen depășit' : 'Următorul termen'}
+                    </span>
+                    <strong class:list={{ 'is-restant': nextMilestoneOverdue }}>
+                      {nextMilestone.title} · {formatDate(nextMilestone.due_on)}
+                    </strong>
                   </p>
                 )}
               </>
@@ -227,6 +248,10 @@ const RESOURCES = [
     gap: 2px;
     font-size: var(--t-sm);
   }
+  .is-restant {
+    color: var(--danger);
+  }
+
   .situatie__linie .muted {
     font-size: var(--t-xs);
   }

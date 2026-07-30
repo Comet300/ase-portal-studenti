@@ -104,6 +104,45 @@ export const MILESTONE_LABELS: Record<string, string> = {
   done: 'Finalizat',
 }
 
+/**
+ * Starea reală a unui termen, nu doar cea salvată.
+ *
+ * În bază există trei stări, niciuna dintre ele „întârziat”, așa că un termen
+ * ratat arăta identic cu unul viitor: pe 29 iulie, „Predarea formei finale ·
+ * 14 iulie” scria în continuare „Planificat”, iar pagina de start anunța drept
+ * „următorul termen” unul trecut de cinci luni.
+ *
+ * Întârzierea nu se scrie în bază — se citește din calendar de fiecare dată,
+ * pentru că altfel ar trebui ținută la zi de cineva.
+ */
+export type StareTermen = 'planned' | 'in_progress' | 'done' | 'overdue'
+
+export function milestoneState(
+  status: string,
+  dueOn: string | null | undefined,
+): StareTermen {
+  if (status === 'done') return 'done'
+  if (!dueOn) return status === 'in_progress' ? 'in_progress' : 'planned'
+
+  const azi = new Date()
+  azi.setHours(0, 0, 0, 0)
+  return new Date(dueOn) < azi ? 'overdue' : status === 'in_progress' ? 'in_progress' : 'planned'
+}
+
+export const MILESTONE_STATE_LABELS: Record<StareTermen, string> = {
+  planned: 'Planificat',
+  in_progress: 'În lucru',
+  done: 'Finalizat',
+  overdue: 'Termen depășit',
+}
+
+export const MILESTONE_STATE_CLASS: Record<StareTermen, string> = {
+  planned: 'badge--ciorna',
+  in_progress: 'badge--in-lucru',
+  done: 'badge--aprobata',
+  overdue: 'badge--respinsa',
+}
+
 export function programLabel(program: string | null): string {
   return program === 'master' ? 'Master' : 'Licență'
 }

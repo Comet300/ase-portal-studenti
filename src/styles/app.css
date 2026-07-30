@@ -686,15 +686,29 @@ h4 {
   font-size: var(--t-sm);
 }
 
+/* Antetul rămâne pe ecran cât derulezi un tabel lung: altfel, la al treizecelea
+ * rând, nu mai știi ce coloană citești. */
 .table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
   text-align: left;
   font-size: var(--t-xs);
   font-weight: 600;
   letter-spacing: 0.02em;
   color: var(--ink-muted);
   padding: var(--s-3) var(--s-4);
+  background: var(--surface);
   border-bottom: 1px solid var(--border);
   white-space: nowrap;
+}
+
+/* Titlul tabelului, pentru cine îl aude în loc să îl vadă. */
+.table caption {
+  text-align: left;
+  padding: 0 var(--s-4) var(--s-3);
+  font-size: var(--t-xs);
+  color: var(--ink-muted);
 }
 
 .table td {

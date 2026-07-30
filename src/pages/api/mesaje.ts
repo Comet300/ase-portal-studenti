@@ -62,7 +62,9 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
       const { rows } = await client.query<{ id: string }>(
         `INSERT INTO messages (conversation_id, sender_id, body)
          VALUES ($1, $2, $3) RETURNING id`,
-        [conversationId, u.id, body || '(fișier atașat)'],
+        // Corp gol, nu un text de umplutură: fișierul este mesajul, iar
+        // previzualizarea din lista de conversații îl numește (lib/chat.ts).
+        [conversationId, u.id, body],
       )
       const id = rows[0].id
       await client.query(`UPDATE conversations SET last_message_at = now() WHERE id = $1`, [conversationId])
@@ -119,7 +121,7 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
       html: template(
         'Ai primit un mesaj',
         html`<p><strong>${u.name}</strong> ți-a scris în portal:</p>
-         ${quote(body.slice(0, 500) || '(fișier atașat)')}`,
+         ${quote(body.slice(0, 500) || `A trimis un fișier: ${atasament?.name ?? 'document'}`)}`,
         { text: 'Răspunde în portal', url: `${base}${redirectTo}` },
       ),
     }).catch((err) => console.error('[messages] notificarea nu a plecat', err))

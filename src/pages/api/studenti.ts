@@ -29,8 +29,8 @@ export const POST: APIRoute = async ({ request, locals }) => {
 
   const back = (message: string, isError = false) => redirectWithNotice(PAGE, message, isError)
 
-  const student = await queryOne<{ name: string }>(
-    `SELECT name FROM users WHERE id = $1 AND role = 'student'`,
+  const student = await queryOne<{ name: string; programme_id: string | null }>(
+    `SELECT name, programme_id FROM users WHERE id = $1 AND role = 'student'`,
     [studentId],
   )
   if (!student) return back('Studentul nu a fost găsit.', true)
@@ -63,6 +63,9 @@ export const POST: APIRoute = async ({ request, locals }) => {
     year = Math.trunc(n)
   }
 
+  // Ce s-a schimbat de fapt, ca mesajul să nu anunțe o mutare care nu a avut loc.
+  const aMutat = student.programme_id !== programme.id
+
   await execute(
     `UPDATE users
         SET programme_id   = $2,
@@ -75,5 +78,12 @@ export const POST: APIRoute = async ({ request, locals }) => {
     [studentId, programme.id, programme.level, programme.name, programme.language, year, studyGroup],
   )
 
-  return back(`${student.name} a fost mutat la ${programme.name}.`)
+  /* Mesajul spunea „a fost mutat la X” la fiecare salvare, chiar când programul
+   * nu se schimbase și se corectase doar grupa — și punea participiul la
+   * masculin pentru oricine. Formularea neutră evită și una, și alta. */
+  return back(
+    aMutat
+      ? `${student.name}: program schimbat în ${programme.name}.`
+      : `Datele lui ${student.name} au fost salvate.`,
+  )
 }

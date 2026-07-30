@@ -3,7 +3,9 @@ import Avatar from '../components/Avatar.astro'
 import StudentLayout from '../layouts/StudentLayout.astro'
 import { studentInvitations } from '../lib/lifecycle'
 import {
-  MILESTONE_LABELS,
+  MILESTONE_STATE_CLASS,
+  MILESTONE_STATE_LABELS,
+  milestoneState,
   STATUS_CLASS,
   STATUS_LABELS,
   studentRequests,
@@ -342,16 +344,9 @@ const shouldOpenForm = Boolean(openWith.teacher) && !hasActiveRequest
                   <div class="row row--between row--wrap" style="gap:var(--s-2)">
                     <strong class="jalon__titlu">{j.title}</strong>
                     <span
-                      class:list={[
-                        'badge',
-                        j.status === 'done'
-                          ? 'badge--aprobata'
-                          : j.status === 'in_progress'
-                            ? 'badge--asteptare'
-                            : 'badge--ciorna',
-                      ]}
+                      class:list={['badge', MILESTONE_STATE_CLASS[milestoneState(j.status, j.due_on)]]}
                     >
-                      {MILESTONE_LABELS[j.status]}
+                      {MILESTONE_STATE_LABELS[milestoneState(j.status, j.due_on)]}
                     </span>
                   </div>
                   <span class="muted text-xs">

@@ -47,7 +47,16 @@ export function myConversations(userId: string, asStudent: boolean) {
             peer.name AS peer_name,
             COALESCE(peer.academic_title, peer.student_number) AS peer_detail,
             peer.avatar_path AS peer_avatar,
-            (SELECT m.body FROM messages m WHERE m.conversation_id = c.id
+            /* Un mesaj care e doar un fișier nu are text, deci previzualizarea
+               îl numește. Înainte se scria literal „(fișier atașat)” în corpul
+               mesajului, iar lista de conversații arăta acel șir în loc de
+               numele documentului trimis — un text de umplutură scăpat în
+               producție. */
+            (SELECT COALESCE(
+                      NULLIF(m.body, ''),
+                      (SELECT f.original_name FROM files f WHERE f.message_id = m.id LIMIT 1),
+                      '(fără text)')
+               FROM messages m WHERE m.conversation_id = c.id
               ORDER BY m.created_at DESC LIMIT 1) AS last_message,
             (SELECT count(*)::int FROM messages m
               WHERE m.conversation_id = c.id AND m.sender_id <> $1 AND m.read_at IS NULL) AS unread

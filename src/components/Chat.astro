@@ -210,7 +210,9 @@ const INCEPUTURI = [
                     ]}
                     id={m.id === messages.at(-1)?.id ? 'ultim-mesaj' : undefined}
                   >
-                    {m.body !== '(fișier atașat)' && <p class="bubble__body">{m.body}</p>}
+                    {/* Rândurile scrise înainte de această schimbare mai poartă
+                        vechiul text de umplutură; nu are ce căuta într-o bulă. */}
+                    {m.body && m.body !== '(fișier atașat)' && <p class="bubble__body">{m.body}</p>}
 
                     {m.file_id &&
                       (PREVIZUALIZABILE.includes(m.file_mime ?? '') ? (
