@@ -1,6 +1,13 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { parseAccountRows, parseAccountRole } from '../src/lib/accounts.ts'
+import {
+  applyAccountMapping,
+  composeAccountRows,
+  guessAccountMapping,
+  matchProgramme,
+  parseAccountRole,
+  parseAccountRows,
+} from '../src/lib/accounts.ts'
 
 /**
  * The reader of lists of people.
@@ -145,5 +152,167 @@ describe('parseAccountRole', () => {
 
   it('nu ghicește un rol pe care nu îl știe', () => {
     for (const s of ['portar', 'secretar', 'admin']) assert.equal(parseAccountRole(s), null, `„${s}”`)
+  })
+})
+
+/**
+ * The mapping of a foreign file onto the portal's nine columns.
+ *
+ * This is where a registrar's sheet stops being „a file” and becomes rows the
+ * reader above can judge. Everything is tested against the shapes those sheets
+ * actually have: the name split in two columns, the programme that is in the
+ * file's title rather than in a column, and the semicolon inside a cell that
+ * would otherwise open a tenth column.
+ */
+describe('guessAccountMapping', () => {
+  it('recunoaște capul de tabel oricum ar fi scris', () => {
+    const mapping = guessAccountMapping([
+      'NR. MATRICOL', 'Numele', 'E-Mail', 'Programul de studiu', 'Anul', 'Grupă', 'Seria',
+    ])
+    assert.deepEqual(mapping[0], { kind: 'columns', columns: [1], joiner: ' ' })
+    assert.deepEqual(mapping[1], { kind: 'columns', columns: [2], joiner: ' ' })
+    assert.deepEqual(mapping[3], { kind: 'columns', columns: [0], joiner: ' ' })
+    assert.deepEqual(mapping[4], { kind: 'columns', columns: [3], joiner: ' ' })
+    assert.deepEqual(mapping[5], { kind: 'columns', columns: [4], joiner: ' ' })
+    assert.deepEqual(mapping[6], { kind: 'columns', columns: [5], joiner: ' ' })
+    assert.deepEqual(mapping[7], { kind: 'columns', columns: [6], joiner: ' ' })
+  })
+
+  /* A name split in two columns is the ordinary shape of these files, and the
+     order is the register's: family name first, as it is printed on a request. */
+  it('unește „Nume” cu „Prenume” de la sine', () => {
+    const mapping = guessAccountMapping(['Nume', 'Prenume', 'Email'])
+    assert.deepEqual(mapping[0], { kind: 'columns', columns: [0, 1], joiner: ' ' })
+    assert.deepEqual(mapping[1], { kind: 'columns', columns: [2], joiner: ' ' })
+  })
+
+  /* „An” as a whole header is the year of study; „An” as a fragment is inside
+     „Anul nașterii” and half the words in the language. */
+  it('nu ia „Anul nașterii” drept an de studiu', () => {
+    const mapping = guessAccountMapping(['Nume', 'Anul nașterii'])
+    assert.equal(mapping[5]!.kind, 'none')
+  })
+
+  it('lasă necompletat ce nu găsește, în loc să ghicească', () => {
+    const mapping = guessAccountMapping(['Coloana 1', 'Coloana 2'])
+    assert.ok(mapping.every((s) => s.kind === 'none'))
+  })
+
+  it('nu dă aceeași coloană la două câmpuri', () => {
+    const mapping = guessAccountMapping(['Nume', 'Nume complet'])
+    const used = mapping.flatMap((s) => (s.kind === 'columns' ? s.columns : []))
+    assert.equal(new Set(used).size, used.length)
+  })
+})
+
+describe('applyAccountMapping', () => {
+  const rows = [
+    ['Ștefănescu', 'Ioana', 'ioana@stud.ase.ro', '1503'],
+    ['Țîrlea', 'Bogdan', 'bogdan@stud.ase.ro', '1504'],
+  ]
+
+  it('unește coloanele în ordinea aleasă, cu liantul ales', () => {
+    const composed = applyAccountMapping(rows, [
+      { kind: 'columns', columns: [1, 0], joiner: ' ' },
+      { kind: 'columns', columns: [2], joiner: ' ' },
+      { kind: 'none' }, { kind: 'none' }, { kind: 'none' },
+      { kind: 'none' }, { kind: 'none' }, { kind: 'none' }, { kind: 'none' },
+    ])
+    assert.equal(composed[0][0], 'Ioana Ștefănescu')
+    assert.equal(composed[1][1], 'bogdan@stud.ase.ro')
+  })
+
+  /* The registrar's file is one sheet per programme and per year, so it carries
+     no „Program” column at all: one value for the whole file is the only way to
+     import it without rewriting it in Excel first. */
+  it('pune aceeași valoare pe toate rândurile', () => {
+    const composed = applyAccountMapping(rows, [
+      { kind: 'columns', columns: [0], joiner: ' ' },
+      { kind: 'columns', columns: [2], joiner: ' ' },
+      { kind: 'constant', value: 'student' },
+      { kind: 'none' },
+      { kind: 'constant', value: 'Marketing' },
+      { kind: 'constant', value: '3' },
+      { kind: 'columns', columns: [3], joiner: ' ' },
+      { kind: 'none' }, { kind: 'none' },
+    ])
+    assert.deepEqual(composed[1], ['Țîrlea', 'bogdan@stud.ase.ro', 'student', '', 'Marketing', '3', '1504', '', ''])
+  })
+
+  it('sare peste bucata goală, ca să nu rămână liantul singur', () => {
+    const composed = applyAccountMapping([['Popa', '']], [
+      { kind: 'columns', columns: [0, 1], joiner: ' ' },
+      { kind: 'none' }, { kind: 'none' }, { kind: 'none' }, { kind: 'none' },
+      { kind: 'none' }, { kind: 'none' }, { kind: 'none' }, { kind: 'none' },
+    ])
+    assert.equal(composed[0][0], 'Popa')
+  })
+})
+
+describe('composeAccountRows', () => {
+  const empty = ['', '', '', '', '', '']
+
+  it('scrie rândurile cu punct și virgulă, cum le citește cititorul', () => {
+    const text = composeAccountRows([['Ana Pop', 'ana@x.ro', 'student', ...empty]])
+    assert.equal(text, 'Ana Pop;ana@x.ro;student;;;;;;')
+    assert.equal(parseAccountRows(text).accepted.length, 1)
+  })
+
+  /* A name with a semicolon in it would open a tenth column and move the
+     address into the role. The reader takes a tab just as well, and the choice
+     is made over the whole text: it decides line by line, so a document where
+     only one row carries a „;” would be cut two different ways. */
+  it('trece pe tab când o celulă conține punct și virgulă', () => {
+    const text = composeAccountRows([
+      ['Popescu; Ion', 'ion@x.ro', 'student', ...empty],
+      ['Ana Pop', 'ana@x.ro', 'student', ...empty],
+    ])
+    assert.ok(!text.split('\n')[1].includes(';'), 'toate rândurile trec pe tab, nu doar cel vinovat')
+    const { accepted } = parseAccountRows(text)
+    assert.equal(accepted.length, 2)
+    assert.equal(accepted[0].name, 'Popescu; Ion')
+  })
+
+  it('aplatizează rândul nou dintr-o celulă, ca să nu devină un rând de-al lui', () => {
+    const text = composeAccountRows([['Ana\nPop', 'ana@x.ro', 'student', ...empty]])
+    assert.equal(text.split('\n').length, 1)
+    assert.equal(parseAccountRows(text).accepted[0].name, 'Ana Pop')
+  })
+})
+
+describe('matchProgramme', () => {
+  const programmes = [
+    { level: 'bachelor', name: 'Marketing', language: 'ro', label: 'Licență · Marketing · Română' },
+    { level: 'master', name: 'Marketing', language: 'en', label: 'Master · Marketing · Engleză' },
+    { level: 'bachelor', name: 'Publicitate', language: 'ro', label: 'Licență · Publicitate · Română' },
+  ]
+
+  it('gol înseamnă „fără program”, nu o eroare — cadrele didactice nu au niciunul', () => {
+    assert.deepEqual(matchProgramme('  ', programmes), { ok: true, programme: null })
+  })
+
+  it('găsește după nume când numele este al unui singur program', () => {
+    const m = matchProgramme('publicitate', programmes)
+    assert.ok(m.ok && m.programme?.level === 'bachelor')
+  })
+
+  /* „Marketing” is both bachelor in Romanian and master in English. The lookup
+     by name kept whichever row the query returned last — a whole cohort tied to
+     the wrong programme, with nothing anywhere saying so. */
+  it('refuză un nume care aparține mai multor programe, în loc să aleagă unul', () => {
+    const m = matchProgramme('Marketing', programmes)
+    assert.ok(!m.ok && /mai multe variante/.test(m.reason))
+  })
+
+  /* The portal's own lists send the whole label for exactly the case above: it
+     reads for a person and for the machine, and it is not ambiguous. */
+  it('acceptă eticheta întreagă, cum o trimit listele portalului', () => {
+    const m = matchProgramme('Master · Marketing · Engleză', programmes)
+    assert.ok(m.ok && m.programme?.language === 'en')
+  })
+
+  it('refuză un program care nu există, ca să nu creeze studenți fără program', () => {
+    const m = matchProgramme('Markting', programmes)
+    assert.ok(!m.ok && /nu există în anul curent/.test(m.reason))
   })
 })

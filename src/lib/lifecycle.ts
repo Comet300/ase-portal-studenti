@@ -1,7 +1,9 @@
 import { query, queryOne, transaction } from './db'
 import { purgeAccessLog } from './audit'
 import { postEvent } from './chat'
-import { html, sendEmail, template } from './mail'
+import { localDay, startOfWeek } from './date'
+import { html, joinHtml, sendEmail, template } from './mail'
+import { numar } from './text'
 
 /**
  * The parts of a coordination that happen on a clock or across two inboxes:
@@ -334,6 +336,33 @@ async function claimReminder(userId: string, kind: string, refId: string): Promi
   return Boolean(row?.ok)
 }
 
+/**
+ * The same gate, but without the day in the key.
+ *
+ * `claimReminder` keys on `(user, kind, ref, sent_on)`, which is right for „three
+ * days before” and „on the day”: those are two notices about one deadline, and
+ * next year the same pair comes round legitimately. A weekly digest keyed the
+ * same way would go out again every morning of that week, since `sent_on` moves.
+ * Here the day is carried in `kind` instead, and the row is written only if
+ * nothing with that key exists yet.
+ *
+ * The sweep is serialised by an advisory lock, so two callers cannot reach the
+ * gap between the check and the insert; the primary key still refuses a
+ * same-day repeat if one ever did.
+ */
+async function claimOnce(userId: string, kind: string, refId: string): Promise<boolean> {
+  const row = await queryOne<{ ok: boolean }>(
+    `INSERT INTO notifications_sent (user_id, kind, ref_id)
+     SELECT $1, $2, $3
+      WHERE NOT EXISTS (
+        SELECT 1 FROM notifications_sent
+         WHERE user_id = $1 AND kind = $2 AND ref_id = $3)
+     RETURNING true AS ok`,
+    [userId, kind, refId],
+  )
+  return Boolean(row?.ok)
+}
+
 async function sendReminders(baseUrl: string): Promise<number> {
   let sent = 0
 
@@ -445,12 +474,75 @@ async function sendReminders(baseUrl: string): Promise<number> {
     await sendEmail({
       to: t.student_email,
       subject: t.zile === 0 ? `Astăzi este termenul: ${t.title}` : `Peste 3 zile: ${t.title}`,
+      /* It used to end „marchează-l în portal ca să nu îți mai apară” — an
+       * instruction for something the portal does not allow: the state of a
+       * milestone is the coordinator's, `/api/termene` refuses anyone who is
+       * not a member of staff, and the student's screen has no control at all.
+       * Whoever followed the sentence looked for a button that was never there. */
       html: template(
         t.zile === 0 ? 'Termenul este astăzi' : 'Un termen se apropie',
         html`<p>Bună, ${t.student_name.split(' ')[0]}. Termenul <strong>${t.title}</strong>
          ${t.zile === 0 ? 'este astăzi' : 'este peste 3 zile'}.</p>
-         <p>Dacă l-ai încheiat deja, marchează-l în portal ca să nu îți mai apară.</p>`,
+         <p>Dacă l-ai încheiat deja, scrie-i coordonatorului în conversație — el îl marchează
+         ca finalizat.</p>`,
         { text: 'Vezi termenele', url: `${baseUrl}/cererile-mele` },
+      ),
+    })
+    sent++
+  }
+
+  /* The coordinator, once a week, about what has been missed.
+   *
+   * Every milestone reminder went to the student and none to the person who
+   * sets them: a coordinator with three students two weeks behind found out by
+   * opening the screen, if they opened it. One message per coordinator, not one
+   * per deadline — twelve late students used to be twelve separate emails in
+   * every design that keyed this on the milestone.
+   */
+  const weekKey = `termene_depasite:${startOfWeek(localDay(new Date()))}`
+
+  const behind = await query<{
+    teacher_id: string
+    teacher_name: string
+    teacher_email: string
+    total: number
+    students: number
+    examples: string[]
+  }>(
+    `SELECT t.id AS teacher_id, t.name AS teacher_name, t.email AS teacher_email,
+            count(*)::int AS total,
+            count(DISTINCT r.student_id)::int AS students,
+            (array_agg(m.title || ' · ' || s.name || ' · ' || to_char(m.due_on, 'DD.MM.YYYY')
+                       ORDER BY m.due_on))[1:5] AS examples
+       FROM milestones m
+       JOIN requests r ON r.id = m.request_id
+       JOIN users s ON s.id = r.student_id
+       JOIN users t ON t.id = r.teacher_id
+      WHERE m.status <> 'done'
+        AND r.status = 'approved'
+        AND m.due_on IS NOT NULL
+        AND m.due_on < current_date
+        AND t.is_active
+      GROUP BY t.id, t.name, t.email`,
+  )
+
+  for (const d of behind) {
+    if (!(await claimOnce(d.teacher_id, weekKey, d.teacher_id))) continue
+    await sendEmail({
+      to: d.teacher_email,
+      subject: `${numar(d.total, 'termen depășit', 'termene depășite')} la studenții tăi`,
+      html: template(
+        'Termene depășite',
+        html`<p>La lucrările pe care le coordonezi sunt
+         <strong>${numar(d.total, 'termen depășit', 'termene depășite')}</strong>, la
+         ${numar(d.students, 'student', 'studenți')}.</p>
+         <ul>${joinHtml(d.examples.map((e) => html`<li>${e}</li>`))}</ul>
+         ${d.total > d.examples.length
+           ? html`<p>Și încă ${numar(d.total - d.examples.length, 'termen', 'termene')}.</p>`
+           : ''}
+         <p>Un termen depășit nu se închide singur: îl muți, îl marchezi finalizat sau îl
+         ștergi — din agenda termenelor.</p>`,
+        { text: 'Deschide agenda termenelor', url: `${baseUrl}/profesor/studenti?sectiune=progres&vedere=toti` },
       ),
     })
     sent++

@@ -1,0 +1,359 @@
+---
+import AlegeAn from '../../components/AlegeAn.astro'
+import Metrica from '../../components/Metrica.astro'
+import ProfesorLayout from '../../layouts/ProfesorLayout.astro'
+import { queryOne, query } from '../../lib/db'
+import { STATUS_CLASS, STATUS_LABELS, formatDate, formatTime, teacherSlotHistory, teacherStats } from '../../lib/repo'
+import { numar } from '../../lib/text'
+import { allYears } from '../../lib/years'
+
+/**
+ * What one coordinator did in one academic year.
+ *
+ * It used to be „Arhivă & Profil”, and it carried four unrelated jobs: this
+ * record, the account form and a written request for more seats. The profile
+ * moved to `/contul-meu`, where every role now edits it, and the seats request
+ * moved to the dashboard, where the capacity it argues about is already shown.
+ * What is left has one subject and follows one control — the year picker.
+ *
+ * Deliberately not „average grade” and „similarity index”: grading is out of the
+ * portal's scope, and a similarity percentage without its sources says nothing.
+ * These are the numbers a coordinator can actually act on.
+ */
+
+const u = Astro.locals.user!
+const years = await allYears()
+const selectedYear = Astro.url.searchParams.get('an') ?? ''
+const year = years.find((y) => y.id === selectedYear) ?? years.find((y) => y.is_current) ?? years[0]
+const isCurrent = Boolean(year?.is_current)
+
+const [stats, pastSlots] = await Promise.all([
+  teacherStats(u.id, year?.id),
+  teacherSlotHistory(u.id, year?.id),
+])
+
+/* How many hours they came to, not just how many meetings: a one-hour
+ * consultation with four students is one hour of work, not four. */
+const consultationHours = pastSlots.reduce(
+  (t, c) => t + (new Date(c.ends_at).getTime() - new Date(c.starts_at).getTime()) / 3_600_000,
+  0,
+)
+const studentsSeen = new Set(pastSlots.flatMap((c) => c.student_names)).size
+
+const topics = await queryOne<{ proposed: number; taken: number }>(
+  `SELECT count(*)::int AS proposed,
+          count(*) FILTER (WHERE EXISTS (
+            SELECT 1 FROM requests r WHERE r.topic_id = t.id AND r.status = 'approved'
+          ))::int AS taken
+     FROM topics t WHERE t.teacher_id = $1 AND t.academic_year_id = $2`,
+  [u.id, year?.id],
+)
+
+const rejected = await query<{
+  number: string
+  student_name: string
+  title_ro: string
+  status: string
+  rejection_reason: string | null
+  decided_at: string | null
+}>(
+  `SELECT r.number, s.name AS student_name, r.title_ro, r.status, r.rejection_reason, r.decided_at
+     FROM requests r
+     JOIN users s ON s.id = r.student_id
+    WHERE r.teacher_id = $1 AND r.status IN ('rejected', 'expired') AND r.academic_year_id = $2
+    ORDER BY r.decided_at DESC NULLS LAST
+    LIMIT 100`,
+  [u.id, year?.id],
+)
+
+const history = await query<{
+  number: string
+  student_name: string
+  title_ro: string
+  status: string
+  submitted_at: string
+  decided_at: string | null
+}>(
+  `SELECT r.number, s.name AS student_name, r.title_ro, r.status, r.submitted_at, r.decided_at
+     FROM requests r
+     JOIN users s ON s.id = r.student_id
+    WHERE r.teacher_id = $1 AND r.academic_year_id = $2
+    ORDER BY r.submitted_at DESC
+    LIMIT 100`,
+  [u.id, year?.id],
+)
+
+const proposedTopics = topics?.proposed ?? 0
+const freeTopics = proposedTopics - (topics?.taken ?? 0)
+
+/* The old note said „toate cu motivul comunicat” at zero refusals, and said it
+ * again when the refusal carried no text at all — `rejection_reason` is
+ * nullable. A figure of zero now says so, and the reasons are counted. */
+const unaccepted = (stats?.rejected ?? 0) + (stats?.expired ?? 0)
+const withoutReason = rejected.filter((r) => r.status === 'rejected' && !r.rejection_reason).length
+const unacceptedNote =
+  unaccepted === 0
+    ? 'Nicio cerere refuzată sau expirată'
+    : (stats?.expired ?? 0) > 0
+      ? `${numar(stats!.expired, 'expirată', 'expirate')} fără răspunsul tău`
+      : withoutReason > 0
+        ? `${withoutReason} fără motiv scris`
+        : 'toate cu motivul scris'
+---
+
+<ProfesorLayout
+  title="Activitatea mea"
+  lede="Ce ai coordonat într-un an universitar: cererile primite și decise, motivele refuzurilor, consultațiile ținute."
+  active="activitate"
+>
+  <div slot="actiuni" class="row row--wrap" style="gap:var(--s-2)">
+    <AlegeAn years={years} selected={year?.id ?? ''} base="/profesor/activitatea-mea" />
+    {/* The export follows the year chosen on the screen, not the current
+        session — so the button says which year it will hand over. */}
+    <a class="btn btn--secondary btn--sm" href={`/profesor/export-coordonari?doar_ale_mele=1&an=${year?.id ?? ''}`}>
+      Descarcă coordonările {year?.label} (CSV)
+    </a>
+  </div>
+
+  <div class="stack stack--loose">
+    <section class="stack">
+      <h2 class="section-title">Anul {year?.label} în cifre</h2>
+      <div class="grid-auto">
+        {/* „218h” asks for a mental division. Past two days it is written in days. */}
+        <Metrica
+          value={
+            stats?.avg_response_hours == null
+              ? '—'
+              : stats.avg_response_hours < 48
+                ? `${stats.avg_response_hours} h`
+                : `${(stats.avg_response_hours / 24).toFixed(1).replace('.', ',')} zile`
+          }
+          label="timp mediu de răspuns"
+          note="de la depunerea cererii până la decizia ta"
+        />
+        <Metrica
+          value={`${topics?.taken ?? 0} / ${proposedTopics}`}
+          label="teme preluate"
+          note={
+            proposedTopics === 0
+              ? 'Nu ai propus nicio temă în acest an'
+              : freeTopics === 1
+                ? 'O temă a rămas neatribuită'
+                : freeTopics > 0
+                  ? `${numar(freeTopics, 'temă', 'teme')} au rămas neatribuite`
+                  : 'Toate temele propuse au fost preluate'
+          }
+        />
+        <Metrica
+          value={stats?.approved ?? 0}
+          label="coordonări acceptate"
+          note={
+            (stats?.total ?? 0) === 0
+              ? 'Nicio cerere primită în acest an'
+              : `din ${numar(stats!.total, 'cerere primită', 'cereri primite')}`
+          }
+        />
+        <Metrica value={unaccepted} label="cereri neacceptate" note={unacceptedNote} />
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel__header">
+        <h2 class="section-title">Cererile primite</h2>
+        <span class="muted text-sm">
+          {history.length} {history.length === 1 ? 'înregistrare' : 'înregistrări'} · {year?.label}
+        </span>
+      </div>
+      {
+        history.length === 0 ? (
+          <div class="empty">
+            <p class="empty__title">Nicio cerere în {year?.label}</p>
+            <p class="empty__text">
+              {isCurrent
+                ? 'Studenții te găsesc în catalog după temele propuse și după profilul tău. Publică o temă și cererile încep să apară aici.'
+                : 'În acest an universitar nu ai primit cereri prin portal.'}
+            </p>
+            {isCurrent && (
+              <a class="btn btn--primary btn--sm" href="/profesor/teme">
+                Publică o temă
+              </a>
+            )}
+          </div>
+        ) : (
+          <div class="table-wrap" tabindex="0" role="region" aria-label="Cererile primite">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th scope="col">Cerere</th>
+                  <th scope="col">Student</th>
+                  <th scope="col">Titlul lucrării</th>
+                  <th scope="col">Stare</th>
+                  <th scope="col">Depusă</th>
+                  <th scope="col">Decisă</th>
+                </tr>
+              </thead>
+              <tbody>
+                {history.map((r) => (
+                  <tr>
+                    <td class="numeric muted">{r.number}</td>
+                    <td>{r.student_name}</td>
+                    <td class="cell-title" title={r.title_ro}>{r.title_ro}</td>
+                    <td>
+                      <span class:list={['badge', STATUS_CLASS[r.status]]}>{STATUS_LABELS[r.status]}</span>
+                    </td>
+                    <td class="muted">{formatDate(r.submitted_at)}</td>
+                    <td class="muted">{formatDate(r.decided_at)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )
+      }
+    </section>
+
+    {/* The same rows as in the table above, opened up: the table has no column
+        wide enough for a written refusal, and the refusal is the only part of a
+        decision a student can be told about. */}
+    {
+      rejected.length > 0 && (
+        <section class="panel">
+          <div class="panel__header">
+            <h2 class="section-title">Refuzurile și motivele lor</h2>
+            <span class="muted text-sm">{rejected.length} din tabelul de mai sus</span>
+          </div>
+          <ul class="rejected">
+            {rejected.map((r) => (
+              <li>
+                <div class="row row--between row--wrap" style="gap:var(--s-2)">
+                  <strong>{r.student_name}</strong>
+                  <span class="muted numeric text-xs">
+                    {r.number} · {formatDate(r.decided_at)}
+                  </span>
+                </div>
+                <p class="muted text-sm">{r.title_ro}</p>
+                {r.rejection_reason ? (
+                  <p class="reason">{r.rejection_reason}</p>
+                ) : (
+                  <p class="muted text-sm">
+                    {r.status === 'expired'
+                      ? 'Cererea a expirat fără decizie; studentul nu a primit un motiv.'
+                      : 'Refuzată fără motiv scris; studentul nu a primit o explicație.'}
+                  </p>
+                )}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )
+    }
+
+    {/* ------------------------------------------- consultations that were held
+
+        They existed nowhere. The schedule screen reaches one day back, and this
+        screen knew nothing about consultations at all: "when did I last see
+        this student" and "how many consultations did I hold this session" could
+        not be found out from the portal, even though it had scheduled every one
+        of them. */}
+    <section class="panel">
+      <div class="panel__header">
+        <h2 class="section-title">Consultații ținute</h2>
+        <span class="muted text-sm">
+          {numar(pastSlots.length, 'consultație', 'consultații')}
+          {pastSlots.length > 0 &&
+            ` · ${numar(consultationHours, 'oră', 'ore')} · ${numar(studentsSeen, 'student', 'studenți')}`}
+          {' · '}{year?.label}
+        </span>
+      </div>
+      {
+        pastSlots.length === 0 ? (
+          <div class="empty">
+            <p class="empty__title">Nicio consultație încheiată în {year?.label}</p>
+            <p class="empty__text">
+              {isCurrent
+                ? 'Apar aici pe măsură ce trec — doar intervalele la care s-a prezentat cineva, nu și cele anulate sau rămase libere.'
+                : 'În acest an universitar nu ai avut consultații rezervate prin portal.'}
+            </p>
+            {isCurrent && (
+              <a class="btn btn--primary btn--sm" href="/profesor/consultatii">
+                Publică intervale de consultație
+              </a>
+            )}
+          </div>
+        ) : (
+          <div class="table-wrap" tabindex="0" role="region" aria-label="Consultațiile ținute">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th scope="col">Când</th>
+                  <th scope="col">Interval</th>
+                  <th scope="col">Cu cine</th>
+                  <th scope="col">Unde</th>
+                  <th scope="col">Subiect</th>
+                </tr>
+              </thead>
+              <tbody>
+                {pastSlots.map((c) => (
+                  <tr>
+                    <td>{formatDate(c.starts_at)}</td>
+                    <td class="numeric muted">
+                      {formatTime(c.starts_at)}–{formatTime(c.ends_at)}
+                    </td>
+                    <td>{c.student_names.join(', ')}</td>
+                    <td class="muted">
+                      {c.mode === 'online' ? 'Online' : (c.location ?? 'Cabinet')}
+                    </td>
+                    <td class="muted">{c.note ?? '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )
+      }
+    </section>
+  </div>
+</ProfesorLayout>
+
+<script>
+  /* The seats request used to be on this screen, under `#locuri`, and three
+   * other screens plus one email link to it that way. A fragment never reaches
+   * the server, so the redirect from the old address cannot route it — but the
+   * browser carries it across the redirect and it arrives here. `replace`, not
+   * `assign`: otherwise Back lands on this page and bounces forward again. */
+  if (location.hash === '#locuri') location.replace('/profesor#locuri')
+</script>
+
+<style>
+  .rejected {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+  .rejected li {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-1);
+    padding: var(--s-4) var(--s-5);
+    border-bottom: 1px solid var(--border);
+  }
+  .rejected li:last-child {
+    border-bottom: 0;
+  }
+
+  .reason {
+    padding: var(--s-3);
+    background: var(--danger-tint);
+    border-radius: var(--r-md);
+    font-size: var(--t-sm);
+    color: var(--ink);
+    text-wrap: pretty;
+  }
+
+  .cell-title {
+    max-width: 34ch;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+</style>

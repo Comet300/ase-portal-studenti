@@ -3,7 +3,7 @@ import { queryOne } from '../../../lib/db'
 import { renderDoc } from '../../../lib/doc'
 import { id as routeId } from '../../../lib/ids'
 import { escapeHtml } from '../../../lib/mail'
-import { formatDate } from '../../../lib/repo'
+import { formatDate, requestTitleChanges } from '../../../lib/repo'
 import { officialName } from '../../../lib/text'
 import { languageLabel, levelLabel } from '../../../lib/years'
 
@@ -63,6 +63,14 @@ export const GET: APIRoute = async ({ params, locals }) => {
 
   if (!r) return new Response('Documentul nu a fost găsit', { status: 404 })
 
+  /* The document is regenerated from live data every time it is asked for, and
+   * the title can now change after the coordination was agreed. So a copy
+   * printed in October and one printed in March can carry two different titles
+   * for the same request number, with the first already signed and filed at the
+   * secretariat. The sheet says so itself rather than leaving the registry to
+   * discover it. */
+  const changes = await requestTitleChanges(requestId)
+
   const e = escapeHtml
   const row = (label: string, value: string) => `<dt>${label}</dt><dd>${value}</dd>`
 
@@ -115,6 +123,23 @@ export const GET: APIRoute = async ({ params, locals }) => {
          <span>Semnătura coordonatorului: <span class="blank">&nbsp;</span></span>
        </div>
        <div class="signatures"><span>Data: <span class="blank">&nbsp;</span></span></div>
+
+       ${
+         changes.length > 0
+           ? `<p class="note"><strong>Titlul lucrării a fost modificat după aprobarea cererii.</strong>
+              Documentul de mai sus poartă titlul în vigoare la data tipăririi. Dacă un exemplar
+              semnat a fost deja depus la secretariat, el trebuie înlocuit cu acesta.</p>
+              <dl class="record">${changes
+                .map(
+                  (c) =>
+                    `<dt>${formatDate(c.decided_at ?? c.created_at)}</dt>
+                     <dd>„${e(c.old_title_ro)}” → „${e(c.new_title_ro)}”${
+                       c.by_teacher ? ' (modificare a coordonatorului)' : ' (la cererea studentului)'
+                     }</dd>`,
+                )
+                .join('')}</dl>`
+           : ''
+       }
 
        <p class="note">Document generat automat din Portalul Studenți pe baza cererii înregistrate
        electronic. Se tipărește, se semnează de ambele părți și se depune la secretariatul

@@ -53,7 +53,11 @@ export const GET: APIRoute = async ({ params, locals }) => {
 
   const ics = buildIcs({
     uid: consultationUid(slotId, u.id),
-    title: `Consultație cu ${r.teacher_name}`,
+    /* The same SUMMARY the emailed invitation carried, and the same the
+       cancellation carries. The UID is what a calendar matches on, so a
+       different title here did not create a second event — it renamed the
+       existing one to something nobody else in the portal ever wrote. */
+    title: `Consultație — ${r.teacher_name}`,
     description: r.note ?? r.subject ?? 'Consultație pentru lucrarea de finalizare a studiilor.',
     location,
     meetingUrl: r.meeting_url ?? undefined,

@@ -77,7 +77,14 @@ export const POST: APIRoute = async ({ request, locals }) => {
       copySeats: form.get('preia_locuri') === 'da',
     })
 
-    return back(`Anul ${label} este deschis. Sesiunea anterioară a trecut în arhivă.`)
+    /* The next step is named, because it is the one nothing on this screen does.
+     * Opening a year carries the *existing* people forward — it never brings a
+     * new cohort into being, and the director who has just archived a session
+     * is exactly the person about to look for where the first-year list goes. */
+    return back(
+      `Anul ${label} este deschis. Sesiunea anterioară a trecut în arhivă. ` +
+        'Urmează promoția nouă: se adaugă din Conturi → „Importă o promoție”.',
+    )
   }
 
   if (action === 'adauga_program') {

@@ -14,21 +14,23 @@ import {
   teacherStats,
   supervisedStudents,
 } from '../../lib/repo'
-import { teacherInvitations } from '../../lib/lifecycle'
-import { officialName } from '../../lib/text'
-import { currentYearLabel, groupLabel } from '../../lib/years'
+import { seatRequests, teacherInvitations } from '../../lib/lifecycle'
+import { numar, officialName } from '../../lib/text'
+import { LEVEL_LABELS, currentYearLabel, groupLabel } from '../../lib/years'
 
 const u = Astro.locals.user!
-const [stat, cereri, studenti, slots, stageList, etapa, locuri, invitatii] = await Promise.all([
-  teacherStats(u.id),
-  teacherRequests(u.id, 'pending'),
-  supervisedStudents(u.id),
-  teacherSlots(u.id),
-  stages(),
-  currentStage(),
-  teacherSeats(u.id),
-  teacherInvitations(u.id),
-])
+const [stat, cereri, studenti, slots, stageList, etapa, locuri, invitatii, cereriLocuri] =
+  await Promise.all([
+    teacherStats(u.id),
+    teacherRequests(u.id, 'pending'),
+    supervisedStudents(u.id),
+    teacherSlots(u.id),
+    stages(),
+    currentStage(),
+    teacherSeats(u.id),
+    teacherInvitations(u.id),
+    seatRequests({ teacherId: u.id }),
+  ])
 
 const yearLabel = await currentYearLabel()
 const today = new Date().toDateString()
@@ -39,6 +41,22 @@ const capacity = locuri.total_seats
 const taken = locuri.total_taken
 const percent = capacity > 0 ? Math.min(100, Math.round((taken / capacity) * 100)) : 0
 const openInvitations = invitatii.filter((i) => i.status === 'pending').length
+
+/* Asking the department for more seats belongs where the coordinator finds out
+ * they have none left, not in the archive where it used to live: this panel
+ * already says how many seats there are, how many are free and what being full
+ * does to the catalogue entry. Seat requests are current-session only by
+ * construction (`seat_requests.academic_year_id` is the current year), which is
+ * the other reason they cannot sit on a screen with a year picker.
+ *
+ * The form is folded away until it is needed — the dashboard is a summary, and
+ * a textarea open by default on it would be the tallest thing on the screen.
+ * It unfolds by itself when there is nothing left to give away, and when a
+ * validation error sends the person back here with their text refused. */
+const openSeatRequest = cereriLocuri.find((r) => r.status === 'pending')
+const decidedSeatRequests = cereriLocuri.filter((r) => r.status !== 'pending')
+const seatNoticeIsError = Astro.url.searchParams.get('tip') === 'error'
+const askSeatsOpen = !openSeatRequest && (locuri.free === 0 || seatNoticeIsError)
 
 const firstName = u.name.replace(/^(Prof\.|Conf\.|Lect\.|Asist\.)\s*univ\.\s*dr\.\s*/i, '').split(' ')[0]
 const necitite = studenti.reduce((s, x) => s + x.unread, 0)
@@ -198,10 +216,10 @@ const necitite = studenti.reduce((s, x) => s + x.unread, 0)
 
     <!-- Capacity + the session calendar -->
     <div class="columns">
-      <section class="panel">
+      <section class="panel" id="locuri" tabindex="-1">
         <div class="panel__header">
           <h2 class="section-title">Locuri de coordonare</h2>
-          <a href="/profesor/arhiva#locuri" class="btn btn--secondary btn--sm">Cere locuri</a>
+          <span class="muted text-sm">{yearLabel}</span>
         </div>
         <div class="panel__body stack">
           <div class="row row--between">
@@ -220,15 +238,105 @@ const necitite = studenti.reduce((s, x) => s + x.unread, 0)
           >
             <span class="bara__fill" style={`--procent:${percent / 100}`}></span>
           </div>
+          {/* „apari în catalog ca fără locuri, împreună cu studenții pe care îi
+              coordonezi” read as though the coordinator were listed next to
+              their students. What the catalogue does is keep the entry and mark
+              it — so that is what the sentence says. */}
           <p class="muted text-sm">
             {
               capacity === 0
-                ? 'Directorul de departament nu ți-a alocat încă locuri pentru această sesiune.'
+                ? 'Directorul de departament nu ți-a alocat încă locuri în această sesiune, deci nu poți accepta cereri. Cere-i locuri de mai jos.'
                 : locuri.free > 0
-                  ? `Mai poți prelua ${locuri.free} ${locuri.free === 1 ? 'student' : 'studenți'} în această sesiune. Locurile sunt alocate de directorul de departament.`
-                  : 'Toate locurile sunt ocupate. În catalogul studenților apari ca fără locuri disponibile; poți cere locuri suplimentare directorului.'
+                  ? `Mai poți accepta ${numar(locuri.free, 'student', 'studenți')} în această sesiune. Numărul de locuri este stabilit de directorul de departament.`
+                  : 'Toate locurile sunt ocupate: nu mai poți accepta o cerere. Rămâi în catalogul studenților, marcat „fără locuri disponibile”, cu studenții pe care îi coordonezi deja.'
             }
           </p>
+        </div>
+
+        <div class="panel__footer stack">
+          {
+            openSeatRequest ? (
+              <p class="alerta-locuri">
+                Ai cerut <strong>{openSeatRequest.extra_seats}</strong> locuri la{' '}
+                {LEVEL_LABELS[openSeatRequest.level].toLowerCase()} pe{' '}
+                {formatDate(openSeatRequest.created_at)}. Așteaptă decizia directorului de
+                departament — o primești și pe email.
+              </p>
+            ) : (
+              <details class="cere-locuri" open={askSeatsOpen}>
+                <summary>Cere locuri directorului de departament</summary>
+                <form method="POST" action="/api/locuri" class="stack">
+                  <input type="hidden" name="actiune" value="cere" />
+                  <div class="row row--wrap" style="gap:var(--s-3)">
+                    <div class="field" style="min-width:190px">
+                      <label class="label" for="nivel">Nivelul pentru care ceri locuri</label>
+                      <select class="select" id="nivel" name="nivel">
+                        <option value="bachelor">Licență</option>
+                        <option value="master">Master</option>
+                      </select>
+                    </div>
+                    <div class="field" style="min-width:130px">
+                      <label class="label" for="locuri-cerute">Câte locuri în plus</label>
+                      <input
+                        class="input"
+                        id="locuri-cerute"
+                        name="locuri"
+                        type="number"
+                        min="1"
+                        max="20"
+                        value="2"
+                      />
+                    </div>
+                  </div>
+                  <div class="field">
+                    <label class="label" for="motiv">De ce ai nevoie de ele</label>
+                    <textarea
+                      class="textarea"
+                      id="motiv"
+                      name="motiv"
+                      rows="2"
+                      minlength="20"
+                      required
+                      placeholder="Ex: am primit trei cereri peste capacitate, toate pe teme din aria mea de cercetare."
+                    data-autogrow />
+                    <span class="hint">
+                      Directorul de departament decide pe baza acestui text; scrie cel puțin 20 de
+                      caractere.
+                    </span>
+                  </div>
+                  <div class="row row--end">
+                    <button class="btn btn--secondary" type="submit">
+                      Trimite cererea directorului
+                    </button>
+                  </div>
+                </form>
+              </details>
+            )
+          }
+
+          {
+            decidedSeatRequests.length > 0 && (
+              <ul class="decizii-locuri">
+                {decidedSeatRequests.map((r) => (
+                  <li>
+                    <span
+                      class:list={[
+                        'badge',
+                        r.status === 'approved' ? 'badge--aprobata' : 'badge--respinsa',
+                      ]}
+                    >
+                      {r.status === 'approved' ? 'Aprobată' : 'Respinsă'}
+                    </span>
+                    <span>
+                      {r.extra_seats} locuri la {LEVEL_LABELS[r.level].toLowerCase()} ·{' '}
+                      {formatDate(r.decided_at)}
+                    </span>
+                    {r.decision_note && <span class="muted">„{r.decision_note}”</span>}
+                  </li>
+                ))}
+              </ul>
+            )
+          }
         </div>
       </section>
 
@@ -260,6 +368,49 @@ const necitite = studenti.reduce((s, x) => s + x.unread, 0)
 </ProfesorLayout>
 
 <style>
+  .alerta-locuri {
+    padding: var(--s-3) var(--s-4);
+    background: var(--warn-tint);
+    color: var(--warn);
+    border-radius: var(--r-md);
+    font-size: var(--t-sm);
+    text-wrap: pretty;
+  }
+
+  /* The summary is the control that opens the form, so it is drawn as one and
+     keeps the tap target the rest of the portal has. */
+  .cere-locuri > summary {
+    display: flex;
+    align-items: center;
+    min-height: var(--tap);
+    font-size: var(--t-sm);
+    font-weight: 600;
+    color: var(--ink-soft);
+    cursor: pointer;
+  }
+  .cere-locuri > summary:hover {
+    color: var(--red);
+  }
+  .cere-locuri[open] > summary {
+    margin-bottom: var(--s-3);
+  }
+
+  .decizii-locuri {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-2);
+    font-size: var(--t-sm);
+  }
+  .decizii-locuri li {
+    display: flex;
+    align-items: center;
+    gap: var(--s-3);
+    flex-wrap: wrap;
+  }
+
   .columns {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));

@@ -23,7 +23,7 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
 
   // A missing id would not match any row anyway; refused here, the message is
   // about what happened, not "the slot is no longer available".
-  if (!slotId) return back('Intervalul nu a fost identificat.', true)
+  if (!slotId) return back('Ora de consultație nu a fost identificată. Reîncarcă pagina.', true)
 
   if (action === 'anuleaza') {
     /* The cancellation has to reach the coordinator as well.
@@ -56,7 +56,7 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
       [u.id, slotId],
     )
 
-    if (!cancelled) return back('Rezervarea nu a fost găsită.', true)
+    if (!cancelled) return back('Rezervarea nu a fost găsită. Reîncarcă pagina — s-ar putea să fie deja anulată.', true)
 
     const when = `${formatDate(cancelled.starts_at)}, ${formatTime(cancelled.starts_at)}–${formatTime(cancelled.ends_at)}`
 
@@ -71,11 +71,17 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
       subjectId: slotId,
     })
 
-    // The calendar cancellation: the same UID, a higher `SEQUENCE`, `METHOD:CANCEL`.
+    /* The calendar cancellation: the same UID, a higher `SEQUENCE`,
+     * `METHOD:CANCEL` — and the same SUMMARY the invitation carried. Both
+     * calendars hold this event under the title the booking gave it, so a
+     * cancellation announcing a differently-named meeting reads, to whoever
+     * opens it, as a message about something else. */
     const anulare = buildIcs({
       uid: consultationUid(slotId, u.id),
-      title: `Consultație cu ${cancelled.student_name}`,
+      title: `Consultație — ${cancelled.teacher_name}`,
+      description: 'Consultație anulată de student.',
       location: cancelled.mode === 'online' ? (cancelled.meeting_url ?? 'Online') : (cancelled.location ?? 'Cabinet'),
+      meetingUrl: cancelled.meeting_url ?? undefined,
       start: new Date(cancelled.starts_at),
       end: new Date(cancelled.ends_at),
       organizerName: cancelled.teacher_name,
@@ -95,7 +101,7 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
       html: template(
         'O consultație a fost anulată',
         html`<p><strong>${cancelled.student_name}</strong> a anulat consultația din ${when}.</p>
-         <p>Intervalul este din nou disponibil pentru ceilalți studenți pe care îi coordonezi.</p>`,
+         <p>Ora este din nou liberă pentru ceilalți studenți pe care îi coordonezi.</p>`,
         { text: 'Vezi programul', url: `${process.env.APP_BASE_URL ?? url.origin}/profesor/consultatii` },
       ),
       attachments: atasament,
@@ -119,8 +125,8 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
            Bună, ${cancelled.student_name.split(' ')[0]}. Ai anulat consultația din ${when} cu
            <strong>${cancelled.teacher_name}</strong>.
          </p>
-         <p>Am retras și invitația din calendar. Poți rezerva un alt interval oricând.</p>`,
-        { text: 'Vezi intervalele libere', url: `${process.env.APP_BASE_URL ?? url.origin}/consultatii` },
+         <p>Am retras și invitația din calendar. Poți rezerva altă oră oricând.</p>`,
+        { text: 'Vezi orele libere', url: `${process.env.APP_BASE_URL ?? url.origin}/consultatii` },
       ),
       attachments: atasament,
     }).catch((err) => console.error('[rezervari] confirmarea anulării nu a plecat', err))
@@ -157,7 +163,7 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
     [u.id, slotId, subject],
   )
 
-  if (!booking) return back('Intervalul nu mai este disponibil.', true)
+  if (!booking) return back('Ora nu mai este liberă — cineva a luat locul înaintea ta. Alege altă oră din listă.', true)
 
   const slot = await queryOne<{
     starts_at: string
@@ -214,12 +220,12 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
         subject: `Rezervare consultație — ${u.name}`,
         html: template(
           'Un student ți-a rezervat o consultație',
-          html`<p><strong>${u.name}</strong> (${u.student_number ?? '—'}) a rezervat intervalul:</p>${body}`,
+          html`<p><strong>${u.name}</strong> (${u.student_number ?? '—'}) a rezervat ora:</p>${body}`,
         ),
         attachments: attachment,
       }),
     ])
   }
 
-  return back('Consultație rezervată. Invitația a fost trimisă pe email.')
+  return back('Oră rezervată. Invitația de calendar a plecat pe email.')
 }

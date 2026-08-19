@@ -18,7 +18,11 @@ import { id as formId } from '../../lib/ids'
  */
 
 const HEAD_PAGE = '/profesor/departament?sectiune=locuri'
-const TEACHER_PAGE = '/profesor/arhiva'
+/* The form moved out of the archive and onto the coordinator's own dashboard,
+ * next to the capacity it argues about. The fragment matters: without it a
+ * refused request answered at the top of a screen whose seats panel is halfway
+ * down, and `redirectWithNotice` keeps `#…` at the end of the address. */
+const TEACHER_PAGE = '/profesor#locuri'
 
 export const POST: APIRoute = async ({ request, locals, url }) => {
   const u = locals.user
@@ -86,7 +90,7 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
     if (reason.length < 20) {
       return redirectWithNotice(
         TEACHER_PAGE,
-        'Motivează cererea în cel puțin 20 de caractere — directorul decide pe baza ei.',
+        'Scrie de ce ai nevoie de locuri, în cel puțin 20 de caractere: directorul de departament decide pe baza acestui text.',
         true,
       )
     }
@@ -101,7 +105,7 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
       if (String(err).includes('idx_seat_requests_one_open')) {
         return redirectWithNotice(
           TEACHER_PAGE,
-          'Ai deja o cerere de locuri în așteptare pentru acest nivel.',
+          'Ai deja o cerere de locuri în așteptare la acest nivel. Așteaptă decizia directorului sau cere locuri la celălalt nivel.',
           true,
         )
       }
@@ -195,7 +199,7 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
             : html`<p>Cererea pentru ${decided.extra_seats} locuri la
                ${decided.level === 'master' ? 'master' : 'licență'} a fost respinsă.</p>
                ${note ? html`<p><strong>Motiv:</strong> ${note}</p>` : ''}`,
-          { text: 'Deschide portalul', url: `${base}/profesor/arhiva` },
+          { text: 'Deschide locurile de coordonare', url: `${base}/profesor#locuri` },
         ),
       })
     }

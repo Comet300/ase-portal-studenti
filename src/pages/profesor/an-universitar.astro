@@ -197,6 +197,20 @@ const byLevel = {
           </button>
         </div>
       </form>
+
+      {/* Opening a year carries forward the people who already exist; a new
+          cohort appears from nowhere. The next step is named here, not repeated
+          here: the import writes into `users`, while „Importă” further down this
+          same screen writes into the archive — two buttons with one name and
+          different destination tables on one page is a mistake waiting to
+          happen. */}
+      <div class="panel__footer">
+        <p class="hint" style="margin:0">
+          Anul nou preia oamenii care sunt deja în portal. Promoția care intră acum în anul I
+          se adaugă din <a href="/profesor/conturi?sectiune=import">Conturi → Importă o promoție</a>,
+          din fișierul de la secretariat.
+        </p>
+      </div>
     </section>
 
     <section class="panel">

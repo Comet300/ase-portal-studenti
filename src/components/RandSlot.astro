@@ -1,8 +1,9 @@
 ---
 import { formatDate, formatTime, type Slot } from '../lib/repo'
+import { numar } from '../lib/text'
 
 /**
- * One consultation slot, as a table row.
+ * One consultation hour, as a table row.
  *
  * The row is written once and used in two places: in the week that is coming
  * and in the group of the ones that have ended. While it was written in place,
@@ -11,17 +12,51 @@ import { formatDate, formatTime, type Slot } from '../lib/repo'
  */
 interface Props {
   /* Not `slot`: that one is a reserved attribute in Astro, and the component's
-     own type ends up intersected with `string`. */
-  interval: Slot
-  /** An interval that has ended is no longer cancelled and asks no attention. */
+     own type ends up intersected with `string`.
+
+     The three columns migration 0017 added are optional here because `Slot` in
+     `repo.ts` does not name them yet; `teacherSlots` selects `s.*`, so they do
+     arrive. */
+  interval: Slot & {
+    kind?: 'open' | 'scheduled'
+    cancelled_reason?: string | null
+  }
+  /** An hour that has ended is no longer cancelled and asks no attention. */
   incheiat?: boolean
+  /**
+   * How many hours are still standing on the same day, this one included.
+   *
+   * Above one, the confirmation offers to call off the whole day — which is how
+   * an absence actually happens. The count is computed once by the page rather
+   * than by each row, so the dialog can name it.
+   */
+  oreInZi?: number
 }
 
-const { interval: s, incheiat = false } = Astro.props
+const { interval: s, incheiat = false, oreInZi = 1 } = Astro.props
+
+const when = `${formatDate(s.starts_at)}, ${formatTime(s.starts_at)}–${formatTime(s.ends_at)}`
+
+/* Who would be told, in words, so the confirmation does not have to count them
+   itself and cannot disagree with the row above it. */
+const whoComes =
+  s.booked === 0
+    ? 'Nimeni nu are loc rezervat la ora asta.'
+    : `${numar(s.booked, 'student este anunțat', 'studenți sunt anunțați')} pe email: ${s.student_names.join(', ')}.`
 ---
 
 <tr class:list={{ 'is-ended': incheiat }}>
-  <td>{formatDate(s.starts_at)}</td>
+  <td>
+    <div class="stack stack--tight" style="gap:0">
+      <span>{formatDate(s.starts_at)}</span>
+      {/* Which of the two things this row is. Until now nothing on the screen
+          said it, and a group meeting the coordinator had scheduled looked
+          exactly like an open hour that had filled up. */}
+      <span class="muted text-xs">
+        {s.kind === 'scheduled' ? 'consultație programată de tine' : 'oră deschisă'}
+      </span>
+    </div>
+  </td>
   <td class="numeric">{formatTime(s.starts_at)}–{formatTime(s.ends_at)}</td>
   <td>
     <div class="stack stack--tight" style="gap:0">
@@ -39,20 +74,36 @@ const { interval: s, incheiat = false } = Astro.props
   <td>
     {
       s.is_cancelled ? (
-        <span class="badge badge--neutru">Anulat</span>
+        <div class="stack stack--tight" style="gap:2px;align-items:flex-start">
+          <span class="badge badge--neutru">Anulată</span>
+          {/* The reason is the whole point of asking for one: it is read here,
+              a week later, by whoever wonders what happened that Tuesday. */}
+          {s.cancelled_reason && <span class="muted text-xs">{s.cancelled_reason}</span>}
+        </div>
       ) : s.booked > 0 ? (
         <div class="stack stack--tight" style="gap:2px;align-items:flex-start">
           <span class:list={['badge', incheiat ? 'badge--neutru' : 'badge--aprobata']}>
-            {s.capacity > 1 ? `${s.booked} din ${s.capacity} locuri` : 'Rezervat'}
+            {
+              s.kind === 'scheduled'
+                ? s.booked === 1
+                  ? 'Chemat de tine'
+                  : `${numar(s.booked, 'student chemat', 'studenți chemați')}`
+                : s.capacity > 1
+                  ? `${s.booked} din ${s.capacity} locuri ocupate`
+                  : 'Rezervat'
+            }
           </span>
           <span class="muted text-xs">{s.student_names.join(', ')}</span>
         </div>
       ) : s.invited_name ? (
-        <span class="badge badge--asteptare">rezervat pentru {s.invited_name}</span>
+        <div class="stack stack--tight" style="gap:2px;align-items:flex-start">
+          <span class="badge badge--neutru">Fără rezervare</span>
+          <span class="muted text-xs">{s.invited_name} și-a anulat locul</span>
+        </div>
       ) : incheiat ? (
         <span class="muted">Nimeni nu a venit</span>
       ) : s.capacity > 1 ? (
-        <span class="muted">{s.capacity} locuri libere</span>
+        <span class="muted">{numar(s.capacity, 'loc liber', 'locuri libere')}</span>
       ) : (
         <span class="muted">Liber</span>
       )
@@ -61,11 +112,23 @@ const { interval: s, incheiat = false } = Astro.props
   <td style="text-align:right">
     {
       !s.is_cancelled && !incheiat && (
-        <form method="POST" action="/api/sloturi">
-          <input type="hidden" name="actiune" value="anuleaza" />
-          <input type="hidden" name="slot_id" value={s.id} />
-          <button class="btn btn--ghost btn--sm" type="submit">Anulează</button>
-        </form>
+        /* A button, not a form: cancelling writes to the calendar of everybody
+           who had booked and sends each of them an email, so it goes through
+           the same confirmation the student's own cancellation goes through
+           (DESIGN.md, principiul al treilea). The dialog it opens belongs to
+           the page, so it is built at render time and keeps its styles. */
+        <button
+          class="btn btn--ghost btn--sm"
+          type="button"
+          data-anuleaza={s.id}
+          data-cand={when}
+          data-cine={whoComes}
+          data-rezervari={String(s.booked)}
+          data-ore-in-zi={String(oreInZi)}
+          data-zi={formatDate(s.starts_at)}
+        >
+          Anulează
+        </button>
       )
     }
   </td>

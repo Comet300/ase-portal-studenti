@@ -107,7 +107,10 @@ const coordination = !isTeacherProfile
     )
   : null
 
-const editHref = isTeacherProfile ? '/profesor/arhiva' : '/contul-meu'
+/* Both roles edit their profile in the same place now. It used to send a
+ * coordinator into „Arhivă & Profil”, where the form was the last of six
+ * sections — the button said „Editează profilul” and delivered an archive. */
+const editHref = '/contul-meu'
 
 /* The page renders in the shell of whoever is reading it.
  *

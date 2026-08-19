@@ -2,8 +2,15 @@
 import AlegeData from '../../components/AlegeData.astro'
 import ProfesorLayout from '../../layouts/ProfesorLayout.astro'
 import RandSlot from '../../components/RandSlot.astro'
-import { localDay, startOfWeek, supervisedStudents, teacherSlots, weekLabel } from '../../lib/repo'
-import { officialName } from '../../lib/text'
+import {
+  localDay,
+  startOfWeek,
+  supervisedStudents,
+  teacherSlots,
+  weekLabel,
+  type Slot,
+} from '../../lib/repo'
+import { numar, officialName } from '../../lib/text'
 
 /**
  * The consultation schedule.
@@ -11,10 +18,29 @@ import { officialName } from '../../lib/text'
  * A screen of its own, not a tab: it is the only thing in the portal with a
  * fixed hour, and a coordinator who wants to open two hours tomorrow should not
  * have to go through the request triage to get to it.
+ *
+ * It reads in the order the work happens. Opening hours comes first because it
+ * is the habitual gesture — a coordinator publishes hours every week and
+ * summons a particular student a few times a semester. Summoning follows it,
+ * and the schedule closes the page as the record of what the two of them
+ * produced. Before, the rarer of the two forms occupied the whole of the first
+ * screen and the common one was hidden in a footer *under* the table it fills,
+ * where it read as a caption.
  */
 
 const u = Astro.locals.user!
-const [sloturi, studenti] = await Promise.all([teacherSlots(u.id), supervisedStudents(u.id)])
+
+/** The columns migration 0017 added; `Slot` in `repo.ts` does not name them yet. */
+type SlotPlus = Slot & {
+  kind: 'open' | 'scheduled'
+  cancelled_reason: string | null
+  cancelled_at: string | null
+}
+
+const [sloturi, studenti] = (await Promise.all([teacherSlots(u.id), supervisedStudents(u.id)])) as [
+  SlotPlus[],
+  Awaited<ReturnType<typeof supervisedStudents>>,
+]
 
 const today = localDay(new Date())
 const withStudentId = Astro.url.searchParams.get('cu') ?? ''
@@ -23,8 +49,8 @@ const withStudentId = Astro.url.searchParams.get('cu') ?? ''
  * The schedule, split the way it is read.
  *
  * There were thirty rows in a single table, in chronological order — so past
- * intervals sat at the head of the list, and the ones something can be done
- * about started around halfway down, after scrolling. A schedule is consulted by
+ * hours sat at the head of the list, and the ones something can be done about
+ * started around halfway down, after scrolling. A schedule is consulted by
  * weeks and almost only forwards.
  *
  * What has passed is not deleted: it stays, counted and gathered together,
@@ -46,33 +72,140 @@ const weeks = [
     .entries(),
 ].sort(([a], [b]) => (a < b ? -1 : 1))
 
-const active = sloturi.filter((s) => !s.is_cancelled).length
+const cancelled = sloturi.filter((s) => s.is_cancelled).length
+
+/**
+ * How many hours are still standing on each day.
+ *
+ * Being away is a property of a day, not of an hour: a coordinator with four
+ * published hours on Thursday who is called to a committee cancels Thursday.
+ * The count travels down to the row so the confirmation can offer the whole day
+ * by name, and is computed once here rather than by each row.
+ */
+const hoursPerDay = new Map<string, number>()
+for (const s of upcoming) {
+  if (s.is_cancelled) continue
+  const day = localDay(new Date(s.starts_at))
+  hoursPerDay.set(day, (hoursPerDay.get(day) ?? 0) + 1)
+}
+const dayCount = (s: SlotPlus) => hoursPerDay.get(localDay(new Date(s.starts_at))) ?? 1
 ---
 
 <ProfesorLayout
   title="Consultații"
-  lede="Programează o întâlnire cu un student sau publică ore deschise pe care le poate rezerva oricine coordonezi."
+  lede="Aici îți deschizi orele în care primești studenți și vezi cine vine la fiecare. Studenții pe care îi coordonezi își rezervă singuri o oră deschisă; când ai nevoie de cineva anume, îl chemi tu."
   active="consultatii"
 >
-<div class="stack" id="consultatii">
-  {/* Scheduling with one particular student comes first: it is the action asked
-      for most often, and open hours are the background it sits on. */}
-  <section class="panel">
+<div class="stack stack--loose" id="consultatii">
+  <p class="orientare">
+    {
+      upcoming.length > 0
+        ? `Ai ${numar(upcoming.length, 'oră de consultație', 'ore de consultație')} de acum înainte.`
+        : 'Nu ai deocamdată nicio oră de consultație în program.'
+    }
+    {upcoming.length > 0 && <a class="link" href="#program">Vezi programul</a>}
+  </p>
+
+  {/* Opening hours comes first: it is what a coordinator does habitually, and
+      it is the half of the screen the students actually depend on. */}
+  <section class="panel" id="ore-deschise">
     <div class="panel__header">
-      <h2 class="section-title">Programează o consultație</h2>
+      <h2 class="section-title">Deschide ore de consultație</h2>
+      <span class="muted text-sm">Le rezervă studenții coordonați</span>
+    </div>
+
+    <form method="POST" action="/api/sloturi" class="panel__body stack">
+      <input type="hidden" name="actiune" value="publica" />
+
+      <p class="explicatie">
+        Alegi un interval, iar portalul îl taie în ore separate: de la 14:00 la 17:00 înseamnă
+        trei ore, pe care studenții le rezervă una câte una. Toți studenții pe care îi coordonezi
+        primesc pe email lista orelor noi, iar invitația în calendar le vine în momentul
+        rezervării, cu adresa și linkul completate mai jos.
+      </p>
+
+      <div class="ore">
+        <AlegeData id="ore-zi" name="zi" label="Ziua" min={today} required />
+        <div class="field">
+          <label class="label" for="ore-start">De la</label>
+          <input class="input" id="ore-start" name="ora_start" type="time" value="14:00" step="900" required />
+        </div>
+        <div class="field">
+          <label class="label" for="ore-final">Până la</label>
+          <input class="input" id="ore-final" name="ora_final" type="time" value="16:00" step="900" required />
+        </div>
+        <div class="field">
+          <label class="label" for="ore-locuri">Locuri pe oră</label>
+          <input class="input" id="ore-locuri" name="locuri" type="number" min="1" max="30" value="1"
+            aria-describedby="ajutor-locuri" />
+          <span class="hint" id="ajutor-locuri">Cu un singur loc, ora este unu la unu.</span>
+        </div>
+        <div class="field">
+          <label class="label" for="ore-mod">Cum are loc</label>
+          <select class="select" id="ore-mod" name="mod" data-mod>
+            <option value="in_person">La facultate</option>
+            <option value="online">Online</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="ore__unde">
+        <div class="field" data-camp-locatie>
+          <label class="label" for="ore-locatie">Clădirea, etajul și sala</label>
+          <input class="input" id="ore-locatie" name="locatie" value={u.office ?? ''}
+            placeholder="Clădirea Ion Angelescu, Piața Romană 6, etaj 2, sala 2203" />
+        </div>
+        <div class="field">
+          <label class="label" for="ore-link">
+            Link întâlnire <span class="muted" data-link-optional>(opțional)</span>
+          </label>
+          <input class="input" id="ore-link" name="link_online" type="url" placeholder="https://meet…"
+            aria-describedby="ajutor-ore-link" />
+          <span class="hint" id="ajutor-ore-link">Ajunge în invitația fiecărui student care rezervă.</span>
+        </div>
+      </div>
+
+      <div class="row row--end">
+        <button class="btn btn--primary" type="submit">Deschide orele</button>
+      </div>
+    </form>
+  </section>
+
+  {/* Summoning a named student is the occasional case, so it follows. The
+      anchor is what `/profesor/studenti` links to with `?cu=`; without it the
+      pre-ticked checkbox landed below the fold and the link appeared to do
+      nothing at all. */}
+  <section class="panel" id="cheama">
+    <div class="panel__header">
+      <h2 class="section-title">Cheamă un student la o consultație</h2>
+      <span class="muted text-sm">Rezervarea o faci tu, în locul lui</span>
     </div>
 
     {studenti.length === 0 ? (
       <div class="empty">
         <p class="empty__title">Niciun student coordonat</p>
         <p class="empty__text">
-          Poți programa o consultație doar cu studenții pe care îi coordonezi. Acceptă o
-          cerere și opțiunea devine disponibilă.
+          Poți chema la consultație doar studenții pe care îi coordonezi. Acceptă o cerere de
+          coordonare și lista apare aici. Orele deschise le poți publica de pe acum — le vede
+          oricine îți este repartizat.
         </p>
+        <a class="btn btn--primary btn--sm" href="/profesor/studenti?sectiune=cereri">
+          Vezi cererile de coordonare
+        </a>
       </div>
     ) : (
       <form method="POST" action="/api/sloturi" class="panel__body stack" id="form-programare">
         <input type="hidden" name="actiune" value="programeaza" />
+
+        <p class="explicatie">
+          Consultația iese gata rezervată, nu oferită: fiecare student chemat primește pe loc
+          invitația în calendar și o notificare în firul lui de discuție. Când nu contează cine
+          vine, deschide ore și lasă-i pe ei să aleagă.
+        </p>
+
+        {withStudentId && (
+          <p class="hint">Studentul din care ai venit este deja bifat mai jos.</p>
+        )}
 
         <div class="programare">
           <div class="field programare__cine">
@@ -80,11 +213,11 @@ const active = sloturi.filter((s) => !s.is_cancelled).length
                 are working on the same chapter do not need three separate
                 hours. Multiple selection calls for checkboxes, not a drop-down
                 list. */}
-            <span class="label" id="et-cu-cine">Cu cine</span>
+            <span class="label" id="et-cu-cine">Pe cine chemi</span>
             <fieldset class="alege-studenti" aria-labelledby="et-cu-cine" aria-describedby="numar-alesi">
               <label class="alege-studenti__toti">
                 <input type="checkbox" id="toti-studentii" />
-                <span>Selectează toți studenții coordonați</span>
+                <span>Alege toți studenții coordonați</span>
               </label>
               <div class="alege-studenti__lista">
                 {studenti.map((s) => (
@@ -115,14 +248,14 @@ const active = sloturi.filter((s) => !s.is_cancelled).length
                   concatenated „hours”: a consultation at 14:30 simply could not
                   be expressed. */}
               <div class="field">
-                <label class="label" for="prog-ora">Ora</label>
+                <label class="label" for="prog-ora">Ora de început</label>
                 <input class="input" id="prog-ora" name="ora_start" type="time" value="14:00" step="900" required />
               </div>
             </div>
 
             <div class="programare__pereche">
               <div class="field">
-                <label class="label" for="prog-durata">Durata</label>
+                <label class="label" for="prog-durata">Cât ține</label>
                 <select class="select" id="prog-durata" name="durata">
                   <option value="0.5">30 de minute</option>
                   <option value="1" selected>1 oră</option>
@@ -132,7 +265,7 @@ const active = sloturi.filter((s) => !s.is_cancelled).length
                 </select>
               </div>
               <div class="field">
-                <label class="label" for="prog-mod">Unde</label>
+                <label class="label" for="prog-mod">Cum are loc</label>
                 <select class="select" id="prog-mod" name="mod" data-mod>
                   <option value="in_person">La facultate</option>
                   <option value="online">Online</option>
@@ -158,47 +291,52 @@ const active = sloturi.filter((s) => !s.is_cancelled).length
         </div>
 
         <div class="field">
-          <label class="label" for="prog-subiect">Subiectul consultației <span class="muted">(opțional)</span></label>
+          <label class="label" for="prog-subiect">Despre ce discutați <span class="muted">(opțional)</span></label>
           <input class="input" id="prog-subiect" name="subiect"
-            placeholder="Ex: discutăm metodologia și eșantionul" />
+            placeholder="Ex: discutăm metodologia și eșantionul" aria-describedby="ajutor-subiect" />
+          <span class="hint" id="ajutor-subiect">
+            Îl vede fiecare student chemat, în email și în invitația de calendar.
+          </span>
         </div>
 
         <div class="row row--end">
           <button class="btn btn--primary" type="submit" id="programeaza">
-            Programează și trimite invitația
+            Programează consultația
           </button>
         </div>
       </form>
     )}
   </section>
 
-  <section class="panel">
+  <section class="panel" id="program">
     <div class="panel__header">
-      <h2 class="section-title">Program de consultații</h2>
+      <h2 class="section-title">Programul tău</h2>
       <span class="muted text-sm">
-        {upcoming.length} {upcoming.length === 1 ? 'interval' : 'intervale'} de acum înainte
-        {past.length > 0 && ` · ${past.length} încheiate`}
-        {active !== sloturi.length && ` · ${sloturi.length - active} anulate`}
+        {numar(upcoming.length, 'oră', 'ore')} de acum înainte
+        {past.length > 0 && ` · ${numar(past.length, 'oră încheiată', 'ore încheiate')}`}
+        {cancelled > 0 && ` · ${numar(cancelled, 'oră anulată', 'ore anulate')}`}
       </span>
     </div>
 
     {sloturi.length === 0 ? (
       <div class="empty">
-        <p class="empty__title">Niciun interval publicat</p>
+        <p class="empty__title">Niciun program deocamdată</p>
         <p class="empty__text">
-          Publică intervale, iar studenții coordonați își pot rezerva singuri un loc. Primesc
-          automat invitație în calendar.
+          Aici apare fiecare oră, cu cine s-a înscris la ea. Deschide primele ore și studenții
+          coordonați își pot rezerva singuri un loc — sau cheamă direct un student, dacă știi cu
+          cine vrei să te vezi.
         </p>
+        <a class="btn btn--primary btn--sm" href="#ore-deschise">Deschide primele ore</a>
       </div>
     ) : (
-      <div class="table-wrap" tabindex="0" role="region" aria-label="Intervalele de consultație publicate">
+      <div class="table-wrap" tabindex="0" role="region" aria-label="Programul de consultații">
         <table class="table">
           <thead>
             <tr>
-              <th scope="col">Data</th>
-              <th scope="col">Interval</th>
-              <th scope="col">Unde</th>
-              <th scope="col">Rezervare</th>
+              <th scope="col">Ziua</th>
+              <th scope="col">Ora</th>
+              <th scope="col">Unde are loc</th>
+              <th scope="col">Cine vine</th>
               <th scope="col"><span class="visually-hidden">Acțiuni</span></th>
             </tr>
           </thead>
@@ -210,32 +348,26 @@ const active = sloturi.filter((s) => !s.is_cancelled).length
                   <th colspan="5" scope="colgroup">
                     {et.name}
                     {et.interval && <span class="muted"> · {et.interval}</span>}
-                    <span class="muted">
-                      {' '}· {weekSlots.length}{' '}
-                      {weekSlots.length === 1 ? 'interval' : 'intervale'}
-                    </span>
+                    <span class="muted"> · {numar(weekSlots.length, 'oră', 'ore')}</span>
                   </th>
                 </tr>
                 {weekSlots.map((s) => (
-                  <RandSlot interval={s} />
+                  <RandSlot interval={s} oreInZi={dayCount(s)} />
                 ))}
               </tbody>
             )
           })}
 
-          {/* What has ended sits at the tail, not at the head: the only
-              intervals something can still be done about are the ones coming
-              up. The list's window is one day — an older history does not exist
-              here at all, not even now. */}
+          {/* What has ended sits at the tail, not at the head: the only hours
+              something can still be done about are the ones coming up. The
+              list's window is one day — an older history does not exist here at
+              all, not even now. */}
           {past.length > 0 && (
             <tbody>
               <tr class="rand-grup rand-grup--stins">
                 <th colspan="5" scope="colgroup">
                   Încheiate
-                  <span class="muted">
-                    {' '}· {past.length}{' '}
-                    {past.length === 1 ? 'interval' : 'intervale'}, din ultima zi
-                  </span>
+                  <span class="muted"> · {numar(past.length, 'oră', 'ore')}, din ultima zi</span>
                 </th>
               </tr>
               {past.map((s) => (
@@ -247,67 +379,105 @@ const active = sloturi.filter((s) => !s.is_cancelled).length
         </table>
       </div>
     )}
-
-    <div class="panel__footer">
-      <form method="POST" action="/api/sloturi" class="stack">
-        <input type="hidden" name="actiune" value="publica" />
-        <div class="row row--wrap" style="gap:var(--s-3);align-items:flex-end">
-          <AlegeData
-            id="slot-zi"
-            name="zi"
-            label="Ore deschise în ziua"
-            min={today}
-            required
-            style="flex:1;min-width:240px"
-          />
-          <div class="field" style="min-width:96px">
-            <label class="label" for="slot-start">De la</label>
-            <input class="input" id="slot-start" name="ora_start" type="time" value="14:00" step="900" required />
-          </div>
-          <div class="field" style="min-width:96px">
-            <label class="label" for="slot-final">Până la</label>
-            <input class="input" id="slot-final" name="ora_final" type="time" value="16:00" step="900" required />
-          </div>
-          <div class="field" style="min-width:110px">
-            <label class="label" for="slot-locuri">Locuri</label>
-            <input class="input" id="slot-locuri" name="locuri" type="number" min="1" max="30" value="1" />
-            <span class="hint">Câți studenți pot lua același interval.</span>
-          </div>
-          <div class="field" style="min-width:150px">
-            <label class="label" for="slot-mod">Unde</label>
-            <select class="select" id="slot-mod" name="mod" data-mod>
-              <option value="in_person">La facultate</option>
-              <option value="online">Online</option>
-            </select>
-          </div>
-        </div>
-
-        <div class="row row--wrap" style="gap:var(--s-3);align-items:flex-end">
-          <div class="field" style="flex:2;min-width:260px" data-camp-locatie>
-            <label class="label" for="slot-locatie">Clădirea, etajul și sala</label>
-            <input class="input" id="slot-locatie" name="locatie" value={u.office ?? ''}
-              placeholder="Clădirea Ion Angelescu, Piața Romană 6, etaj 2, sala 2203" />
-          </div>
-          <div class="field" style="flex:2;min-width:240px">
-            <label class="label" for="slot-link">
-              Link întâlnire <span class="muted" data-link-optional>(opțional)</span>
-            </label>
-            <input class="input" id="slot-link" name="link_online" type="url" placeholder="https://meet…" />
-          </div>
-          <button class="btn btn--primary" type="submit">Publică intervalele</button>
-        </div>
-      </form>
-      <p class="hint" style="margin-top:var(--s-2)">
-        Se creează câte un interval de o oră. Toți studenții coordonați primesc un email
-        imediat ce publici — inclusiv când publici un singur interval — și primesc invitație
-        în calendar la rezervare, cu adresa și linkul completate aici.
-      </p>
-    </div>
   </section>
 </div>
+
+{/* Cancelling writes to the calendar of everybody who had booked and sends each
+    of them an email. It is the one irreversible thing on this screen, and it
+    used to be a bare button inside a table row — one click, no question asked,
+    while the student's own cancellation went through a full dialog. */}
+<dialog id="dialog-anulare" aria-labelledby="titlu-anulare">
+  <form method="POST" action="/api/sloturi" class="dialog">
+    <h2 id="titlu-anulare" class="section-title">Anulezi consultația?</h2>
+    <p class="anulare__cand" id="anulare-cand"></p>
+    <p class="muted text-sm" id="anulare-cine"></p>
+
+    <input type="hidden" name="actiune" value="anuleaza" />
+    <input type="hidden" name="slot_id" id="anulare-slot" />
+
+    <label class="anulare__zi" id="anulare-zi-camp" hidden>
+      <input type="checkbox" name="toata_ziua" value="1" id="anulare-toata-ziua" />
+      <span id="anulare-zi-text"></span>
+    </label>
+
+    <div class="field">
+      <label class="label" for="anulare-motiv">De ce se anulează?</label>
+      <textarea class="textarea" id="anulare-motiv" name="motiv" rows="3" maxlength="400"
+        style="min-height:80px" placeholder="Ex: sunt convocat la o comisie de licență"
+        aria-describedby="anulare-motiv-ajutor" data-autogrow></textarea>
+      <span class="hint" id="anulare-motiv-ajutor">
+        Motivul pleacă în emailul fiecărui student și rămâne scris în program.
+      </span>
+    </div>
+
+    <div class="row" style="justify-content:flex-end;gap:var(--s-2)">
+      <button class="btn btn--secondary" type="button" data-inchide-anulare>Păstrează ora</button>
+      <button class="btn btn--danger" type="submit" id="anulare-confirma">Anulează ora</button>
+    </div>
+  </form>
+</dialog>
 </ProfesorLayout>
 
 <style>
+  /* One line of orientation above three panels: how much is coming, and the way
+     to it. The schedule is the last panel on the page precisely because it is
+     the record rather than an action, so it needs a door at the top. */
+  .orientare {
+    font-size: var(--t-body);
+    color: var(--ink-soft);
+  }
+  .orientare a {
+    margin-left: var(--s-2);
+  }
+
+  /* What each form does, in prose, at reading size. It was one three-line hint
+     in `--t-xs` at the very bottom of the page — that is, the only explanation
+     of the difference between the two forms was set in the size reserved for
+     metadata, below everything it explained. */
+  .explicatie {
+    font-size: var(--t-body);
+    color: var(--ink-soft);
+    max-width: 68ch;
+    text-wrap: pretty;
+  }
+
+  /* An anchor jumped to a panel whose header ended up under the sticky bar. */
+  #program,
+  #ore-deschise,
+  #cheama {
+    scroll-margin-top: var(--s-4);
+  }
+
+  /* The open-hours row: day, the two ends of the interval, seats, mode. */
+  .ore {
+    display: grid;
+    grid-template-columns: minmax(0, 1.6fr) repeat(2, minmax(0, 0.8fr)) minmax(0, 1fr) minmax(0, 1.1fr);
+    gap: var(--s-4);
+    align-items: start;
+  }
+  .ore__unde {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: var(--s-4);
+    align-items: start;
+  }
+  .ore .field,
+  .ore__unde .field {
+    min-width: 0;
+  }
+
+  @media (max-width: 1200px) {
+    .ore {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+  @media (max-width: 640px) {
+    .ore,
+    .ore__unde {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+
   /* The week header.
    *
    * A table of thirty rows in chronological order has no landmarks: „what have I
@@ -459,10 +629,33 @@ const active = sloturi.filter((s) => !s.is_cancelled).length
     text-overflow: ellipsis;
     white-space: nowrap;
   }
+
+  /* The confirmation. The hour being called off is the one thing that must be
+     unmistakable, so it is set at reading size, not as metadata. */
+  .anulare__cand {
+    font-size: var(--t-md);
+    font-weight: 600;
+  }
+
+  .anulare__zi {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--s-3);
+    padding: var(--s-3);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--r-md);
+    font-size: var(--t-sm);
+    cursor: pointer;
+  }
+  .anulare__zi[hidden] {
+    display: none;
+  }
 </style>
 
 <script>
-  /* --- student selection --------------------------------------------------- */
+  import { numar } from '../../lib/text'
+
+  /* --- who is being summoned ------------------------------------------------ */
 
   const toti = document.getElementById('toti-studentii') as HTMLInputElement | null
   const boxes = [...document.querySelectorAll<HTMLInputElement>('input[name="student_id"]')]
@@ -480,8 +673,8 @@ const active = sloturi.filter((s) => !s.is_cancelled).length
         alesi === 0
           ? 'Alege cel puțin un student.'
           : alesi === 1
-            ? '1 student ales — primește invitația în calendar.'
-            : `${alesi} studenți aleși — fiecare primește invitația în calendar.`
+            ? 'Un student ales — primește invitația în calendar și o notificare în portal.'
+            : `${numar(alesi, 'student ales', 'studenți aleși')} — fiecare primește invitația lui în calendar.`
     }
     if (submitButton) submitButton.disabled = alesi === 0
   }
@@ -493,7 +686,16 @@ const active = sloturi.filter((s) => !s.is_cancelled).length
   boxes.forEach((c) => c.addEventListener('change', syncSelection))
   syncSelection()
 
-  // An online interval needs a link, one at the faculty needs an address. The
+  /* Arriving from a student's row, the ticked checkbox is two panels down: on a
+     laptop it is below the fold, so the link looked like it had done nothing. */
+  if (new URL(location.href).searchParams.get('cu')) {
+    const smooth = !matchMedia('(prefers-reduced-motion: reduce)').matches
+    document
+      .getElementById('cheama')
+      ?.scrollIntoView({ behavior: smooth ? 'smooth' : 'auto', block: 'start' })
+  }
+
+  // An online hour needs a link, one at the faculty needs an address. The
   // irrelevant field disappears instead of staying empty and required.
   document.querySelectorAll<HTMLFormElement>('form').forEach((form) => {
     const mod = form.querySelector<HTMLSelectElement>('[data-mod]')
@@ -513,4 +715,51 @@ const active = sloturi.filter((s) => !s.is_cancelled).length
     mod.addEventListener('change', sync)
     sync()
   })
+
+  /* --- cancelling ----------------------------------------------------------- */
+
+  const anulare = document.getElementById('dialog-anulare') as HTMLDialogElement | null
+  const campSlot = document.getElementById('anulare-slot') as HTMLInputElement | null
+  const cand = document.getElementById('anulare-cand')
+  const cine = document.getElementById('anulare-cine')
+  const ziCamp = document.getElementById('anulare-zi-camp')
+  const ziText = document.getElementById('anulare-zi-text')
+  const toataZiua = document.getElementById('anulare-toata-ziua') as HTMLInputElement | null
+  const motiv = document.getElementById('anulare-motiv') as HTMLTextAreaElement | null
+  const confirma = document.getElementById('anulare-confirma')
+
+  document.querySelectorAll<HTMLButtonElement>('[data-anuleaza]').forEach((b) => {
+    b.addEventListener('click', () => {
+      const oreInZi = Number(b.dataset.oreInZi ?? '1')
+      const rezervari = Number(b.dataset.rezervari ?? '0')
+
+      if (campSlot) campSlot.value = b.dataset.anuleaza ?? ''
+      if (cand) cand.textContent = b.dataset.cand ?? ''
+      if (cine) cine.textContent = b.dataset.cine ?? ''
+
+      /* The whole day is offered only when there is a whole day to offer, and
+         it starts unticked: an absence is the reason for it, not the default. */
+      if (toataZiua) toataZiua.checked = false
+      if (ziCamp) ziCamp.hidden = oreInZi < 2
+      if (ziText) {
+        ziText.textContent = `Anulează toate cele ${oreInZi} ore din ${b.dataset.zi ?? 'ziua asta'} — fiecare student cu loc rezervat primește un singur email.`
+      }
+
+      /* With somebody booked, the reason is the message they receive; with
+         nobody booked there is no one to explain anything to. */
+      if (motiv) {
+        motiv.required = rezervari > 0
+        motiv.value = ''
+      }
+      if (confirma) {
+        confirma.textContent = rezervari > 0 ? 'Anulează și anunță studenții' : 'Anulează ora'
+      }
+
+      anulare?.showModal()
+    })
+  })
+
+  anulare
+    ?.querySelector('[data-inchide-anulare]')
+    ?.addEventListener('click', () => anulare.close())
 </script>

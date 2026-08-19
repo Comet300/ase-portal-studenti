@@ -1,11 +1,20 @@
 ---
 import Avatar from '../../components/Avatar.astro'
+import AlegeData from '../../components/AlegeData.astro'
 import ProfesorLayout from '../../layouts/ProfesorLayout.astro'
 import Taburi from '../../components/Taburi.astro'
 import { INVITATION_WINDOW_DAYS, teacherInvitations } from '../../lib/lifecycle'
 import {
-  STATUS_CLASS,
+  BUCKET_LABELS,
+  dueBucket,
+  dueHint,
+  groupMilestones,
+  localDay,
   MILESTONE_LABELS,
+  MILESTONE_STATE_CLASS,
+  MILESTONE_STATE_LABELS,
+  milestoneState,
+  STATUS_CLASS,
   INVITATION_LABELS,
   STATUS_LABELS,
   timeAgo,
@@ -13,21 +22,29 @@ import {
   formatDate,
   requestMilestones,
   studentDirectory,
+  teacherMilestones,
   teacherSeats,
   supervisedStudents,
+  teacherTitleChanges,
   teacherTopics,
 } from '../../lib/repo'
-import { officialName } from '../../lib/text'
-import { allYears, groupLabel } from '../../lib/years'
+import type { Milestone } from '../../lib/repo'
+import { numar, officialName } from '../../lib/text'
+import {
+  CHANGE_STATUS_CLASS,
+  CHANGE_STATUS_LABELS,
+  thesisDiff,
+} from '../../lib/title-changes.ts'
+import { allYears, currentYear, groupLabel } from '../../lib/years'
 
 const u = Astro.locals.user!
 // See departament.astro: an unknown value is not allowed to empty the page.
-const SECTIONS = ['cereri', 'studenti', 'progres', 'invitatii'] as const
+const SECTIONS = ['cereri', 'studenti', 'progres', 'modificari', 'invitatii'] as const
 const requestedSection = Astro.url.searchParams.get('sectiune') ?? ''
 const sectiune = (SECTIONS as readonly string[]).includes(requestedSection) ? requestedSection : 'cereri'
 const openStudentId = Astro.url.searchParams.get('student')
 
-const [allRequests, studenti, teme, seats, invitatii, studentDirectoryRows, years] =
+const [allRequests, studenti, teme, seats, invitatii, studentDirectoryRows, years, titleChanges] =
   await Promise.all([
     teacherRequests(u.id),
     supervisedStudents(u.id),
@@ -36,7 +53,14 @@ const [allRequests, studenti, teme, seats, invitatii, studentDirectoryRows, year
     teacherInvitations(u.id),
     studentDirectory(),
     allYears(),
+    teacherTitleChanges(u.id),
   ])
+
+/* A change to an agreed thesis is a decision waiting on the coordinator, so it
+ * carries a counter in the bar exactly as the request queue does. The thesis
+ * itself stays „aprobată” throughout — see /api/modificari for why. */
+const openChanges = titleChanges.filter((c) => c.status === 'pending')
+const decidedChanges = titleChanges.filter((c) => c.status !== 'pending')
 
 const pendingRequests = allRequests.filter((c) => c.status === 'pending')
 const decidedRequests = allRequests.filter((c) => c.status !== 'pending')
@@ -47,21 +71,86 @@ const decidedRequests = allRequests.filter((c) => c.status !== 'pending')
 const invitabili = studentDirectoryRows.filter((s) => s.request_status !== 'approved')
 const openInvitations = invitatii.filter((i) => i.status === 'pending')
 
+/* One thesis, or all of them.
+ *
+ * The screen could only ever ask about one student at a time, so „ce am de
+ * urmărit săptămâna asta” was a question with twenty page loads in it. The
+ * choice travels in the address, like the section, so it can be linked. */
+const view = Astro.url.searchParams.get('vedere') === 'toti' ? 'toti' : 'unul'
+
 // The timeline is loaded for the open student; by default, the first supervised one.
 const timelineRequest = openStudentId
   ? studenti.find((s) => s.id === openStudentId)
   : studenti[0]
-const milestones = timelineRequest ? await requestMilestones(u.id, timelineRequest.id) : []
+
+const [milestones, agenda, academicYear] = await Promise.all([
+  timelineRequest && view === 'unul' ? requestMilestones(u.id, timelineRequest.id) : [],
+  sectiune === 'progres' && view === 'toti' ? teacherMilestones(u.id) : [],
+  currentYear(),
+])
+
+/** The rows on screen: one thesis' deadlines, or every student's. */
+type DeadlineRow = Milestone & {
+  student_id?: string
+  student_name?: string
+  father_initial?: string | null
+  thesis_title?: string
+}
+
+const deadlines: DeadlineRow[] = view === 'toti' ? agenda : milestones
 
 const sections = [
   { key: 'cereri', text: 'Cereri', count: pendingRequests.length },
   { key: 'studenti', text: 'Studenți coordonați', count: studenti.length },
   { key: 'progres', text: 'Progresul lucrărilor', count: null },
+  { key: 'modificari', text: 'Modificări de titlu', count: openChanges.length },
   { key: 'invitatii', text: 'Propuneri trimise', count: openInvitations.length },
 ]
 
 const currentPath = `/profesor/studenti?sectiune=${sectiune}`
-const today = new Date().toISOString().slice(0, 10)
+/* `toISOString()` goes through UTC and the portal runs on Europe/Bucharest: at
+ * 00:30 the „today” it produced was yesterday, so a defence recorded just after
+ * midnight was refused by its own `max`. */
+const today = localDay(new Date())
+
+const grouped = groupMilestones(deadlines, today)
+const doneCount = grouped.done.length
+const overdueCount = grouped.overdue.length
+
+/* Where every deadline form comes back to. The view and the open student are
+ * part of it, or saving a row threw you back to somebody else's timeline. */
+const progressPath =
+  view === 'toti'
+    ? '/profesor/studenti?sectiune=progres&vedere=toti'
+    : `/profesor/studenti?sectiune=progres&student=${timelineRequest?.id ?? ''}`
+
+/* „Următoarele” is still a list of dates; these are the stretches a coordinator
+ * plans in. The heading is drawn only when the bucket changes, so a stretch
+ * with nothing in it costs no line. */
+const withBuckets = (items: DeadlineRow[], showBuckets: boolean) =>
+  items.map((m, i, all) => ({
+    m,
+    bucket: dueBucket(m.due_on, today),
+    opensBucket:
+      showBuckets &&
+      (i === 0 || dueBucket(all[i - 1].due_on, today) !== dueBucket(m.due_on, today)),
+  }))
+
+const deadlineGroups = [
+  {
+    key: 'overdue',
+    title: 'Depășite',
+    hint: 'Cel mai vechi primul — de acolo se începe discuția.',
+    rows: withBuckets(grouped.overdue, false),
+    open: true,
+  },
+  { key: 'upcoming', title: 'Următoarele', hint: null, rows: withBuckets(grouped.upcoming, true), open: true },
+  { key: 'done', title: 'Finalizate', hint: null, rows: withBuckets(grouped.done, false), open: false },
+]
+
+/** The bounds of the session, so a deadline cannot be set in another year. */
+const deadlineMin = academicYear?.starts_on?.slice(0, 10)
+const deadlineMax = academicYear?.ends_on?.slice(0, 10)
 
 /**
  * How long is left to answer a request.
@@ -322,6 +411,14 @@ function deadline(expiresAt: string | null | undefined) {
                             {s.milestones_done}/{s.milestones_total}
                           </span>
                         </div>
+                        {/* Colour alone would not say it, and „4 din 5” does not
+                            say it at all: the number of missed deadlines is the
+                            one thing a coordinator scanning twenty rows needs. */}
+                        {s.milestones_overdue > 0 && (
+                          <span class="badge badge--respinsa intarziere">
+                            {numar(s.milestones_overdue, 'termen depășit', 'termene depășite')}
+                          </span>
+                        )}
                       </td>
                       {/* The defence session is not necessarily the one in which
                           the coordination started, and the archive uses the
@@ -381,6 +478,21 @@ function deadline(expiresAt: string | null | undefined) {
                           <a class="btn btn--ghost btn--sm" href={`/profesor/mesaje?student=${s.student_id}`}>
                             Mesaje
                           </a>
+                          {/* The coordinator's own edit needs nobody's
+                              approval, so it is applied on save — but it is
+                              written into the same history as a student's
+                              request, and the student is told. */}
+                          <button
+                            class="btn btn--ghost btn--sm"
+                            type="button"
+                            data-lucrare={s.id}
+                            data-nume={s.student_name}
+                            data-titlu-ro={s.title_ro}
+                            data-titlu-en={s.title_en ?? ''}
+                            data-obiective={s.objectives}
+                          >
+                            Editează lucrarea
+                          </button>
                           <a
                             class="btn btn--ghost btn--sm"
                             href={`/profesor/consultatii?cu=${s.student_id}`}
@@ -423,164 +535,403 @@ function deadline(expiresAt: string | null | undefined) {
               <p class="empty__text">
                 Termenele devin disponibile după ce accepți prima cerere de coordonare.
               </p>
+              <a class="btn btn--secondary btn--sm" href="/profesor/studenti?sectiune=cereri">
+                Vezi cererile primite
+              </a>
             </div>
           </section>
         ) : (
-          <>
-            <section class="panel">
-              <div class="panel__header">
-                <h2 class="section-title">Lucrarea urmărită</h2>
+          <section class="panel">
+            <div class="panel__header panel__header--agenda">
+              <h2 class="section-title">
+                {view === 'toti' ? 'Agenda termenelor' : 'Termenele lucrării'}
+              </h2>
+
+              {/* Links, not a script: the view is an address, and the whole
+                  screen already works without JavaScript. */}
+              <div class="comutator" role="group" aria-label="Ce se afișează">
+                <a
+                  class:list={['comutator__optiune', { 'is-activ': view === 'unul' }]}
+                  href={`/profesor/studenti?sectiune=progres${timelineRequest ? `&student=${timelineRequest.id}` : ''}`}
+                  aria-current={view === 'unul' ? 'true' : undefined}
+                >
+                  Un student
+                </a>
+                <a
+                  class:list={['comutator__optiune', { 'is-activ': view === 'toti' }]}
+                  href="/profesor/studenti?sectiune=progres&vedere=toti"
+                  aria-current={view === 'toti' ? 'true' : undefined}
+                >
+                  Toți studenții
+                </a>
               </div>
-              <div class="panel__body">
-                <form method="GET" class="row row--wrap" style="gap:var(--s-3)">
+
+              <div class="row row--wrap" style="gap:var(--s-2)">
+                {view === 'unul' && timelineRequest && (
+                  <button class="btn btn--primary btn--sm" type="button" data-termen-nou={timelineRequest.id}>
+                    Adaugă un termen
+                  </button>
+                )}
+                <button class="btn btn--secondary btn--sm" type="button" data-termen-multi>
+                  Termen pentru mai mulți studenți
+                </button>
+              </div>
+            </div>
+
+            {view === 'unul' && (
+              <div class="panel__body panel__body--alegere">
+                <form method="GET" class="row row--wrap" style="gap:var(--s-3);align-items:flex-end">
                   <input type="hidden" name="sectiune" value="progres" />
                   <div class="field" style="flex:1;min-width:280px">
-                    <label class="label" for="student">Student</label>
+                    <label class="label" for="student">Lucrarea urmărită</label>
                     <select class="select" id="student" name="student" onchange="this.form.submit()">
                       {studenti.map((s) => (
                         <option value={s.id} selected={timelineRequest?.id === s.id}>
                           {s.student_name} — {s.title_ro}
+                          {s.milestones_overdue > 0 ? ` · ${s.milestones_overdue} depășite` : ''}
                         </option>
                       ))}
                     </select>
                   </div>
                   <noscript>
-                    <button class="btn btn--secondary" type="submit" style="margin-top:26px">
-                      Afișează
-                    </button>
+                    <button class="btn btn--secondary" type="submit">Afișează</button>
                   </noscript>
                 </form>
               </div>
-            </section>
+            )}
 
-            {/* The same deadlines the student sees, but editable. */}
-            <section class="panel">
-              <div class="panel__header">
-                <h2 class="section-title">Termenele lucrării</h2>
-                <span class="muted text-sm">
-                  {milestones.filter((j) => j.status === 'done').length} din {milestones.length} finalizate
+            {/* The count is the state of the work, so it says all three numbers:
+                „4 din 5” alone hides whether the fifth is due next month or was
+                due in March. */}
+            <p class="sumar">
+              <span>
+                <strong class="numeric">{doneCount}</strong> din{' '}
+                <strong class="numeric">{deadlines.length}</strong> finalizate
+              </span>
+              {overdueCount > 0 && (
+                <span class="badge badge--respinsa">
+                  {numar(overdueCount, 'termen depășit', 'termene depășite')}
                 </span>
-              </div>
+              )}
+              {view === 'toti' && (
+                <span class="muted">
+                  peste {numar(studenti.length, 'lucrare', 'lucrări')}
+                </span>
+              )}
+            </p>
 
-              <ol class="termene">
-                {milestones.map((j) => (
-                  <li class:list={['termen', `termen--${j.status}`]}>
-                    <span class="jalon__punct" aria-hidden="true" />
-                    <details class="jalon__corp">
-                      <summary>
-                        <span class="jalon__titlu">{j.title}</span>
-                        <span class="jalon__meta">
-                          <span class="muted">{j.due_on ? formatDate(j.due_on) : 'fără termen'}</span>
-                          <span
-                            class:list={[
-                              'badge',
-                              j.status === 'done'
-                                ? 'badge--aprobata'
-                                : j.status === 'in_progress'
-                                  ? 'badge--in-lucru'
-                                  : 'badge--ciorna',
-                            ]}
-                          >
-                            {MILESTONE_LABELS[j.status]}
-                          </span>
-                        </span>
+            {deadlines.length === 0 ? (
+              <div class="empty">
+                <p class="empty__title">Niciun termen stabilit</p>
+                <p class="empty__text">
+                  {view === 'toti'
+                    ? 'Pune același termen tuturor studenților dintr-o singură dată — titlul și data se scriu o dată.'
+                    : 'Primul termen dă lucrării un început. Studentul îl vede imediat în portal.'}
+                </p>
+                {view === 'unul' && timelineRequest ? (
+                  <button class="btn btn--primary btn--sm" type="button" data-termen-nou={timelineRequest.id}>
+                    Adaugă primul termen
+                  </button>
+                ) : (
+                  <button class="btn btn--primary btn--sm" type="button" data-termen-multi>
+                    Termen pentru mai mulți studenți
+                  </button>
+                )}
+              </div>
+            ) : (
+              <div class="grupe">
+                {deadlineGroups
+                  .filter((g) => g.rows.length > 0)
+                  .map((g) => (
+                    <details class:list={['grupa', `grupa--${g.key}`]} open={g.open}>
+                      <summary class="grupa__cap">
+                        <span class="grupa__titlu">{g.title}</span>
+                        <span class="grupa__contor numeric">{g.rows.length}</span>
+                        {g.hint && <span class="grupa__nota muted">{g.hint}</span>}
                       </summary>
 
-                      <form method="POST" action="/api/termene" class="jalon__editor">
-                        {/* See the comment in lib/forms.ts: the „Șterge” button
-                            carries its own „actiune”, and two fields with the same
-                            name would have cancelled each other out — the delete
-                            reported success without deleting. */}
-                        <input type="hidden" name="actiune_implicita" value="actualizeaza" />
-                        <input type="hidden" name="termen_id" value={j.id} />
-                        <input
-                          type="hidden"
-                          name="redirect"
-                          value={`/profesor/studenti?sectiune=progres&student=${timelineRequest?.id}`}
-                        />
+                      <ol class="termene">
+                        {g.rows.map(({ m, bucket, opensBucket }) => {
+                          const stare = milestoneState(m.status, m.due_on, today)
+                          const hint = dueHint(m.due_on, today)
+                          return (
+                            <>
+                              {opensBucket && (
+                                <li class="termene__sectiune" role="presentation">
+                                  {BUCKET_LABELS[bucket]}
+                                </li>
+                              )}
+                              <li class:list={['termen', `termen--${stare}`]}>
+                                <span class="jalon__punct" aria-hidden="true" />
+                                <div class="jalon__corp">
+                                  <div class="jalon__cap">
+                                    <strong class="jalon__titlu">{m.title}</strong>
+                                    <span class:list={['badge', MILESTONE_STATE_CLASS[stare]]}>
+                                      {MILESTONE_STATE_LABELS[stare]}
+                                    </span>
+                                  </div>
 
-                        <div class="field">
-                          <label class="label" for={`title-${j.id}`}>Titlu</label>
-                          <input class="input" id={`title-${j.id}`} name="title" value={j.title} required />
-                        </div>
+                                  <p class="jalon__meta">
+                                    {view === 'toti' && m.student_name && (
+                                      <a
+                                        class="jalon__student"
+                                        href={`/profesor/studenti?sectiune=progres&student=${m.request_id}`}
+                                      >
+                                        {officialName({
+                                          name: m.student_name,
+                                          father_initial: m.father_initial,
+                                        })}
+                                      </a>
+                                    )}
+                                    <span class="muted">
+                                      {m.due_on ? formatDate(m.due_on) : 'fără termen'}
+                                      {hint && stare !== 'done' ? ` · ${hint}` : ''}
+                                    </span>
+                                  </p>
 
-                        <div class="row row--wrap" style="gap:var(--s-3);align-items:flex-end">
-                          <div class="field" style="flex:1;min-width:160px">
-                            <label class="label" for={`termen-${j.id}`}>Termen</label>
-                            <input
-                              class="input"
-                              id={`termen-${j.id}`}
-                              name="termen"
-                              type="date"
-                              value={j.due_on ? j.due_on.slice(0, 10) : ''}
-                            />
-                          </div>
-                          <div class="field" style="flex:1;min-width:160px">
-                            <label class="label" for={`status-${j.id}`}>Stare</label>
-                            <select class="select" id={`status-${j.id}`} name="status">
-                              {Object.entries(MILESTONE_LABELS).map(([v, t]) => (
-                                <option value={v} selected={j.status === v}>{t}</option>
-                              ))}
-                            </select>
-                          </div>
-                        </div>
+                                  {m.description && (
+                                    <p class="jalon__descriere" title={m.description}>
+                                      {m.description}
+                                    </p>
+                                  )}
 
-                        <div class="field">
-                          <label class="label" for={`desc-${j.id}`}>Descriere</label>
-                          <textarea
-                            class="textarea"
-                            id={`desc-${j.id}`}
-                            name="descriere"
-                            rows="2"
-                            style="min-height:64px" data-autogrow>{j.description ?? ''}</textarea>
-                        </div>
+                                  <div class="jalon__actiuni">
+                                    {/* Three buttons, one statement each: the
+                                        state used to cost expanding the row,
+                                        changing a select and a full save that
+                                        carried the title and the date with it. */}
+                                    <form
+                                      method="POST"
+                                      action="/api/termene"
+                                      class="stare"
+                                      aria-label={`Starea termenului „${m.title}”`}
+                                    >
+                                      <input type="hidden" name="actiune" value="stare" />
+                                      <input type="hidden" name="termen_id" value={m.id} />
+                                      <input type="hidden" name="redirect" value={progressPath} />
+                                      {Object.entries(MILESTONE_LABELS).map(([valoare, eticheta]) => (
+                                        <button
+                                          class:list={['stare__optiune', { 'is-activ': m.status === valoare }]}
+                                          type="submit"
+                                          name="status"
+                                          value={valoare}
+                                          aria-pressed={m.status === valoare}
+                                          disabled={m.status === valoare}
+                                        >
+                                          {eticheta}
+                                        </button>
+                                      ))}
+                                    </form>
 
-                        <div class="row" style="gap:var(--s-2)">
-                          <button class="btn btn--primary btn--sm" type="submit">Salvează</button>
-                          <button
-                            class="btn btn--danger btn--sm"
-                            type="submit"
-                            formaction="/api/termene"
-                            name="actiune"
-                            value="sterge"
-                          >
-                            Șterge termenul
-                          </button>
-                        </div>
-                      </form>
+                                    <button
+                                      class="btn btn--ghost btn--sm"
+                                      type="button"
+                                      data-termen-editeaza={m.id}
+                                      data-titlu={m.title}
+                                      data-data={m.due_on ? m.due_on.slice(0, 10) : ''}
+                                      data-stare={m.status}
+                                      data-descriere={m.description ?? ''}
+                                    >
+                                      Editează
+                                    </button>
+                                  </div>
+                                </div>
+                              </li>
+                            </>
+                          )
+                        })}
+                      </ol>
                     </details>
-                  </li>
-                ))}
-              </ol>
-
-              <div class="panel__footer">
-                <form method="POST" action="/api/termene" class="row row--wrap" style="gap:var(--s-3);align-items:flex-end">
-                  <input type="hidden" name="actiune" value="adauga" />
-                  <input type="hidden" name="cerere_id" value={timelineRequest?.id} />
-                  <input
-                    type="hidden"
-                    name="redirect"
-                    value={`/profesor/studenti?sectiune=progres&student=${timelineRequest?.id}`}
-                  />
-                  <div class="field" style="flex:2;min-width:220px">
-                    <label class="label" for="termen-nou">Termen nou</label>
-                    <input
-                      class="input"
-                      id="termen-nou"
-                      name="title"
-                      placeholder="Ex: Predarea capitolului empiric"
-                      required
-                    />
-                  </div>
-                  <div class="field" style="flex:1;min-width:160px">
-                    <label class="label" for="termen-data">Termen</label>
-                    <input class="input" id="termen-data" name="termen" type="date" />
-                  </div>
-                  <button class="btn btn--secondary" type="submit">Adaugă</button>
-                </form>
+                  ))}
               </div>
-            </section>
-          </>
+            )}
+
+            {/* Without JavaScript the dialog never opens, and adding a deadline
+                is the one thing this screen exists for. The plain form stays. */}
+            {view === 'unul' && timelineRequest && (
+              <noscript>
+                <div class="panel__footer">
+                  <form
+                    method="POST"
+                    action="/api/termene"
+                    class="row row--wrap"
+                    style="gap:var(--s-3);align-items:flex-end"
+                  >
+                    <input type="hidden" name="actiune" value="adauga" />
+                    <input type="hidden" name="cerere_id" value={timelineRequest.id} />
+                    <input type="hidden" name="redirect" value={progressPath} />
+                    <div class="field" style="flex:2;min-width:220px">
+                      <label class="label" for="termen-nou-simplu">Termen nou</label>
+                      <input
+                        class="input"
+                        id="termen-nou-simplu"
+                        name="title"
+                        placeholder="Ex: Predarea capitolului empiric"
+                        required
+                      />
+                    </div>
+                    <div class="field" style="flex:1;min-width:160px">
+                      <label class="label" for="termen-data-simplu">Termen</label>
+                      <input
+                        class="input"
+                        id="termen-data-simplu"
+                        name="termen"
+                        type="date"
+                        min={deadlineMin}
+                        max={deadlineMax}
+                      />
+                    </div>
+                    <button class="btn btn--secondary" type="submit">Adaugă termenul</button>
+                  </form>
+                </div>
+              </noscript>
+            )}
+          </section>
+        )}
+      </div>
+    )
+  }
+
+  {/* ----------------------------------------------------------- modificări */}
+  {
+    sectiune === 'modificari' && (
+      <div class="stack">
+        <section class="panel">
+          <div class="panel__header">
+            <h2 class="section-title">Modificări cerute de studenți</h2>
+            <span class="muted text-sm">
+              {openChanges.length} {openChanges.length === 1 ? 'cerere' : 'cereri'}
+            </span>
+          </div>
+
+          {openChanges.length === 0 ? (
+            <div class="empty">
+              <p class="empty__title">Nicio modificare în așteptare</p>
+              <p class="empty__text">
+                Când un student cere să schimbe titlul sau obiectivele lucrării, cererea apare
+                aici. Coordonarea rămâne activă până decizi — locul, conversația și documentul
+                tipăribil nu se schimbă între timp.
+              </p>
+              <a class="btn btn--secondary btn--sm" href="/profesor/studenti?sectiune=studenti">
+                Vezi studenții coordonați
+              </a>
+            </div>
+          ) : (
+            <ul class="cereri">
+              {openChanges.map((c) => {
+                const changes = thesisDiff(
+                  { title_ro: c.old_title_ro, title_en: c.old_title_en, objectives: c.old_objectives },
+                  { title_ro: c.new_title_ro, title_en: c.new_title_en, objectives: c.new_objectives },
+                )
+                return (
+                  <li class="cerere" id={`modificare-${c.id}`}>
+                    <div class="cerere__cap">
+                      <Avatar name={c.student_name} />
+                      <div class="cerere__ident">
+                        <strong>
+                          {officialName({ name: c.student_name, father_initial: c.father_initial })}
+                        </strong>
+                        <span class="muted">
+                          {c.student_number} · cererea {c.number}
+                        </span>
+                      </div>
+                      <span class="cerere__termen">
+                        <span class="muted">cerută {timeAgo(c.created_at)}</span>
+                      </span>
+                    </div>
+
+                    {/* The diff, not the whole request: only what differs is a
+                        decision, and repeating the unchanged fields buries it. */}
+                    <dl class="diferenta">
+                      {changes.map((d) => (
+                        <div class="diferenta__camp">
+                          <dt>{d.label}</dt>
+                          <dd>
+                            <span class="diferenta__vechi">{d.from}</span>
+                            <span class="diferenta__nou">{d.to}</span>
+                          </dd>
+                        </div>
+                      ))}
+                    </dl>
+
+                    {c.reason && (
+                      <div class="cerere__motivatie">
+                        <strong>De ce cere modificarea</strong>
+                        <p>{c.reason}</p>
+                      </div>
+                    )}
+
+                    <div class="cerere__actiuni">
+                      <button
+                        class="btn btn--primary btn--sm"
+                        type="button"
+                        data-modificare="approved"
+                        data-id={c.id}
+                        data-nume={c.student_name}
+                      >
+                        Acceptă modificarea
+                      </button>
+                      <button
+                        class="btn btn--danger btn--sm"
+                        type="button"
+                        data-modificare="rejected"
+                        data-id={c.id}
+                        data-nume={c.student_name}
+                      >
+                        Respinge modificarea
+                      </button>
+                      <a class="btn btn--ghost btn--sm" href={`/profesor/mesaje?student=${c.student_id}`}>
+                        Scrie-i întâi
+                      </a>
+                    </div>
+                  </li>
+                )
+              })}
+            </ul>
+          )}
+        </section>
+
+        {decidedChanges.length > 0 && (
+          <section class="panel">
+            <div class="panel__header">
+              <h2 class="section-title">Istoricul modificărilor</h2>
+              <span class="muted text-sm">Inclusiv cele făcute de tine</span>
+            </div>
+            <div class="table-wrap" tabindex="0" role="region" aria-label="Istoricul modificărilor de titlu">
+              <table class="table">
+                <thead>
+                  <tr>
+                    <th scope="col">Student</th>
+                    <th scope="col">Cerută de</th>
+                    <th scope="col">Titlul dinainte</th>
+                    <th scope="col">Titlul de acum</th>
+                    <th scope="col">Stare</th>
+                    <th scope="col">Decisă</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {decidedChanges.map((c) => (
+                    <tr>
+                      <td>
+                        <strong>
+                          {officialName({ name: c.student_name, father_initial: c.father_initial })}
+                        </strong>
+                      </td>
+                      <td class="muted">{c.by_teacher ? 'Tine' : 'Student'}</td>
+                      <td class="celula-title" title={c.old_title_ro}>{c.old_title_ro}</td>
+                      <td class="celula-title" title={c.new_title_ro}>{c.new_title_ro}</td>
+                      <td>
+                        <span class:list={['badge', CHANGE_STATUS_CLASS[c.status]]}>
+                          {CHANGE_STATUS_LABELS[c.status]}
+                        </span>
+                      </td>
+                      <td class="muted">{formatDate(c.decided_at)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </section>
         )}
       </div>
     )
@@ -804,6 +1155,262 @@ function deadline(expiresAt: string | null | undefined) {
       </div>
     </form>
   </dialog>
+  {/* One window for both gestures. A separate „adaugă” form at the bottom of
+      the page meant scrolling past the whole timeline to reach it, and a new
+      deadline landed at the end of the list whatever its date; the editor was
+      a second `<details>` to open and a second reload. */}
+  <dialog id="dialog-termen" aria-labelledby="titlu-termen">
+    <form method="POST" action="/api/termene" class="dialog">
+      <div class="row row--between" style="gap:var(--s-3)">
+        <h2 id="titlu-termen" class="section-title">Termen nou</h2>
+        <button class="btn btn--ghost btn--sm" type="button" data-inchide-termen aria-label="Închide">✕</button>
+      </div>
+
+      <input type="hidden" name="actiune_implicita" id="termen-actiune" value="adauga" />
+      <input type="hidden" name="termen_id" id="termen-id" />
+      <input type="hidden" name="cerere_id" id="termen-cerere" />
+      <input type="hidden" name="redirect" value={progressPath} />
+
+      <div class="field">
+        <label class="label" for="termen-titlu">
+          Titlu <span class="label__req" aria-hidden="true">*</span>
+        </label>
+        <input
+          class="input"
+          id="termen-titlu"
+          name="title"
+          required
+          maxlength="160"
+          placeholder="Ex: Predarea capitolului empiric"
+        />
+      </div>
+
+      <div class="row row--wrap" style="gap:var(--s-3);align-items:flex-start">
+        <AlegeData
+          id="termen-data"
+          name="termen"
+          label="Termen"
+          min={deadlineMin}
+          max={deadlineMax}
+          style="flex:1;min-width:190px"
+          hint="Lăsat gol, termenul rămâne fără dată și stă la coada listei."
+        />
+        <div class="field" style="flex:1;min-width:170px">
+          <label class="label" for="termen-stare">Stare</label>
+          <select class="select" id="termen-stare" name="status">
+            {Object.entries(MILESTONE_LABELS).map(([v, t]) => (
+              <option value={v}>{t}</option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      <div class="field">
+        <label class="label" for="termen-descriere">
+          Descriere <span class="muted">(opțional)</span>
+        </label>
+        <textarea
+          class="textarea"
+          id="termen-descriere"
+          name="descriere"
+          rows="2"
+          style="min-height:64px"
+          placeholder="Ce anume se predă și în ce formă. Studentul vede exact acest text."
+          data-autogrow
+        />
+      </div>
+
+      <div class="row row--between row--wrap" style="gap:var(--s-2)">
+        {/* Out of the primary flow, but still one click away, with the toast
+            undo behind it — a confirmation dialog on every small gesture makes
+            all of them tiring. */}
+        <button
+          class="btn btn--ghost btn--sm dialog__sterge"
+          type="submit"
+          name="actiune"
+          value="sterge"
+          id="termen-sterge"
+          hidden
+        >
+          Șterge termenul
+        </button>
+        <div class="row" style="gap:var(--s-2);margin-left:auto">
+          <button class="btn btn--secondary btn--sm" type="button" data-inchide-termen>Renunț</button>
+          <button class="btn btn--primary btn--sm" type="submit" id="termen-trimite">
+            Adaugă termenul
+          </button>
+        </div>
+      </div>
+    </form>
+  </dialog>
+
+  {/* Five students, one deadline: the title and the date are written once. */}
+  <dialog id="dialog-termen-multi" aria-labelledby="titlu-termen-multi">
+    <form method="POST" action="/api/termene" class="dialog">
+      <div class="row row--between" style="gap:var(--s-3)">
+        <h2 id="titlu-termen-multi" class="section-title">Termen pentru mai mulți studenți</h2>
+        <button class="btn btn--ghost btn--sm" type="button" data-inchide-multi aria-label="Închide">✕</button>
+      </div>
+
+      <input type="hidden" name="actiune" value="adauga_multi" />
+      <input type="hidden" name="redirect" value={progressPath} />
+
+      <div class="field">
+        <label class="label" for="multi-titlu">
+          Titlu <span class="label__req" aria-hidden="true">*</span>
+        </label>
+        <input
+          class="input"
+          id="multi-titlu"
+          name="title"
+          required
+          maxlength="160"
+          placeholder="Ex: Predarea capitolului teoretic"
+        />
+      </div>
+
+      <div class="row row--wrap" style="gap:var(--s-3);align-items:flex-start">
+        <AlegeData
+          id="multi-data"
+          name="termen"
+          label="Termen"
+          min={deadlineMin}
+          max={deadlineMax}
+          style="flex:1;min-width:190px"
+        />
+        <div class="field" style="flex:2;min-width:220px">
+          <label class="label" for="multi-descriere">
+            Descriere <span class="muted">(opțional)</span>
+          </label>
+          <input class="input" id="multi-descriere" name="descriere" maxlength="400" />
+        </div>
+      </div>
+
+      <fieldset class="alegere-studenti">
+        <legend class="label">
+          Studenți <span class="label__req" aria-hidden="true">*</span>
+        </legend>
+        <label class="alegere-studenti__tot">
+          <input type="checkbox" id="multi-toti" />
+          <span>Selectează toți cei {studenti.length} studenți</span>
+        </label>
+        <div class="alegere-studenti__lista">
+          {studenti.map((s) => (
+            <label class="alegere-studenti__rand">
+              <input type="checkbox" name="cerere_id" value={s.id} data-student />
+              <span class="alegere-studenti__nume">
+                {officialName({ name: s.student_name, father_initial: s.father_initial })}
+                <span class="muted text-xs"> · {groupLabel(s)}</span>
+              </span>
+            </label>
+          ))}
+        </div>
+      </fieldset>
+
+      <div class="row row--end" style="gap:var(--s-2)">
+        <button class="btn btn--secondary btn--sm" type="button" data-inchide-multi>Renunț</button>
+        <button class="btn btn--primary btn--sm" type="submit" id="multi-trimite" disabled>
+          Alege cel puțin un student
+        </button>
+      </div>
+    </form>
+  </dialog>
+  {/* The decision on a student's change. The same shape as the decision on a
+      request — two buttons carrying the verdict, one dialog, one COPY object —
+      rather than a second pattern for the same gesture. */}
+  <dialog id="dialog-modificare" aria-labelledby="titlu-modificare">
+    <form method="POST" action="/api/modificari" class="dialog">
+      <h2 class="section-title" id="titlu-modificare">Decizia ta</h2>
+      <p class="muted text-sm" id="modificare-explicatie">
+        Mesajul ajunge la student prin email și rămâne în conversație.
+      </p>
+
+      <input type="hidden" name="actiune" value="decizie" />
+      <input type="hidden" name="modificare_id" id="modificare-id" />
+      <input type="hidden" name="decizie" id="modificare-decizie" />
+      <input type="hidden" name="redirect" value="/profesor/studenti?sectiune=modificari" />
+
+      <div class="field">
+        <label class="label" for="modificare-motiv" id="modificare-eticheta">
+          Mesaj pentru student
+        </label>
+        <textarea class="textarea" id="modificare-motiv" name="motiv" rows="4" data-autogrow />
+        <span class="hint" id="modificare-hint" />
+      </div>
+
+      <div class="row row--end" style="gap:var(--s-2)">
+        <button class="btn btn--secondary btn--sm" type="button" data-inchide-modificare>Renunță</button>
+        <button class="btn btn--primary btn--sm" type="submit" id="modificare-trimite">Trimite</button>
+      </div>
+    </form>
+  </dialog>
+
+  {/* The coordinator's own edit: applied on save, recorded, and announced. */}
+  <dialog id="dialog-lucrare" aria-labelledby="titlu-lucrare">
+    <form method="POST" action="/api/modificari" class="dialog">
+      <div class="row row--between" style="gap:var(--s-3)">
+        <h2 class="section-title" id="titlu-lucrare">Editează lucrarea</h2>
+        <button class="btn btn--ghost btn--sm" type="button" data-inchide-lucrare aria-label="Închide">✕</button>
+      </div>
+
+      <input type="hidden" name="actiune" value="aplica" />
+      <input type="hidden" name="cerere_id" id="lucrare-id" />
+      <input type="hidden" name="redirect" value="/profesor/studenti?sectiune=studenti" />
+
+      <p class="muted text-sm">
+        Modificarea intră în vigoare la salvare, iar <strong id="lucrare-nume">studentul</strong> este
+        anunțat. Titlul nou apare peste tot, inclusiv în arhivă și în cererea tipăribilă — dacă
+        exemplarul semnat este deja la secretariat, va trebui tipărit din nou.
+      </p>
+
+      <div class="field">
+        <label class="label" for="lucrare-titlu-ro">
+          Titlul lucrării (română) <span class="label__req" aria-hidden="true">*</span>
+        </label>
+        <input class="input" id="lucrare-titlu-ro" name="titlu_ro" required maxlength="200" />
+      </div>
+
+      <div class="field">
+        <label class="label" for="lucrare-titlu-en">
+          Titlul lucrării în engleză <span class="muted">(opțional)</span>
+        </label>
+        <input class="input" id="lucrare-titlu-en" name="titlu_en" maxlength="200" />
+      </div>
+
+      <div class="field">
+        <label class="label" for="lucrare-obiective">
+          Scopul și obiectivele <span class="label__req" aria-hidden="true">*</span>
+        </label>
+        <textarea
+          class="textarea"
+          id="lucrare-obiective"
+          name="scop_obiective"
+          rows="5"
+          required
+          minlength="40"
+          data-autogrow
+        />
+      </div>
+
+      <div class="field">
+        <label class="label" for="lucrare-motiv">
+          De ce ai schimbat <span class="muted">(opțional, ajunge la student)</span>
+        </label>
+        <input
+          class="input"
+          id="lucrare-motiv"
+          name="motiv"
+          maxlength="400"
+          placeholder="Ex: am restrâns tema la comerțul online, așa cum am discutat la consultație."
+        />
+      </div>
+
+      <div class="row row--end" style="gap:var(--s-2)">
+        <button class="btn btn--secondary btn--sm" type="button" data-inchide-lucrare>Renunț</button>
+        <button class="btn btn--primary btn--sm" type="submit">Salvează și anunță studentul</button>
+      </div>
+    </form>
+  </dialog>
 </ProfesorLayout>
 
 <script>
@@ -903,6 +1510,206 @@ function deadline(expiresAt: string | null | undefined) {
   defenceDialog
     ?.querySelectorAll('[data-inchide-sustinere]')
     .forEach((b) => b.addEventListener('click', () => defenceDialog.close()))
+
+  /* --- deciding on a change of title --------------------------------------
+   *
+   * The same shape as the decision on a request: two buttons carrying the
+   * verdict, one dialog, one COPY object swapped in. A second pattern for the
+   * same gesture would be a second place to keep the wording right. */
+  const changeDialog = document.getElementById('dialog-modificare') as HTMLDialogElement | null
+
+  const CHANGE_COPY = {
+    approved: {
+      titlu: 'Acceptă modificarea',
+      button: 'Acceptă și aplică',
+      eticheta: 'Mesaj pentru student (opțional)',
+      hint: 'Titlul nou intră imediat peste tot: în portal, în arhivă și în cererea tipăribilă.',
+      placeholder: 'Ex: De acord cu restrângerea temei. Actualizează și bibliografia până la următoarea consultație.',
+      required: false,
+    },
+    rejected: {
+      titlu: 'Respinge modificarea',
+      button: 'Trimite respingerea',
+      eticheta: 'Motivul respingerii',
+      hint: 'Minimum 10 caractere. Lucrarea rămâne cu titlul de dinainte, iar studentul trebuie să știe de ce.',
+      placeholder: 'Ex: Titlul nou nu mai acoperă obiectivele aprobate. Reformulează-l păstrând componenta empirică.',
+      required: true,
+    },
+  }
+
+  document.querySelectorAll<HTMLButtonElement>('[data-modificare]').forEach((b) => {
+    b.addEventListener('click', () => {
+      const verdict = b.dataset.modificare === 'approved' ? 'approved' : 'rejected'
+      const copy = CHANGE_COPY[verdict]
+
+      const idField = document.getElementById('modificare-id') as HTMLInputElement | null
+      const verdictField = document.getElementById('modificare-decizie') as HTMLInputElement | null
+      const motiv = document.getElementById('modificare-motiv') as HTMLTextAreaElement | null
+
+      if (idField) idField.value = b.dataset.id ?? ''
+      if (verdictField) verdictField.value = verdict
+
+      const set = (id: string, text: string) => {
+        const el = document.getElementById(id)
+        if (el) el.textContent = text
+      }
+      set('titlu-modificare', copy.titlu)
+      set('modificare-trimite', copy.button)
+      set('modificare-eticheta', copy.eticheta)
+      set('modificare-hint', copy.hint)
+      set(
+        'modificare-explicatie',
+        `Mesajul ajunge la ${b.dataset.nume ?? 'student'} prin email și rămâne în conversație.`,
+      )
+
+      if (motiv) {
+        motiv.value = ''
+        motiv.placeholder = copy.placeholder
+        motiv.required = copy.required
+        motiv.minLength = copy.required ? 10 : 0
+      }
+
+      changeDialog?.showModal()
+      motiv?.focus()
+    })
+  })
+
+  changeDialog
+    ?.querySelectorAll('[data-inchide-modificare]')
+    .forEach((b) => b.addEventListener('click', () => changeDialog.close()))
+
+  /* --- the coordinator's own edit ------------------------------------------ */
+  const thesisDialog = document.getElementById('dialog-lucrare') as HTMLDialogElement | null
+
+  document.querySelectorAll<HTMLButtonElement>('[data-lucrare]').forEach((b) => {
+    b.addEventListener('click', () => {
+      const fill = (id: string, value: string) => {
+        const el = document.getElementById(id) as HTMLInputElement | HTMLTextAreaElement | null
+        if (el) el.value = value
+      }
+      fill('lucrare-id', b.dataset.lucrare ?? '')
+      fill('lucrare-titlu-ro', b.dataset.titluRo ?? '')
+      fill('lucrare-titlu-en', b.dataset.titluEn ?? '')
+      fill('lucrare-obiective', b.dataset.obiective ?? '')
+      fill('lucrare-motiv', '')
+
+      const nume = document.getElementById('lucrare-nume')
+      if (nume) nume.textContent = b.dataset.nume ?? 'studentul'
+
+      thesisDialog?.showModal()
+      document.getElementById('lucrare-titlu-ro')?.focus()
+    })
+  })
+
+  thesisDialog
+    ?.querySelectorAll('[data-inchide-lucrare]')
+    .forEach((b) => b.addEventListener('click', () => thesisDialog.close()))
+
+  /* --- the deadline window -------------------------------------------------
+   *
+   * One dialog for both gestures. Which one it is decides three things — the
+   * heading, the label on the submit button and whether „Șterge” exists — and
+   * the hidden `actiune_implicita`, because `formAction` reads the button's
+   * own `actiune` first (see lib/forms.ts). */
+  const deadlineDialog = document.getElementById('dialog-termen') as HTMLDialogElement | null
+  const deadlineForm = deadlineDialog?.querySelector('form') ?? null
+
+  const deadlineField = <T extends HTMLElement>(id: string) => document.getElementById(id) as T | null
+
+  function openDeadline(mode: 'adauga' | 'actualizeaza', data: DOMStringMap & { requestId?: string }) {
+    const actiune = deadlineField<HTMLInputElement>('termen-actiune')
+    const idField = deadlineField<HTMLInputElement>('termen-id')
+    const requestField = deadlineField<HTMLInputElement>('termen-cerere')
+    const title = deadlineField<HTMLInputElement>('termen-titlu')
+    const date = deadlineField<HTMLInputElement>('termen-data')
+    const status = deadlineField<HTMLSelectElement>('termen-stare')
+    const description = deadlineField<HTMLTextAreaElement>('termen-descriere')
+    const remove = deadlineField<HTMLButtonElement>('termen-sterge')
+    const submit = deadlineField<HTMLButtonElement>('termen-trimite')
+    const heading = document.getElementById('titlu-termen')
+
+    const editing = mode === 'actualizeaza'
+    if (actiune) actiune.value = mode
+    if (idField) idField.value = editing ? (data.termenEditeaza ?? '') : ''
+    if (requestField) requestField.value = editing ? '' : (data.requestId ?? '')
+    if (title) title.value = data.titlu ?? ''
+    if (status) status.value = data.stare ?? 'planned'
+    if (description) description.value = data.descriere ?? ''
+    if (date) {
+      date.value = data.data ?? ''
+      // The prose read-out beside the field follows the input, not the assignment.
+      date.dispatchEvent(new Event('input', { bubbles: true }))
+    }
+    if (remove) remove.hidden = !editing
+    if (submit) submit.textContent = editing ? 'Salvează termenul' : 'Adaugă termenul'
+    if (heading) heading.textContent = editing ? 'Editează termenul' : 'Termen nou'
+
+    deadlineDialog?.showModal()
+    title?.focus()
+  }
+
+  document.querySelectorAll<HTMLButtonElement>('[data-termen-nou]').forEach((b) => {
+    b.addEventListener('click', () =>
+      openDeadline('adauga', { ...b.dataset, requestId: b.dataset.termenNou ?? '' }),
+    )
+  })
+
+  document.querySelectorAll<HTMLButtonElement>('[data-termen-editeaza]').forEach((b) => {
+    b.addEventListener('click', () => openDeadline('actualizeaza', { ...b.dataset }))
+  })
+
+  deadlineDialog
+    ?.querySelectorAll('[data-inchide-termen]')
+    .forEach((b) => b.addEventListener('click', () => deadlineDialog.close()))
+
+  /* „Șterge” is a submit inside the same form, so the browser would refuse it
+   * while „Titlu” is empty — the required field the deletion does not need. */
+  deadlineField<HTMLButtonElement>('termen-sterge')?.addEventListener('click', () => {
+    deadlineForm?.querySelectorAll<HTMLInputElement>('[required]').forEach((f) => (f.required = false))
+  })
+
+  /* --- the same deadline for several students ----------------------------- */
+  const bulkDialog = document.getElementById('dialog-termen-multi') as HTMLDialogElement | null
+  const bulkBoxes = [...document.querySelectorAll<HTMLInputElement>('[data-student]')]
+  const bulkAll = document.getElementById('multi-toti') as HTMLInputElement | null
+  const bulkSubmit = document.getElementById('multi-trimite') as HTMLButtonElement | null
+
+  /* The button counts, so the size of the gesture is on the button that makes
+   * it: one click writes as many rows as there are ticks. */
+  function syncBulk() {
+    const chosen = bulkBoxes.filter((b) => b.checked).length
+    if (bulkSubmit) {
+      bulkSubmit.disabled = chosen === 0
+      bulkSubmit.textContent =
+        chosen === 0
+          ? 'Alege cel puțin un student'
+          : chosen === 1
+            ? 'Adaugă pentru 1 student'
+            : `Adaugă pentru ${chosen} studenți`
+    }
+    if (bulkAll) {
+      bulkAll.checked = chosen === bulkBoxes.length && chosen > 0
+      bulkAll.indeterminate = chosen > 0 && chosen < bulkBoxes.length
+    }
+  }
+
+  bulkBoxes.forEach((b) => b.addEventListener('change', syncBulk))
+  bulkAll?.addEventListener('change', () => {
+    bulkBoxes.forEach((b) => (b.checked = bulkAll.checked))
+    syncBulk()
+  })
+  syncBulk()
+
+  document.querySelectorAll<HTMLButtonElement>('[data-termen-multi]').forEach((b) => {
+    b.addEventListener('click', () => {
+      bulkDialog?.showModal()
+      document.getElementById('multi-titlu')?.focus()
+    })
+  })
+
+  bulkDialog
+    ?.querySelectorAll('[data-inchide-multi]')
+    .forEach((b) => b.addEventListener('click', () => bulkDialog.close()))
 
   /* --- choosing the student to invite -------------------------------------
    *
@@ -1111,19 +1918,136 @@ function deadline(expiresAt: string | null | undefined) {
     transform: scaleX(var(--procent, 0));
   }
 
-  /* The timeline repeats the shape from the student's portal, so the teacher
-     sees exactly what the student sees — except that every deadline opens for
-     editing. */
+  /* --- the deadline agenda ------------------------------------------------ */
+
+  .panel__header--agenda {
+    flex-wrap: wrap;
+    gap: var(--s-3);
+  }
+
+  /* Two links that look like one control. The current one is named by
+     `aria-current`, not only by the fill. */
+  .comutator {
+    display: inline-flex;
+    border: 1px solid var(--border-strong);
+    border-radius: var(--r-md);
+    overflow: hidden;
+  }
+
+  .comutator__optiune {
+    padding: var(--s-2) var(--s-3);
+    font-size: var(--t-xs);
+    font-weight: 500;
+    color: var(--ink-muted);
+    text-decoration: none;
+    background: var(--surface);
+    transition: background var(--fast) var(--ease), color var(--fast) var(--ease);
+  }
+  .comutator__optiune + .comutator__optiune {
+    border-left: 1px solid var(--border-strong);
+  }
+  .comutator__optiune:hover {
+    background: var(--surface-sunken);
+    color: var(--ink);
+  }
+  .comutator__optiune.is-activ {
+    background: var(--surface-sunken);
+    color: var(--ink);
+    font-weight: 600;
+  }
+
+  .panel__body--alegere {
+    padding-bottom: 0;
+  }
+
+  .sumar {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--s-3);
+    padding: var(--s-4) var(--s-5) 0;
+    font-size: var(--t-sm);
+  }
+
+  .grupe {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .grupa {
+    border-top: 1px solid var(--border);
+  }
+  .grupa:first-child {
+    border-top: 0;
+  }
+
+  .grupa__cap {
+    display: flex;
+    align-items: center;
+    gap: var(--s-3);
+    padding: var(--s-4) var(--s-5);
+    cursor: pointer;
+    list-style: none;
+  }
+  .grupa__cap::-webkit-details-marker {
+    display: none;
+  }
+  .grupa__cap:hover {
+    background: var(--surface-sunken);
+  }
+
+  .grupa__titlu {
+    font-size: var(--t-sm);
+    font-weight: 600;
+  }
+
+  .grupa__contor {
+    min-width: 22px;
+    padding: 1px 6px;
+    border-radius: 999px;
+    background: var(--surface-sunken);
+    font-size: var(--t-xs);
+    font-weight: 600;
+    color: var(--ink-soft);
+    text-align: center;
+  }
+
+  /* Overdue is not a colour on its own: the group is named „Depășite” and every
+     row inside it carries the words „Termen depășit”. */
+  .grupa--overdue .grupa__cap {
+    border-left: 3px solid var(--danger);
+  }
+  .grupa--overdue .grupa__contor {
+    background: var(--danger-tint);
+    color: var(--danger);
+  }
+  .grupa--done .grupa__titlu {
+    color: var(--ink-muted);
+  }
+
+  .grupa__nota {
+    font-size: var(--t-xs);
+  }
+
   .termene {
     list-style: none;
     margin: 0;
-    padding: var(--s-4) var(--s-5);
+    padding: 0 var(--s-5) var(--s-4);
+  }
+
+  .termene__sectiune {
+    padding: var(--s-4) 0 var(--s-2) 27px;
+    font-size: var(--t-xs);
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    color: var(--ink-muted);
+    text-transform: uppercase;
   }
 
   .termen {
     display: flex;
     gap: var(--s-4);
-    padding-block: var(--s-2);
+    padding-block: var(--s-3);
     position: relative;
   }
 
@@ -1131,8 +2055,8 @@ function deadline(expiresAt: string | null | undefined) {
     content: '';
     position: absolute;
     left: 5px;
-    top: 30px;
-    bottom: -8px;
+    top: 24px;
+    bottom: -6px;
     width: 1px;
     background: var(--border-strong);
   }
@@ -1140,7 +2064,7 @@ function deadline(expiresAt: string | null | undefined) {
   .jalon__punct {
     width: 11px;
     height: 11px;
-    margin-top: 9px;
+    margin-top: 6px;
     border-radius: 50%;
     border: 2px solid var(--border-strong);
     background: var(--surface);
@@ -1156,33 +2080,31 @@ function deadline(expiresAt: string | null | undefined) {
     background: var(--info);
     border-color: var(--info);
   }
+  .termen--overdue .jalon__punct {
+    background: var(--danger);
+    border-color: var(--danger);
+  }
 
   .jalon__corp {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-1);
     flex: 1;
     min-width: 0;
   }
 
-  .jalon__corp summary {
+  .jalon__cap {
     display: flex;
-    align-items: center;
+    align-items: baseline;
     justify-content: space-between;
     gap: var(--s-3);
-    padding: var(--s-2) var(--s-3);
-    border-radius: var(--r-md);
-    cursor: pointer;
-    list-style: none;
     flex-wrap: wrap;
-  }
-  .jalon__corp summary::-webkit-details-marker {
-    display: none;
-  }
-  .jalon__corp summary:hover {
-    background: var(--surface-sunken);
   }
 
   .jalon__titlu {
     font-size: var(--t-sm);
     font-weight: 600;
+    text-wrap: pretty;
   }
   .termen--done .jalon__titlu {
     color: var(--ink-muted);
@@ -1191,15 +2113,124 @@ function deadline(expiresAt: string | null | undefined) {
   .jalon__meta {
     display: flex;
     align-items: center;
-    gap: var(--s-3);
+    flex-wrap: wrap;
+    gap: var(--s-2);
     font-size: var(--t-xs);
   }
 
-  .jalon__editor {
+  .jalon__student {
+    font-weight: 600;
+    color: var(--ink-soft);
+  }
+
+  /* The notes were invisible until each row was expanded, one at a time. Two
+     lines here, the whole text in the tooltip and in the editor. */
+  .jalon__descriere {
+    font-size: var(--t-sm);
+    color: var(--ink-soft);
+    max-width: 74ch;
+    text-wrap: pretty;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  .jalon__actiuni {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--s-2);
+    margin-top: var(--s-1);
+  }
+
+  /* Three submits, one field. Works with JavaScript off, and the current state
+     is the disabled one — pressing it would post the state it already has. */
+  .stare {
+    display: inline-flex;
+    border: 1px solid var(--border-strong);
+    border-radius: var(--r-md);
+    overflow: hidden;
+  }
+
+  .stare__optiune {
+    min-height: 30px;
+    padding: 0 var(--s-3);
+    border: 0;
+    background: var(--surface);
+    color: var(--ink-muted);
+    font: inherit;
+    font-size: var(--t-xs);
+    cursor: pointer;
+    transition: background var(--fast) var(--ease), color var(--fast) var(--ease);
+  }
+  .stare__optiune + .stare__optiune {
+    border-left: 1px solid var(--border-strong);
+  }
+  .stare__optiune:hover:not(:disabled) {
+    background: var(--surface-sunken);
+    color: var(--ink);
+  }
+  .stare__optiune.is-activ {
+    background: var(--surface-sunken);
+    color: var(--ink);
+    font-weight: 600;
+    cursor: default;
+  }
+
+  /* The one destructive control on the screen, kept quiet but findable. */
+  .dialog__sterge {
+    color: var(--danger);
+  }
+
+  .alegere-studenti {
     display: flex;
     flex-direction: column;
-    gap: var(--s-3);
-    padding: var(--s-4) var(--s-3) var(--s-5);
+    gap: var(--s-2);
+    border: 1px solid var(--border);
+    border-radius: var(--r-md);
+    padding: var(--s-3) var(--s-4);
+    margin: 0;
+  }
+
+  .alegere-studenti__tot {
+    display: flex;
+    align-items: center;
+    gap: var(--s-2);
+    padding-bottom: var(--s-2);
+    border-bottom: 1px solid var(--border);
+    font-size: var(--t-sm);
+    font-weight: 600;
+  }
+
+  .alegere-studenti__lista {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: var(--s-1) var(--s-4);
+    max-height: 260px;
+    overflow-y: auto;
+  }
+
+  .alegere-studenti__rand {
+    display: flex;
+    align-items: center;
+    gap: var(--s-2);
+    min-height: 32px;
+    font-size: var(--t-sm);
+    cursor: pointer;
+  }
+
+  .alegere-studenti__nume {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* The lateness signal on the roster: „4 din 5” looked the same whether the
+     fifth was due next month or in March. */
+  .intarziere {
+    white-space: nowrap;
   }
 
   .teme {
@@ -1296,6 +2327,56 @@ function deadline(expiresAt: string | null | undefined) {
     white-space: pre-wrap;
     text-wrap: pretty;
     max-width: 78ch;
+  }
+
+  /* The change, as a difference: the old value struck through above the new
+     one. Repeating the whole request buries the one line that is a decision. */
+  .diferenta {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-3);
+    margin: 0;
+    max-width: 78ch;
+  }
+
+  .diferenta__camp {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-1);
+  }
+
+  .diferenta dt {
+    font-size: var(--t-xs);
+    font-weight: 600;
+    color: var(--ink-muted);
+  }
+
+  .diferenta dd {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin: 0;
+    font-size: var(--t-sm);
+  }
+
+  .diferenta__vechi {
+    padding: var(--s-2) var(--s-3);
+    background: var(--surface-sunken);
+    border-radius: var(--r-sm);
+    color: var(--ink-muted);
+    text-decoration: line-through;
+    white-space: pre-wrap;
+    text-wrap: pretty;
+  }
+
+  .diferenta__nou {
+    padding: var(--s-2) var(--s-3);
+    background: var(--surface-sunken);
+    border-left: 2px solid var(--red);
+    border-radius: 0 var(--r-sm) var(--r-sm) 0;
+    font-weight: 600;
+    white-space: pre-wrap;
+    text-wrap: pretty;
   }
 
   .reason {

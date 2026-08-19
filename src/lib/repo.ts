@@ -15,6 +15,23 @@ export {
   weekLabel,
 } from './date'
 
+/* Same reasoning for the deadline vocabulary: the labels, the „overdue” state
+ * and the grouping are calendar arithmetic, not queries. They moved to
+ * `lib/milestones.ts` where a test can reach them, and are re-exported here
+ * because eight screens import them from this module. */
+export {
+  BUCKET_LABELS,
+  dueBucket,
+  dueHint,
+  daysUntil,
+  groupMilestones,
+  MILESTONE_LABELS,
+  MILESTONE_STATE_CLASS,
+  MILESTONE_STATE_LABELS,
+  milestoneState,
+} from './milestones'
+export type { DueBucket, MilestoneState } from './milestones'
+
 /**
  * Application queries.
  *
@@ -116,51 +133,6 @@ export const INVITATION_LABELS: Record<string, string> = {
   accepted: 'Acceptată',
   declined: 'Refuzată',
   expired: 'Expirată',
-}
-
-export const MILESTONE_LABELS: Record<string, string> = {
-  planned: 'Planificat',
-  in_progress: 'În lucru',
-  done: 'Finalizat',
-}
-
-/**
- * The real state of a milestone, not just the stored one.
- *
- * The database has three states, none of them „overdue”, so a missed milestone
- * looked identical to a future one: on 29 July, „Predarea formei finale ·
- * 14 iulie” still read „Planificat”, and the start page announced as the „next
- * milestone” one five months past.
- *
- * Being overdue is not written to the database — it is read off the calendar
- * every time, because otherwise somebody would have to keep it up to date.
- */
-export type MilestoneState = 'planned' | 'in_progress' | 'done' | 'overdue'
-
-export function milestoneState(
-  status: string,
-  dueOn: string | null | undefined,
-): MilestoneState {
-  if (status === 'done') return 'done'
-  if (!dueOn) return status === 'in_progress' ? 'in_progress' : 'planned'
-
-  const today = new Date()
-  today.setHours(0, 0, 0, 0)
-  return new Date(dueOn) < today ? 'overdue' : status === 'in_progress' ? 'in_progress' : 'planned'
-}
-
-export const MILESTONE_STATE_LABELS: Record<MilestoneState, string> = {
-  planned: 'Planificat',
-  in_progress: 'În lucru',
-  done: 'Finalizat',
-  overdue: 'Termen depășit',
-}
-
-export const MILESTONE_STATE_CLASS: Record<MilestoneState, string> = {
-  planned: 'badge--ciorna',
-  in_progress: 'badge--in-lucru',
-  done: 'badge--aprobata',
-  overdue: 'badge--respinsa',
 }
 
 export function programLabel(program: string | null): string {
@@ -272,6 +244,8 @@ export interface SupervisedStudent extends RequestRow {
   graduation_year_id: string | null
   milestones_total: number
   milestones_done: number
+  /** Not done and past their date. The roster is a triage surface without it. */
+  milestones_overdue: number
   conversation_id: string | null
   unread: number
 }
@@ -281,6 +255,12 @@ export function supervisedStudents(teacherId: string, yearId?: string) {
     `SELECT ${REQUEST_FIELDS}, r.graduation_year_id,
             (SELECT count(*)::int FROM milestones m WHERE m.request_id = r.id) AS milestones_total,
             (SELECT count(*)::int FROM milestones m WHERE m.request_id = r.id AND m.status = 'done') AS milestones_done,
+            /* „4 din 5” reads the same whether the fifth is due next month or
+               was due in March. Counted in SQL against current_date, next to
+               the two counts it has to agree with. */
+            (SELECT count(*)::int FROM milestones m
+              WHERE m.request_id = r.id AND m.status <> 'done'
+                AND m.due_on IS NOT NULL AND m.due_on < current_date) AS milestones_overdue,
             c.id AS conversation_id,
             COALESCE((SELECT count(*)::int FROM messages msg
                        WHERE msg.conversation_id = c.id
@@ -344,8 +324,39 @@ export function requestMilestones(teacherId: string, requestId: string) {
        FROM milestones m
        JOIN requests r ON r.id = m.request_id
       WHERE m.request_id = $2 AND r.teacher_id = $1
-      ORDER BY m.position, m.due_on NULLS LAST`,
+      ORDER BY m.due_on NULLS LAST, m.position, m.title`,
     [teacherId, requestId],
+  )
+}
+
+export interface TeacherMilestone extends Milestone {
+  student_id: string
+  student_name: string
+  father_initial: string | null
+  /** The thesis the deadline belongs to, so a shared row can still be told apart. */
+  thesis_title: string
+}
+
+/**
+ * Every deadline a coordinator is responsible for, across all their students.
+ *
+ * The screen could only ever ask about one student at a time — one select, one
+ * page load — so „what is due this week” was a question the portal held the
+ * answer to and could not be asked. Ordered by date for the same reason the
+ * per-thesis list is: this is an agenda.
+ */
+export function teacherMilestones(teacherId: string, yearId?: string) {
+  return query<TeacherMilestone>(
+    `SELECT m.id, m.request_id, m.title, m.description, m.due_on, m.status, m.position,
+            s.id AS student_id, s.name AS student_name, s.father_initial,
+            r.title_ro AS thesis_title
+       FROM milestones m
+       JOIN requests r ON r.id = m.request_id
+       JOIN users s ON s.id = r.student_id
+      WHERE r.teacher_id = $1 AND r.status = 'approved'
+        AND r.academic_year_id = ${thisYear(2)}
+      ORDER BY m.due_on NULLS LAST, s.name, m.position`,
+    [teacherId, yearId ?? null],
   )
 }
 
@@ -477,8 +488,101 @@ export function studentMilestones(studentId: string) {
        FROM milestones m
        JOIN requests r ON r.id = m.request_id
       WHERE r.student_id = $1 AND r.status IN ('approved', 'defended')
-      ORDER BY m.position, m.due_on NULLS LAST`,
+      ORDER BY m.due_on NULLS LAST, m.position, m.title`,
     [studentId],
+  )
+}
+
+/* --- changes to an agreed thesis -------------------------------------------- */
+
+export interface TitleChange {
+  id: string
+  request_id: string
+  requested_by: string
+  requester_name: string
+  /** True when the coordinator applied it themselves — no decision was needed. */
+  by_teacher: boolean
+  old_title_ro: string
+  old_title_en: string | null
+  old_objectives: string
+  new_title_ro: string
+  new_title_en: string | null
+  new_objectives: string
+  reason: string | null
+  status: 'pending' | 'approved' | 'rejected' | 'withdrawn'
+  decision_note: string | null
+  decided_at: string | null
+  created_at: string
+  /* The context every screen needs next to it, so a queue row is readable
+     without a second query per line. */
+  number: string
+  student_id: string
+  student_name: string
+  student_number: string | null
+  father_initial: string | null
+  teacher_id: string
+  teacher_name: string
+  /** What the thesis is called right now — not necessarily `old_title_ro`. */
+  current_title_ro: string
+}
+
+const TITLE_CHANGE_FIELDS = `
+  tc.id, tc.request_id, tc.requested_by,
+  tc.old_title_ro, tc.old_title_en, tc.old_objectives,
+  tc.new_title_ro, tc.new_title_en, tc.new_objectives,
+  tc.reason, tc.status, tc.decision_note, tc.decided_at, tc.created_at,
+  (tc.requested_by = r.teacher_id) AS by_teacher,
+  r.number, r.title_ro AS current_title_ro,
+  s.id AS student_id, s.name AS student_name, s.student_number, s.father_initial,
+  t.id AS teacher_id, t.name AS teacher_name,
+  who.name AS requester_name`
+
+const TITLE_CHANGE_JOINS = `
+  FROM title_changes tc
+  JOIN requests r ON r.id = tc.request_id
+  JOIN users s ON s.id = r.student_id
+  JOIN users t ON t.id = r.teacher_id
+  JOIN users who ON who.id = tc.requested_by`
+
+/**
+ * The coordinator's queue of change requests, open ones first.
+ *
+ * Scoped to the running session for the same reason the roster is: a title
+ * changed two years ago belongs to a closed archive, not to today's decisions.
+ */
+export function teacherTitleChanges(teacherId: string, yearId?: string) {
+  return query<TitleChange>(
+    `SELECT ${TITLE_CHANGE_FIELDS} ${TITLE_CHANGE_JOINS}
+      WHERE r.teacher_id = $1
+        AND r.academic_year_id = ${thisYear(2)}
+      ORDER BY CASE tc.status WHEN 'pending' THEN 0 ELSE 1 END, tc.created_at DESC`,
+    [teacherId, yearId ?? null],
+  )
+}
+
+/**
+ * Everything that ever happened to this student's thesis text.
+ *
+ * The coordinator's own edits are in here too: they are written as approved
+ * rows rather than as a silent UPDATE, so „de ce se numește altfel decât în
+ * cererea pe care am semnat-o” has an answer on the screen.
+ */
+export function studentTitleChanges(studentId: string) {
+  return query<TitleChange>(
+    `SELECT ${TITLE_CHANGE_FIELDS} ${TITLE_CHANGE_JOINS}
+      WHERE r.student_id = $1
+      ORDER BY tc.created_at DESC`,
+    [studentId],
+  )
+}
+
+/** The history of one thesis, oldest first — the printable document uses it. */
+export function requestTitleChanges(requestId: string) {
+  return query<TitleChange>(
+    `SELECT ${TITLE_CHANGE_FIELDS} ${TITLE_CHANGE_JOINS}
+      WHERE tc.request_id = $1 AND tc.status = 'approved'
+      ORDER BY tc.created_at`,
+    [requestId],
   )
 }
 

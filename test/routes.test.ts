@@ -1,6 +1,7 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { PUBLIC_PATHS } from '../src/lib/routes.ts'
+import { SCREENS, screenName } from '../src/lib/navigation.ts'
 import { homeFor } from '../src/lib/http.ts'
 
 /**
@@ -43,6 +44,8 @@ describe('rutele publice', () => {
       '/arhiva',
       '/contul-meu',
       '/profesor',
+      '/profesor/activitatea-mea',
+      '/profesor/arhiva',
       '/profesor/departament',
       '/documente/regulament',
       '/fisiere/1',
@@ -61,6 +64,30 @@ describe('rutele publice', () => {
   it('se potrivește pe calea exactă, nu pe prefix', () => {
     assert.equal(PUBLIC_PATHS.includes('/autentificare-noua' as never), false)
     assert.equal(PUBLIC_PATHS.includes('/api/autentificare/reset' as never), false)
+  })
+})
+
+/* „Arhiva mea” was the coordinator's own record plus their profile form plus a
+ * written request to the head of department, and it shared a name with the
+ * faculty's archive of defended theses. The record kept the screen under a name
+ * of its own; the other two moved out. What is pinned here is the outcome: one
+ * „Arhivă” in the portal, and the old address still answering to a name so that
+ * a „?de_la=” coming back from an email already sent does not read „Înapoi”. */
+describe('numele ecranelor', () => {
+  it('numește ecranul de activitate, și la adresa lui veche', () => {
+    assert.equal(screenName('/profesor/activitatea-mea'), 'Activitatea mea')
+    assert.equal(screenName('/profesor/arhiva?an=2024'), 'Activitatea mea')
+  })
+
+  it('lasă un singur „Arhivă” în portal', () => {
+    const archives = Object.entries(SCREENS).filter(([, name]) =>
+      name.toLowerCase().startsWith('arhiv'),
+    )
+    assert.deepEqual(archives, [['/arhiva', 'Arhivă']])
+  })
+
+  it('dă contului un nume, ca să fie găsit în paletă', () => {
+    assert.equal(screenName('/contul-meu'), 'Contul meu')
   })
 })
 

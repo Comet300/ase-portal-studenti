@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { buildIcs, consultationUid } from '../src/lib/ics.ts'
+import { buildIcs, buildIcsBundle, consultationUid } from '../src/lib/ics.ts'
 
 /**
  * The calendar file.
@@ -99,5 +99,76 @@ describe('consultationUid', () => {
 
   it('același UID pentru aceeași pereche, oricând este cerut', () => {
     assert.equal(consultationUid('slot-1', 'student-a'), consultationUid('slot-1', 'student-a'))
+  })
+})
+
+/**
+ * Several events in one file.
+ *
+ * A coordinator who calls off a whole day, and a group meeting with three
+ * invitees, both produce more than one event for the same person. Sent as
+ * separate attachments only the first is read — Gmail keeps one calendar part
+ * per message — so the second and third hours stayed in the calendar of
+ * everybody who had just been told, in writing, that they were cancelled.
+ */
+describe('buildIcsBundle', () => {
+  const SLOT = 'slot-9'
+  const STUDENTS = [
+    { id: 'student-a', name: 'Andrei Vasilescu', email: 'andrei.vasilescu@stud.ase.ro' },
+    { id: 'student-b', name: 'Bianca Marin', email: 'bianca.marin@stud.ase.ro' },
+    { id: 'student-c', name: 'Cătălin Pop', email: 'catalin.pop@stud.ase.ro' },
+  ]
+
+  const cancelBundle = () =>
+    buildIcsBundle(
+      STUDENTS.map((s) => ({
+        ...EVENT,
+        uid: consultationUid(SLOT, s.id),
+        attendeeName: s.name,
+        attendeeEmail: s.email,
+        cancelled: true,
+      })),
+    )
+
+  it('ține un singur calendar, oricâte evenimente are', () => {
+    const ics = cancelBundle()
+    assert.equal(ics.split('\r\n').filter((l) => l === 'BEGIN:VCALENDAR').length, 1)
+    assert.equal(ics.split('\r\n').filter((l) => l === 'END:VCALENDAR').length, 1)
+    assert.equal(ics.split('\r\n').filter((l) => l === 'BEGIN:VEVENT').length, 3)
+  })
+
+  /* The pair that matters, once more: three students on the same hour are three
+   * events in three calendars, so a cancellation has to name all three UIDs. */
+  it('anulează exact rezervările cerute, cu UID-ul fiecăreia', () => {
+    const uids = cancelBundle()
+      .split('\r\n')
+      .filter((l) => l.startsWith('UID:'))
+      .map((l) => l.slice(4))
+
+    assert.deepEqual(uids, STUDENTS.map((s) => consultationUid(SLOT, s.id)))
+    assert.equal(new Set(uids).size, 3, 'niciun UID repetat')
+  })
+
+  it('marchează toate evenimentele ca anulate, cu secvența urcată', () => {
+    const lines = cancelBundle().split('\r\n')
+    assert.deepEqual(lines.filter((l) => l.startsWith('METHOD:')), ['METHOD:CANCEL'])
+    assert.equal(lines.filter((l) => l === 'STATUS:CANCELLED').length, 3)
+    assert.equal(lines.filter((l) => l === 'SEQUENCE:1').length, 3)
+  })
+
+  it('fiecare eveniment își păstrează invitatul', () => {
+    const ics = cancelBundle().replace(/\r\n /g, '')
+    for (const s of STUDENTS) {
+      assert.ok(ics.includes(`mailto:${s.email}`), `${s.name} lipsește din pachet`)
+    }
+  })
+
+  /* `buildIcs` is this function with one event: the single invitation, which is
+   * the overwhelming majority of what the portal sends, must not change shape
+   * because the bundle exists. */
+  it('un singur eveniment dă exact fișierul de dinainte', () => {
+    const alone = buildIcsBundle([EVENT]).replace(/^DTSTAMP:.*$/gm, '')
+    const direct = buildIcs(EVENT).replace(/^DTSTAMP:.*$/gm, '')
+    assert.equal(alone, direct)
   })
 })

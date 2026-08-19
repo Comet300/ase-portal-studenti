@@ -1,25 +1,36 @@
 import type { APIRoute } from 'astro'
+import { recordAccess } from '../../lib/audit'
 import { isTeacher } from '../../lib/auth'
 import { postEvent } from '../../lib/chat'
 import { execute, query, queryOne } from '../../lib/db'
-import { buildIcs, consultationUid } from '../../lib/ics'
+import { buildIcs, buildIcsBundle, consultationUid, type CalendarEvent } from '../../lib/ics'
 import { deadEnd, redirectWithNotice, sessionExpired } from '../../lib/http'
 import { formAction } from '../../lib/forms'
 import { html, joinHtml, sendEmail, template } from '../../lib/mail'
+import {
+  studentCancellationMail,
+  teacherCancellationMail,
+  type CancelledHour,
+} from '../../lib/mail-consultatii'
 import { formatDate, formatTime } from '../../lib/repo'
+import { numar } from '../../lib/text'
 import { id as formId } from '../../lib/ids'
 
 /**
- * Consultation intervals.
+ * Consultation hours.
  *
  * Two shapes, because coordinators work in two ways. `publica` opens a block of
- * hourly intervals that any coordinated student may book — the office-hours
- * model. `programeaza` schedules one meeting with one named student and books it
- * on their behalf, which is what happens when the coordinator is the one who
- * needs the meeting.
+ * hours that any coordinated student may book — the office-hours model, and the
+ * habitual one. `programeaza` summons one or more named students and books the
+ * meeting on their behalf, which is what happens when the coordinator is the one
+ * who needs it. `kind` records which of the two made the row, because nothing
+ * else in the table can tell them apart: a group meeting leaves `student_id`
+ * NULL exactly like an open hour does.
  *
- * Either way the interval carries where it is: a room with a floor and a number,
- * a meeting link, or both when a student may attend remotely.
+ * Either way the hour carries where it is: a room with a floor and a number, a
+ * meeting link, or both when a student may attend remotely.
+ *
+ * `anuleaza` is the way back out, for one hour or for a whole day.
  */
 
 const PAGE = '/profesor/consultatii'
@@ -63,7 +74,7 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
 
   const back = (message: string, isError = false) => redirectWithNotice(PAGE, message, isError)
 
-  /* --- open intervals anyone coordinated may book --------------------------- */
+  /* --- open hours anyone coordinated may book ------------------------------- */
 
   if (action === 'publica') {
     const day = String(form.get('zi') ?? '')
@@ -95,18 +106,18 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
     // The open block is split into whole hours, so an endpoint on the half hour
     // must not be allowed to produce an interval that runs past the end time.
     const hours = Math.min(Math.floor(endHour - startHour), 8)
-    if (hours < 1) return back('Intervalul trebuie să acopere cel puțin o oră.', true)
+    if (hours < 1) return back('Între „De la” și „Până la” trebuie să încapă cel puțin o oră întreagă.', true)
 
     const created: { starts_at: string; ends_at: string }[] = []
 
     for (let i = 0; i < hours; i++) {
       const slot = await queryOne<{ starts_at: string; ends_at: string }>(
         `INSERT INTO consultation_slots
-           (teacher_id, starts_at, ends_at, mode, location, meeting_url, capacity)
+           (teacher_id, starts_at, ends_at, mode, location, meeting_url, capacity, kind)
          SELECT $1,
                 ($2::date + ($3 || ' hours')::interval),
                 ($2::date + ($4 || ' hours')::interval),
-                $5, NULLIF($6, ''), NULLIF($7, ''), $8
+                $5, NULLIF($6, ''), NULLIF($7, ''), $8, 'open'
           WHERE NOT EXISTS (
             SELECT 1 FROM consultation_slots s
              WHERE s.teacher_id = $1
@@ -118,7 +129,9 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
       if (slot) created.push(slot)
     }
 
-    if (created.length === 0) return back('Intervalele existau deja.', true)
+    if (created.length === 0) {
+      return back('Orele erau deja deschise în ziua asta. Alege alt interval orar.', true)
+    }
 
     /* Published hours nobody hears about are hours nobody books.
      *
@@ -148,30 +161,31 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
           to: student.email,
           subject:
             created.length === 1
-              ? `Un interval de consultație nou — ${formatDate(created[0].starts_at)}`
-              : `${created.length} intervale de consultație noi`,
+              ? `O oră de consultație nouă — ${formatDate(created[0].starts_at)}`
+              : `${numar(created.length, 'oră de consultație nouă', 'ore de consultație noi')}`,
           html: template(
-            'Intervale de consultație disponibile',
-            html`<p>Bună, ${student.name.split(' ')[0]}! ${u!.name} a publicat
-             ${created.length === 1 ? 'un interval' : `${created.length} intervale`} de consultație:</p>
+            'Ore de consultație deschise',
+            html`<p>Bună, ${student.name.split(' ')[0]}! ${u!.name} a deschis
+             ${numar(created.length, 'oră de consultație', 'ore de consultație')}:</p>
              <ul>${list}</ul>
              <p>${place}</p>
-             <p>Locurile se ocupă în ordinea rezervărilor${places > 1 ? `, câte ${places} pe interval` : ''}.</p>`,
-            { text: 'Rezervă un interval', url: `${base}/consultatii` },
+             <p>Locurile se ocupă în ordinea rezervărilor${places > 1 ? `, câte ${places} pe oră` : ''}.
+              Invitația în calendar îți vine imediat ce rezervi.</p>`,
+            { text: 'Rezervă o oră', url: `${base}/consultatii` },
           ),
         }),
       ),
     )
 
     return back(
-      `${created.length} ${created.length === 1 ? 'interval publicat' : 'intervale publicate'}. ` +
+      `${numar(created.length, 'oră deschisă', 'ore deschise')}. ` +
         (students.length > 0
-          ? `${students.length} ${students.length === 1 ? 'student anunțat' : 'studenți anunțați'} pe email.`
+          ? `${numar(students.length, 'student anunțat', 'studenți anunțați')} pe email.`
           : 'Nu ai încă studenți coordonați de anunțat.'),
     )
   }
 
-  /* --- schedule one meeting with one student -------------------------------- */
+  /* --- summon one or more named students ------------------------------------ */
 
   if (action === 'programeaza') {
     // One interval, any number of students: three people working on the same
@@ -220,11 +234,11 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
      * the bookings below are what record who is coming. */
     const slot = await queryOne<{ id: string; starts_at: string; ends_at: string }>(
       `INSERT INTO consultation_slots
-         (teacher_id, student_id, starts_at, ends_at, mode, location, meeting_url, note, capacity)
+         (teacher_id, student_id, starts_at, ends_at, mode, location, meeting_url, note, capacity, kind)
        VALUES ($1, $2,
                ($3::date + ($4 || ' hours')::interval),
                ($3::date + ($5 || ' hours')::interval),
-               $6, NULLIF($7, ''), NULLIF($8, ''), NULLIF($9, ''), $10)
+               $6, NULLIF($7, ''), NULLIF($8, ''), NULLIF($9, ''), $10, 'scheduled')
        RETURNING id, starts_at, ends_at`,
       [
         u!.id, students.length === 1 ? students[0].id : null,
@@ -253,10 +267,27 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
       ${note ? html`<p><strong>Subiect:</strong> ${note}</p>` : ''}
       ${grup ? html`<p style="color:#5b6169;font-size:13px">Participanți: ${students.map((s) => s.name).join(', ')}</p>` : ''}`
 
-    /* Each student gets their own invitation: a calendar entry addressed to
-     * somebody else is one most clients quietly refuse to add. */
+    /* One event per invitee, not one event with three guests.
+     *
+     * A calendar entry addressed to somebody else is one most clients quietly
+     * refuse to add, so each student gets their own — and the identity of each
+     * is `(slot, student)`, which is what a cancellation later has to match. */
+    const invitations: CalendarEvent[] = students.map((student) => ({
+      uid: consultationUid(slot.id, student.id),
+      title: `Consultație — ${u!.name}`,
+      description: note || 'Consultație pentru lucrarea de finalizare a studiilor.',
+      location: place,
+      meetingUrl: meetingUrl || undefined,
+      start: new Date(slot.starts_at),
+      end: new Date(slot.ends_at),
+      organizerName: u!.name,
+      organizerEmail: u!.email,
+      attendeeName: student.name,
+      attendeeEmail: student.email,
+    }))
+
     await Promise.all(
-      students.map((student) =>
+      students.map((student, i) =>
         sendEmail({
           to: student.email,
           subject: `Consultație programată — ${formatDate(slot.starts_at)}`,
@@ -269,19 +300,7 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
           attachments: [
             {
               filename: 'consultatie.ics',
-              content: buildIcs({
-                uid: consultationUid(slot.id, student.id),
-                title: `Consultație — ${u!.name}`,
-                description: note || 'Consultație pentru lucrarea de finalizare a studiilor.',
-                location: place,
-                meetingUrl: meetingUrl || undefined,
-                start: new Date(slot.starts_at),
-                end: new Date(slot.ends_at),
-                organizerName: u!.name,
-                organizerEmail: u!.email,
-                attendeeName: student.name,
-                attendeeEmail: student.email,
-              }),
+              content: buildIcs(invitations[i]),
               contentType: 'text/calendar; method=REQUEST',
             },
           ],
@@ -289,12 +308,29 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
       ),
     )
 
+    /* The coordinator's copy carries the same invitations.
+     *
+     * It went out without any, so a meeting the coordinator had scheduled
+     * themselves was the one meeting missing from their own calendar — and,
+     * worse, a later cancellation had nothing to withdraw there. When a student
+     * books an open hour the coordinator does receive the file (`rezervari.ts`),
+     * so the two paths behaved differently for no reason anybody chose.
+     *
+     * All the invitations travel in a single file: one attachment is one
+     * calendar part, and a second attachment is dropped by most clients. */
     await sendEmail({
       to: u!.email,
       subject: grup
         ? `Consultație de grup cu ${students.length} studenți — ${formatDate(slot.starts_at)}`
         : `Consultație cu ${students[0].name} — ${formatDate(slot.starts_at)}`,
       html: template('Consultație programată', details),
+      attachments: [
+        {
+          filename: 'consultatie.ics',
+          content: buildIcsBundle(invitations),
+          contentType: 'text/calendar; method=REQUEST',
+        },
+      ],
     })
 
     for (const student of students) {
@@ -314,7 +350,7 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
 
     return back(
       grup
-        ? `Consultație de grup programată cu ${students.length} studenți. Fiecare a primit invitația pe email.`
+        ? `Consultație de grup programată cu ${numar(students.length, 'student', 'studenți')}. Fiecare a primit invitația pe email.`
         : `Consultație programată cu ${students[0].name}. Invitația a plecat pe email.`,
     )
   }
@@ -323,89 +359,243 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
 
   if (action === 'anuleaza') {
     const slotId = formId(form.get('slot_id'))
-
-    /* Cancelling marks the bookings as well — but above all it tells the people
-     * who were waiting.
+    const reason = String(form.get('motiv') ?? '').trim().slice(0, 400)
+    /* The scope arrives as a checkbox, the day is read on the server.
      *
-     * The bookings used to be withdrawn in silence: the student was left with an
-     * hour in their calendar and with the belief that they were meeting the
-     * coordinator, and found out that they were not when they got to the door.
-     * Each one gets an email, a cancellation in the calendar and an event in the
-     * thread — the same three channels as for a cancellation from the student. */
-    const cancelledBookings = await query<{
-      student_id: string
-      student_name: string
-      student_email: string
+     * A coordinator who is away is away for the whole day, and cancelling four
+     * published hours meant four confirmations and four emails to each of the
+     * same students. The day is derived from the hour that was clicked rather
+     * than posted, so nothing in the form can widen the blast radius. */
+    const wholeDay = String(form.get('toata_ziua') ?? '') === '1'
+
+    if (!slotId) return back('Ora de consultație nu a fost identificată. Reîncarcă pagina.', true)
+
+    /* An hour that has ended, or is already cancelled, is not cancelled again.
+     *
+     * There was no condition on the time at all — the interface merely left the
+     * button off the rows that had ended, and an interface is not an
+     * authorisation. Posting yesterday's form sent everybody who had actually
+     * attended a `CANCEL` for a meeting that had already taken place. A second
+     * submit of the same form found no bookings left to withdraw, told nobody
+     * anything, and still reported success. */
+    const anchor = await queryOne<{ day: string }>(
+      `SELECT starts_at::date::text AS day
+         FROM consultation_slots
+        WHERE id = $2 AND teacher_id = $1 AND is_cancelled = false AND starts_at > now()`,
+      [u!.id, slotId],
+    )
+
+    if (!anchor) {
+      return back(
+        'Ora nu mai poate fi anulată: fie s-a încheiat, fie era deja anulată. ' +
+          'Reîncarcă pagina ca să vezi programul actual.',
+        true,
+      )
+    }
+
+    const hours = await query<{
+      id: string
       starts_at: string
       ends_at: string
       mode: string
       location: string | null
       meeting_url: string | null
     }>(
-      `UPDATE bookings r SET status = 'cancelled'
-         FROM consultation_slots s, users st
-        WHERE r.slot_id = s.id AND st.id = r.student_id
-          AND r.slot_id = $2 AND r.status = 'booked' AND s.teacher_id = $1
-        RETURNING r.student_id, st.name AS student_name, st.email AS student_email,
-                  s.starts_at, s.ends_at, s.mode, s.location, s.meeting_url`,
-      [u!.id, slotId],
+      `SELECT id, starts_at, ends_at, mode, location, meeting_url
+         FROM consultation_slots
+        WHERE teacher_id = $1 AND is_cancelled = false AND starts_at > now()
+          AND (($3::boolean = false AND id = $2) OR ($3::boolean = true AND starts_at::date = $4::date))
+        ORDER BY starts_at`,
+      [u!.id, slotId, wholeDay, anchor.day],
     )
 
-    const n = await execute(
-      `UPDATE consultation_slots SET is_cancelled = true WHERE id = $2 AND teacher_id = $1`,
-      [u!.id, slotId],
-    )
+    /* Gathered by person, not by hour.
+     *
+     * One gesture from the coordinator has to be one letter for each student:
+     * four hours cancelled together used to mean four emails to the same person,
+     * arriving in the same minute, each saying the same thing. The calendar
+     * entries are gathered the same way — one file per person, holding one
+     * `VEVENT` per hour they had booked. */
+    const told = new Map<
+      string,
+      { name: string; email: string; hours: CancelledHour[]; events: CalendarEvent[] }
+    >()
+    const cancelled: CancelledHour[] = []
+    const allEvents: CalendarEvent[] = []
 
-    if (!n) return back('Intervalul nu a fost găsit.', true)
+    for (const hour of hours) {
+      const when = `${formatDate(hour.starts_at)}, ${formatTime(hour.starts_at)}–${formatTime(hour.ends_at)}`
+      const place = whereItIs(hour.mode, hour.location, hour.meeting_url)
 
-    for (const b of cancelledBookings) {
-      const cand = `${formatDate(b.starts_at)}, ${formatTime(b.starts_at)}–${formatTime(b.ends_at)}`
+      /* Who cancelled it, when, and why — the three things a boolean could not
+       * hold. `is_cancelled = false` stays in the WHERE, and the hour is marked
+       * *before* the bookings are withdrawn: two requests arriving together
+       * cancel it once and tell everybody once, instead of the loser of the
+       * race silently emptying the bookings and notifying nobody. */
+      const marked = await execute(
+        `UPDATE consultation_slots
+            SET is_cancelled = true,
+                cancelled_reason = NULLIF($3, ''),
+                cancelled_at = now(),
+                cancelled_by = $1
+          WHERE id = $2 AND teacher_id = $1 AND is_cancelled = false`,
+        [u!.id, hour.id, reason],
+      )
+      if (!marked) continue
 
-      await postEvent({
-        studentId: b.student_id,
-        teacherId: u!.id,
-        senderId: u!.id,
-        eventType: 'consultation_cancelled',
-        body: `${u!.name} a anulat consultația din ${cand}.`,
-        createConversation: false,
-        subjectKind: 'slot',
-        subjectId: slotId,
-      })
+      const bookings = await query<{
+        student_id: string
+        student_name: string
+        student_email: string
+      }>(
+        `UPDATE bookings r SET status = 'cancelled'
+           FROM consultation_slots s, users st
+          WHERE r.slot_id = s.id AND st.id = r.student_id
+            AND r.slot_id = $2 AND r.status = 'booked' AND s.teacher_id = $1
+          RETURNING r.student_id, st.name AS student_name, st.email AS student_email`,
+        [u!.id, hour.id],
+      )
 
-      const anulare = buildIcs({
-        uid: consultationUid(slotId!, b.student_id),
-        title: `Consultație cu ${u!.name}`,
-        location: b.mode === 'online' ? (b.meeting_url ?? 'Online') : (b.location ?? 'Cabinet'),
-        start: new Date(b.starts_at),
-        end: new Date(b.ends_at),
-        organizerName: u!.name,
-        organizerEmail: u!.email,
-        attendeeName: b.student_name,
-        attendeeEmail: b.student_email,
-        cancelled: true,
-      })
+      cancelled.push({ when, place })
 
-      void sendEmail({
-        to: b.student_email,
-        subject: `Consultația din ${cand} a fost anulată`,
-        html: template(
-          'Consultația a fost anulată',
-          html`<p>Bună, ${b.student_name.split(' ')[0]}. ${u!.name} a anulat consultația din
-           <strong>${cand}</strong>.</p>
-           <p>Poți rezerva un alt interval din portal, sau îi poți scrie direct ca să stabiliți
-           altul.</p>`,
-          { text: 'Vezi intervalele libere', url: `${base}/consultatii` },
-        ),
-        attachments: [
-          { filename: 'anulare.ics', content: Buffer.from(anulare), contentType: 'text/calendar; method=CANCEL' },
-        ],
-      }).catch((err) => console.error('[sloturi] anularea nu a fost anunțată', err))
+      for (const b of bookings) {
+        /* The same UID as the invitation, a higher SEQUENCE, `METHOD:CANCEL`.
+         * Any other identity adds a second event to the calendar instead of
+         * withdrawing the first, so `consultationUid` is not touched. */
+        const event: CalendarEvent = {
+          uid: consultationUid(hour.id, b.student_id),
+          title: `Consultație — ${u!.name}`,
+          description: reason ? `Consultație anulată. Motiv: ${reason}` : 'Consultație anulată.',
+          location: place,
+          meetingUrl: hour.meeting_url ?? undefined,
+          start: new Date(hour.starts_at),
+          end: new Date(hour.ends_at),
+          organizerName: u!.name,
+          organizerEmail: u!.email,
+          attendeeName: b.student_name,
+          attendeeEmail: b.student_email,
+          cancelled: true,
+        }
+        allEvents.push(event)
+
+        const entry = told.get(b.student_id) ?? {
+          name: b.student_name,
+          email: b.student_email,
+          hours: [],
+          events: [],
+        }
+        entry.hours.push({ when, place })
+        entry.events.push(event)
+        told.set(b.student_id, entry)
+      }
     }
 
+    if (cancelled.length === 0) {
+      return back('Orele erau deja anulate. Reîncarcă pagina ca să vezi programul actual.', true)
+    }
+
+    const delivered = await Promise.all(
+      [...told.entries()].map(async ([studentId, s]) => {
+        /* The portal's own act, written into the thread as a record — not as a
+         * message from anybody. `postEvent` never throws, so a thread that
+         * cannot be written to does not cancel the cancellation. */
+        await postEvent({
+          studentId,
+          teacherId: u!.id,
+          senderId: u!.id,
+          eventType: 'consultation_cancelled',
+          body:
+            (s.hours.length === 1
+              ? `${u!.name} a anulat consultația din ${s.hours[0].when}.`
+              : `${u!.name} a anulat ${numar(s.hours.length, 'oră de consultație', 'ore de consultație')}: ` +
+                `${s.hours.map((h) => h.when).join('; ')}.`) + (reason ? `\n\nMotiv: ${reason}` : ''),
+          createConversation: false,
+          subjectKind: 'slot',
+          subjectId: slotId,
+        })
+
+        const letter = studentCancellationMail({
+          studentName: s.name,
+          teacherName: u!.name,
+          hours: s.hours,
+          reason,
+          portalUrl: base,
+        })
+
+        try {
+          const sent = await sendEmail({
+            to: s.email,
+            subject: letter.subject,
+            html: letter.html,
+            attachments: [
+              {
+                filename: 'anulare.ics',
+                content: buildIcsBundle(s.events),
+                contentType: 'text/calendar; method=CANCEL',
+              },
+            ],
+          })
+          if (!sent.ok) console.error('[sloturi] anularea nu a ajuns la', s.email, sent.error)
+          return sent.ok
+        } catch (err) {
+          console.error('[sloturi] anularea nu a putut fi trimisă', err)
+          return false
+        }
+      }),
+    )
+
+    /* And to the coordinator, when there was anybody to withdraw.
+     *
+     * They hold a calendar copy of every booking — one event per student, put
+     * there when it was made — so cancelling without telling them left the hour
+     * in the calendar of the one person who knew for certain it would not
+     * happen. With nobody booked there is nothing in their calendar either, and
+     * the notice on the screen is the whole of the news. */
+    if (allEvents.length > 0) {
+      const receipt = teacherCancellationMail({
+        hours: cancelled,
+        studentNames: [...told.values()].map((s) => s.name),
+        reason,
+        portalUrl: base,
+      })
+
+      await sendEmail({
+        to: u!.email,
+        subject: receipt.subject,
+        html: receipt.html,
+        attachments: [
+          {
+            filename: 'anulare.ics',
+            content: buildIcsBundle(allEvents),
+            contentType: 'text/calendar; method=CANCEL',
+          },
+        ],
+      }).catch((err) => console.error('[sloturi] copia anulării nu a plecat', err))
+    }
+
+    await recordAccess({
+      userId: u!.id,
+      action: 'anuleaza_consultatie',
+      subject: wholeDay ? `ziua ${anchor.day}` : slotId,
+      rowCount: told.size,
+      request,
+    })
+
+    const failed = delivered.filter((ok) => !ok).length
+
+    /* The notice reports what was attempted and what failed, not what was
+     * delivered: the old one claimed „N studenți anunțați” while the sends were
+     * fire-and-forget, so a mailer that was down produced a green message and
+     * nobody at the door. */
     return back(
-      cancelledBookings.length > 0
-        ? `Intervalul a fost anulat. ${cancelledBookings.length} ${cancelledBookings.length === 1 ? 'student anunțat' : 'studenți anunțați'} pe email.`
-        : 'Intervalul a fost anulat.',
+      `${numar(cancelled.length, 'oră anulată', 'ore anulate')}. ` +
+        (told.size === 0
+          ? 'Nimeni nu avea loc rezervat, deci nu a fost nimeni de anunțat.'
+          : `${numar(told.size, 'student anunțat', 'studenți anunțați')} pe email.`) +
+        (failed > 0
+          ? ` ${numar(failed, 'email nu a plecat', 'emailuri nu au plecat')} — scrie-le din Mesaje.`
+          : ''),
+      failed > 0,
     )
   }
 

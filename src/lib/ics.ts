@@ -66,13 +66,9 @@ function escapeText(text: string): string {
   return text.replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\n/g, '\\n')
 }
 
-export function buildIcs(ev: CalendarEvent): string {
-  const lines = [
-    'BEGIN:VCALENDAR',
-    'VERSION:2.0',
-    'PRODID:-//Portal Studenti ASE//Portal Studenti//RO',
-    'CALSCALE:GREGORIAN',
-    `METHOD:${ev.cancelled ? 'CANCEL' : 'REQUEST'}`,
+/** One `VEVENT`, without the calendar around it. */
+function vevent(ev: CalendarEvent): string[] {
+  return [
     'BEGIN:VEVENT',
     `UID:${ev.uid}`,
     `DTSTAMP:${utc(new Date())}`,
@@ -96,8 +92,39 @@ export function buildIcs(ev: CalendarEvent): string {
     'DESCRIPTION:Consultație în mai puțin de o oră',
     'END:VALARM',
     'END:VEVENT',
-    'END:VCALENDAR',
   ].filter(Boolean)
+}
+
+export function buildIcs(ev: CalendarEvent): string {
+  return buildIcsBundle([ev])
+}
+
+/**
+ * Several events in one file.
+ *
+ * A coordinator who cancels a whole day withdraws three or four hours at once,
+ * and a group meeting has one event per invitee — that is, one UID per invitee,
+ * because the calendar of the person who organised it holds a separate copy for
+ * each of them. Attached as separate `.ics` files, only the first is read:
+ * Gmail surfaces one calendar part per message and silently ignores the rest,
+ * so the second and third hours stayed in the calendar of everybody who had
+ * been told, in writing, that they were cancelled.
+ *
+ * RFC 5545 puts several `VEVENT`s inside one `VCALENDAR`, which is a single
+ * attachment and therefore a single calendar part. The bundle is homogeneous —
+ * either all cancellations or all invitations — so `METHOD` is taken from the
+ * first event; a mixed bundle has no meaning for a calendar client.
+ */
+export function buildIcsBundle(events: CalendarEvent[]): string {
+  const lines = [
+    'BEGIN:VCALENDAR',
+    'VERSION:2.0',
+    'PRODID:-//Portal Studenti ASE//Portal Studenti//RO',
+    'CALSCALE:GREGORIAN',
+    `METHOD:${events[0]?.cancelled ? 'CANCEL' : 'REQUEST'}`,
+    ...events.flatMap(vevent),
+    'END:VCALENDAR',
+  ]
 
   return lines.map(fold).join('\r\n') + '\r\n'
 }

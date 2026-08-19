@@ -26,7 +26,12 @@ export const SCREENS: Record<string, string> = {
   '/profesor/consultatii': 'Consultații',
   '/profesor/mesaje': 'Mesaje',
   '/profesor/facultate': 'Studenții facultății',
-  '/profesor/arhiva': 'Arhiva mea',
+  '/profesor/activitatea-mea': 'Activitatea mea',
+  /* The address the screen had while it was also carrying the profile form and
+   * the seats request. It stays in the table because it is written in emails
+   * already delivered and in bookmarks: without a name here, a „?de_la=” coming
+   * back from one of them renders a bare „Înapoi”. */
+  '/profesor/arhiva': 'Activitatea mea',
   '/profesor/departament': 'Departament',
   '/profesor/conturi': 'Conturi',
   '/profesor/calendar': 'Calendarul sesiunii',
