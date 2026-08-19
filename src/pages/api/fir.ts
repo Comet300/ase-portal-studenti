@@ -1,17 +1,17 @@
 import type { APIRoute } from 'astro'
-import { atingePrezenta, firRezumat, myConversation } from '../../lib/chat'
+import { touchPresence, threadSummary, myConversation } from '../../lib/chat'
 import { sessionExpired } from '../../lib/http'
 import { id as formId } from '../../lib/ids'
 
 /**
- * Câte mesaje are firul acum.
+ * How many messages the thread has right now.
  *
- * Nimic nu ajungea într-o conversație deschisă fără reîncărcare manuală: doi
- * oameni care își scriau în același timp nu vedeau nimic până când unul dintre ei
- * apăsa F5. Aici se întoarce doar atât cât e nevoie ca să se decidă dacă merită
- * reîncărcat — un număr și ora ultimului mesaj, nu conținutul.
+ * Nothing reached an open conversation without a manual reload: two people
+ * writing to each other at the same time saw nothing until one of them pressed
+ * F5. Only as much is returned here as is needed to decide whether a reload is
+ * worth it — a count and the time of the last message, not the content.
  *
- * Apartenența se verifică în aceeași interogare care aduce datele.
+ * Membership is checked in the same query that fetches the data.
  */
 export const GET: APIRoute = async ({ url, locals }) => {
   const u = locals.user
@@ -23,24 +23,25 @@ export const GET: APIRoute = async ({ url, locals }) => {
   const conversation = await myConversation(u.id, conversationId)
   if (!conversation) return new Response('{}', { status: 404, headers: json })
 
-  // Numărat în SQL: aducea tot firul, cu fișierele fiecărui mesaj, ca să numere
-  // trei lucruri — la fiecare cincisprezece secunde, pentru fiecare fir deschis.
-  const rezumat = await firRezumat(u.id, conversationId)
+  // Counted in SQL: it used to fetch the whole thread, with every message's
+  // files, in order to count three things — every fifteen seconds, for every
+  // open thread.
+  const summary = await threadSummary(u.id, conversationId)
 
-  /* Firul deschis este și dovada că cel care îl citește e în portal. Se notează
-   * aici, nu în middleware, pentru că aici se știe deja că e o pagină vie și nu
-   * un prefetch sau o descărcare. */
-  void atingePrezenta(u.id)
+  /* An open thread is also proof that whoever is reading it is in the portal. It
+   * is recorded here, not in the middleware, because here it is already known
+   * that this is a live page and not a prefetch or a download. */
+  void touchPresence(u.id)
 
   return new Response(
     JSON.stringify({
-      total: rezumat?.total ?? 0,
-      ultim: rezumat?.ultim ?? null,
-      // Câte sunt de la interlocutor și încă necitite: doar acelea justifică o
-      // întrerupere.
-      noi: rezumat?.noi ?? 0,
-      // Momentul, nu un text: pagina îl scrie în cuvinte, gros.
-      vazut: rezumat?.peer_seen ?? null,
+      total: summary?.total ?? 0,
+      ultim: summary?.ultim ?? null,
+      // How many are from the other party and still unread: only those justify
+      // an interruption.
+      noi: summary?.noi ?? 0,
+      // The moment, not a text: the page writes it out in words, thickly.
+      vazut: summary?.peer_seen ?? null,
     }),
     { headers: json },
   )

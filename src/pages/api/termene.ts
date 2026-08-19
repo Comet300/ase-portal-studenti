@@ -68,9 +68,9 @@ export const POST: APIRoute = async ({ request, locals }) => {
   if (action === 'sterge') {
     const milestoneId = formId(form.get('termen_id'))
 
-    // Se citește ce plecă în aceeași instrucțiune care îl șterge, ca notificarea
-    // să poată oferi întoarcerea. Proprietarul se verifică tot aici, ca înainte.
-    const sters = await queryOne<{
+    // What goes away is read in the same statement that deletes it, so that the
+    // notice can offer the undo. Ownership is checked here too, as before.
+    const deletedMilestone = await queryOne<{
       request_id: string
       title: string
       description: string | null
@@ -85,26 +85,26 @@ export const POST: APIRoute = async ({ request, locals }) => {
       [u!.id, milestoneId],
     )
 
-    if (!sters) return back('Termenul nu a fost găsit.', true)
+    if (!deletedMilestone) return back('Termenul nu a fost găsit.', true)
 
-    return redirectWithUndo(redirectTo, `Termenul „${sters.title}” a fost șters.`, {
-      catre: '/api/termene',
+    return redirectWithUndo(redirectTo, `Termenul „${deletedMilestone.title}” a fost șters.`, {
+      to: '/api/termene',
       date: {
         actiune: 'restaureaza',
-        cerere_id: sters.request_id,
-        title: sters.title,
-        descriere: sters.description ?? '',
-        termen: sters.due_on ?? '',
-        stare: sters.status,
-        pozitie: String(sters.position),
+        cerere_id: deletedMilestone.request_id,
+        title: deletedMilestone.title,
+        descriere: deletedMilestone.description ?? '',
+        termen: deletedMilestone.due_on ?? '',
+        stare: deletedMilestone.status,
+        pozitie: String(deletedMilestone.position),
         redirect: redirectTo,
       },
     })
   }
 
-  /* Întoarcerea unei ștergeri: rândul se scrie din nou, cu id nou, pe poziția pe
-   * care o avea. Aceeași gardă `EXISTS` — un id de cerere venit din formular nu
-   * dă acces la lucrarea altcuiva. */
+  /* Undoing a deletion: the row is written again, with a new id, at the
+   * position it had. The same `EXISTS` guard — a request id coming from the
+   * form does not give access to somebody else's thesis. */
   if (action === 'restaureaza') {
     const requestId = formId(form.get('cerere_id'))
     const title = String(form.get('title') ?? '').trim()
@@ -124,7 +124,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
         title,
         String(form.get('descriere') ?? '').trim(),
         String(form.get('termen') ?? '').trim(),
-        // Doar cele trei din CHECK-ul tabelei; 'late' se calculează, nu se scrie.
+        // Only the three from the table's CHECK; 'late' is computed, never stored.
         ['planned', 'in_progress', 'done'].includes(stare) ? stare : 'planned',
         Number.isFinite(pozitie) ? Math.trunc(pozitie) : null,
         requestId,

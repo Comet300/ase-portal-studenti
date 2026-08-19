@@ -67,7 +67,7 @@ const supervisor = await queryOne<{ name: string }>(
 const mine = slots.filter((s) => s.booked_by_me)
 const free = slots.filter((s) => !s.booked_by_me && s.taken < s.capacity)
 
-// Grupare pe day, ca lista să fie citibilă când sunt multe intervale.
+// Grouped by day, so the list stays readable when there are many slots.
 const byDay = new Map<string, Slot[]>()
 for (const s of free) {
   const key = formatDate(s.starts_at)
@@ -106,9 +106,9 @@ for (const s of free) {
                     <strong class="numeric">
                       {formatTime(s.starts_at)}–{formatTime(s.ends_at)}
                     </strong>
-                    {/* O consultație programată de coordonator nu este o rezervare
-                        pe care ai făcut-o tu, iar diferența contează când te
-                        gândești să o anulezi. */}
+                    {/* A consultation scheduled by the coordinator is not a
+                        booking you made yourself, and the difference matters
+                        when you are thinking of cancelling it. */}
                     {s.scheduled_for_me && (
                       <span class="badge badge--asteptare">programată de coordonator</span>
                     )}
@@ -137,8 +137,9 @@ for (const s of free) {
                       Intră în întâlnire
                     </a>
                   )}
-                  {/* Invitația pleca doar prin email; cine o ștergea nu mai avea
-                      de unde să o ia, deși portalul o poate genera oricând. */}
+                  {/* The invitation went out only by email; whoever deleted it
+                      had nowhere left to get it from, although the portal can
+                      generate it at any time. */}
                   <a class="btn btn--secondary btn--sm" href={`/consultatii/${s.id}.ics`}>
                     Adaugă în calendar
                   </a>
@@ -199,15 +200,16 @@ for (const s of free) {
                         <span class="muted">
                           {s.mode === 'online' ? 'Online' : (s.location ?? 'Cabinet')} · {s.teacher_name}
                         </span>
-                        {/* Un interval de grup nu arată ca unul individual: câte
-                            locuri au mai rămas schimbă decizia de a rezerva. */}
+                        {/* A group slot does not read like an individual one:
+                            how many seats are left changes the decision to
+                            book. */}
                         {s.capacity > 1 && (
                           <span class="muted">
                             {s.capacity - s.taken} din {s.capacity} locuri libere
                           </span>
                         )}
-                        {/* Linkul apare abia după rezervare — până atunci nu ești
-                            invitat la nimic. */}
+                        {/* The link appears only after booking — until then you
+                            are not invited to anything. */}
                       </div>
                       <button class="btn btn--primary btn--sm" type="button" data-rezerva={s.id}>
                         Rezervă
@@ -223,8 +225,8 @@ for (const s of free) {
     </section>
   </div>
 
-  {/* Anularea eliberează locul și anunță coordonatorul; nu este o acțiune de
-      apăsat din greșeală în drum spre butonul de alături. */}
+  {/* Cancelling frees the seat and tells the coordinator; it is not an action to
+      be pressed by mistake on the way to the button next to it. */}
   <dialog id="dialog-anulare" aria-labelledby="titlu-anulare">
     <form method="POST" action="/api/rezervari" class="dialog">
       <h2 id="titlu-anulare" class="section-title">Anulezi consultația?</h2>
@@ -376,9 +378,9 @@ for (const s of free) {
     padding: var(--s-5);
   }
 
-  /* Pe telefon, rândul rămânea orizontal: butoanele își păstrau lățimea, iar
-     coloana cu text se strângea la câțiva pixeli, scriind numele coordonatorului
-     câte un cuvânt pe rând. */
+  /* On a phone the row stayed horizontal: the buttons kept their width, and the
+     text column shrank to a few pixels, writing the coordinator's name one word
+     per line. */
   @media (max-width: 640px) {
     .slot {
       flex-wrap: wrap;

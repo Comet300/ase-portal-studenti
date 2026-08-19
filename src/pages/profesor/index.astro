@@ -18,7 +18,7 @@ import { teacherInvitations } from '../../lib/lifecycle'
 import { currentYearLabel } from '../../lib/years'
 
 const u = Astro.locals.user!
-const [stat, cereri, studenti, sloturi, stageList, etapa, locuri, invitatii] = await Promise.all([
+const [stat, cereri, studenti, slots, stageList, etapa, locuri, invitatii] = await Promise.all([
   teacherStats(u.id),
   teacherRequests(u.id, 'pending'),
   supervisedStudents(u.id),
@@ -29,26 +29,26 @@ const [stat, cereri, studenti, sloturi, stageList, etapa, locuri, invitatii] = a
   teacherInvitations(u.id),
 ])
 
-const sesiune = await currentYearLabel()
-const azi = new Date().toDateString()
-const sloturiAzi = sloturi.filter((s) => new Date(s.starts_at).toDateString() === azi && !s.is_cancelled)
-const urmatoareleSloturi = sloturi.filter((s) => new Date(s.starts_at) > new Date() && !s.is_cancelled).slice(0, 4)
+const yearLabel = await currentYearLabel()
+const today = new Date().toDateString()
+const todaySlots = slots.filter((s) => new Date(s.starts_at).toDateString() === today && !s.is_cancelled)
+const upcomingSlots = slots.filter((s) => new Date(s.starts_at) > new Date() && !s.is_cancelled).slice(0, 4)
 
-const capacitate = locuri.total_seats
-const ocupate = locuri.total_taken
-const procent = capacitate > 0 ? Math.min(100, Math.round((ocupate / capacitate) * 100)) : 0
-const invitatiiDeschise = invitatii.filter((i) => i.status === 'pending').length
+const capacity = locuri.total_seats
+const taken = locuri.total_taken
+const percent = capacity > 0 ? Math.min(100, Math.round((taken / capacity) * 100)) : 0
+const openInvitations = invitatii.filter((i) => i.status === 'pending').length
 
-const prenume = u.name.replace(/^(Prof\.|Conf\.|Lect\.|Asist\.)\s*univ\.\s*dr\.\s*/i, '').split(' ')[0]
+const firstName = u.name.replace(/^(Prof\.|Conf\.|Lect\.|Asist\.)\s*univ\.\s*dr\.\s*/i, '').split(' ')[0]
 const necitite = studenti.reduce((s, x) => s + x.unread, 0)
 ---
 
 <ProfesorLayout
-  title={`Bine ai revenit, ${prenume}`}
+  title={`Bine ai revenit, ${firstName}`}
   docTitle="Panoul meu"
   lede={etapa
     ? `Etapa curentă: ${etapa.title} · ${etapa.interval_label}`
-    : `Sesiunea de Finalizare a Studiilor ${sesiune}`}
+    : `Sesiunea de Finalizare a Studiilor ${yearLabel}`}
   active="dashboard"
 >
   <div slot="actiuni" class="row">
@@ -56,14 +56,14 @@ const necitite = studenti.reduce((s, x) => s + x.unread, 0)
   </div>
 
   <div class="stack stack--loose">
-    <!-- Ce cere acțiune acum -->
+    <!-- What needs action now -->
     <section class="stack">
       <h2 class="section-title">Ce cere atenția ta</h2>
       <div class="grid-auto">
         <Metrica
-          valoare={stat?.pending ?? 0}
-          eticheta="cereri în așteptare"
-          nota={
+          value={stat?.pending ?? 0}
+          label="cereri în așteptare"
+          note={
             (stat?.pending ?? 0) > 0
               ? `Cea mai veche: ${timeAgo(cereri.at(-1)?.submitted_at ?? null)}`
               : undefined
@@ -72,27 +72,27 @@ const necitite = studenti.reduce((s, x) => s + x.unread, 0)
         />
 
         <Metrica
-          valoare={necitite}
-          eticheta="mesaje necitite"
-          nota={`de la ${studenti.filter((s) => s.unread > 0).length} studenți`}
+          value={necitite}
+          label="mesaje necitite"
+          note={`de la ${studenti.filter((s) => s.unread > 0).length} studenți`}
           href="/profesor/mesaje"
         />
 
         <Metrica
-          valoare={sloturiAzi.length}
-          eticheta="consultații astăzi"
-          nota={
-            sloturiAzi.length > 0
-              ? `Prima la ${formatTime(sloturiAzi[0].starts_at)}`
+          value={todaySlots.length}
+          label="consultații astăzi"
+          note={
+            todaySlots.length > 0
+              ? `Prima la ${formatTime(todaySlots[0].starts_at)}`
               : 'Nicio programare'
           }
         />
 
         <Metrica
-          valoare={invitatiiDeschise}
-          eticheta="propuneri trimise"
-          nota={
-            invitatiiDeschise > 0
+          value={openInvitations}
+          label="propuneri trimise"
+          note={
+            openInvitations > 0
               ? 'în așteptarea răspunsului studentului'
               : 'Poți invita tu un student la coordonare'
           }
@@ -101,8 +101,8 @@ const necitite = studenti.reduce((s, x) => s + x.unread, 0)
       </div>
     </section>
 
-    <div class="coloane">
-      <!-- Coada de cereri -->
+    <div class="columns">
+      <!-- The request queue -->
       <section class="panel">
         <div class="panel__header">
           <h2 class="section-title">Cereri în așteptare</h2>
@@ -132,10 +132,10 @@ const necitite = studenti.reduce((s, x) => s + x.unread, 0)
                       {c.program === 'master' ? 'Master' : 'Licență'} · depusă {timeAgo(c.submitted_at)}
                     </span>
                   </span>
-                  {/* Acceptarea ocupă un loc și leagă un student de tine pentru
-                      toată sesiunea. Era un singur clic, fără confirmare și fără
-                      niciun cuvânt către student — aici doar deschide dialogul
-                      din coada de cereri. */}
+                  {/* Accepting takes up a seat and ties a student to you for the
+                      whole session. It used to be a single click, with no
+                      confirmation and not a word to the student — here it only
+                      opens the dialog in the request queue. */}
                   <a
                     class="btn btn--primary btn--sm"
                     href={`/profesor/studenti?sectiune=cereri#cerere-${c.id}`}
@@ -149,7 +149,7 @@ const necitite = studenti.reduce((s, x) => s + x.unread, 0)
         }
       </section>
 
-      <!-- Următoarele consultații -->
+      <!-- The next consultations -->
       <section class="panel">
         <div class="panel__header">
           <h2 class="section-title">Consultații</h2>
@@ -157,7 +157,7 @@ const necitite = studenti.reduce((s, x) => s + x.unread, 0)
         </div>
 
         {
-          urmatoareleSloturi.length === 0 ? (
+          upcomingSlots.length === 0 ? (
             <div class="empty">
               <p class="empty__title">Niciun interval publicat</p>
               <p class="empty__text">
@@ -167,9 +167,9 @@ const necitite = studenti.reduce((s, x) => s + x.unread, 0)
             </div>
           ) : (
             <ul class="lista">
-              {urmatoareleSloturi.map((s) => (
+              {upcomingSlots.map((s) => (
                 <li class="lista__item lista__item--compact">
-                  <span class="data-chip">
+                  <span class="date-chip">
                     <strong>{new Date(s.starts_at).getDate()}</strong>
                     <small>{formatDate(s.starts_at).split(' ')[1]?.slice(0, 3)}</small>
                   </span>
@@ -195,8 +195,8 @@ const necitite = studenti.reduce((s, x) => s + x.unread, 0)
       </section>
     </div>
 
-    <!-- Capacitate + calendarul sesiunii -->
-    <div class="coloane">
+    <!-- Capacity + the session calendar -->
+    <div class="columns">
       <section class="panel">
         <div class="panel__header">
           <h2 class="section-title">Locuri de coordonare</h2>
@@ -207,21 +207,21 @@ const necitite = studenti.reduce((s, x) => s + x.unread, 0)
             <span class="muted text-sm">
               Licență {locuri.bachelor_taken}/{locuri.bachelor_seats} · Master {locuri.master_taken}/{locuri.master_seats}
             </span>
-            <span class="numeric" style="font-weight:600">{ocupate} / {capacitate}</span>
+            <span class="numeric" style="font-weight:600">{taken} / {capacity}</span>
           </div>
           <div
             class="bara"
             role="progressbar"
-            aria-valuenow={ocupate}
+            aria-valuenow={taken}
             aria-valuemin="0"
-            aria-valuemax={capacitate}
+            aria-valuemax={capacity}
             aria-label="Capacitate de coordonare"
           >
-            <span class="bara__fill" style={`--procent:${procent / 100}`}></span>
+            <span class="bara__fill" style={`--procent:${percent / 100}`}></span>
           </div>
           <p class="muted text-sm">
             {
-              capacitate === 0
+              capacity === 0
                 ? 'Directorul de departament nu ți-a alocat încă locuri pentru această sesiune.'
                 : locuri.free > 0
                   ? `Mai poți prelua ${locuri.free} ${locuri.free === 1 ? 'student' : 'studenți'} în această sesiune. Locurile sunt alocate de directorul de departament.`
@@ -235,13 +235,13 @@ const necitite = studenti.reduce((s, x) => s + x.unread, 0)
         <div class="panel__header">
           <h2 class="section-title">Calendarul sesiunii</h2>
         </div>
-        <ol class="etape">
+        <ol class="stages">
           {
             stageList.map((e) => {
               const activa = etapa?.id === e.id
               const trecuta = e.ends_on ? new Date(e.ends_on) < new Date() : false
               return (
-                <li class:list={['etapa', { 'is-activa': activa, 'is-trecuta': trecuta }]}>
+                <li class:list={['etapa', { 'is-current': activa, 'is-past': trecuta }]}>
                   <span class="etapa__punct" aria-hidden="true" />
                   <span class="etapa__corp">
                     <strong>{e.title}</strong>
@@ -259,7 +259,7 @@ const necitite = studenti.reduce((s, x) => s + x.unread, 0)
 </ProfesorLayout>
 
 <style>
-  .coloane {
+  .columns {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
     gap: var(--s-4);
@@ -315,7 +315,7 @@ const necitite = studenti.reduce((s, x) => s + x.unread, 0)
     color: var(--ink-muted);
   }
 
-  .data-chip {
+  .date-chip {
     display: grid;
     place-items: center;
     width: 38px;
@@ -326,11 +326,11 @@ const necitite = studenti.reduce((s, x) => s + x.unread, 0)
     line-height: 1;
     flex: none;
   }
-  .data-chip strong {
+  .date-chip strong {
     font-size: var(--t-sm);
     font-variant-numeric: tabular-nums;
   }
-  .data-chip small {
+  .date-chip small {
     font-size: var(--t-xs);
     color: var(--ink-muted);
     text-transform: lowercase;
@@ -342,7 +342,8 @@ const necitite = studenti.reduce((s, x) => s + x.unread, 0)
     border-radius: 999px;
     overflow: hidden;
   }
-  /* Umplerea se face prin scaleX, nu prin lățime: transformarea nu declanșează layout. */
+  /* The fill is done with scaleX, not with width: a transform does not trigger
+     layout. */
   .bara__fill {
     display: block;
     width: 100%;
@@ -354,7 +355,7 @@ const necitite = studenti.reduce((s, x) => s + x.unread, 0)
     transition: transform var(--base) var(--ease);
   }
 
-  .etape {
+  .stages {
     list-style: none;
     margin: 0;
     padding: var(--s-4) var(--s-5);
@@ -390,11 +391,11 @@ const necitite = studenti.reduce((s, x) => s + x.unread, 0)
     z-index: 1;
   }
 
-  .etapa.is-trecuta .etapa__punct {
+  .etapa.is-past .etapa__punct {
     background: var(--ok);
     border-color: var(--ok);
   }
-  .etapa.is-activa .etapa__punct {
+  .etapa.is-current .etapa__punct {
     background: var(--red);
     border-color: var(--red);
   }
@@ -413,7 +414,7 @@ const necitite = studenti.reduce((s, x) => s + x.unread, 0)
     font-size: var(--t-xs);
     color: var(--ink-muted);
   }
-  .etapa.is-trecuta .etapa__corp strong {
+  .etapa.is-past .etapa__corp strong {
     color: var(--ink-muted);
     font-weight: 500;
   }

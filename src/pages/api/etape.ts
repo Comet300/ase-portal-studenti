@@ -36,9 +36,10 @@ export const POST: APIRoute = async ({ request, locals }) => {
       return back('Data de început este după data de sfârșit.', true)
     }
 
-    // Etapa aparține anului în curs, iar poziția se numără doar între etapele
-    // acelui an: altfel prima etapă a unui an nou ar continua numerotarea celui
-    // încheiat, iar coloana este NOT NULL, deci omiterea ei nu trece deloc.
+    // The stage belongs to the current year, and the position is counted only
+    // among that year's stages: otherwise the first stage of a new year would
+    // continue the numbering of the one that ended, and the column is NOT NULL,
+    // so leaving it out does not go through at all.
     await execute(
       `INSERT INTO session_stages
          (academic_year_id, position, title, description, interval_label, starts_on, ends_on)
@@ -109,12 +110,12 @@ export const POST: APIRoute = async ({ request, locals }) => {
   if (action === 'sterge') {
     const id = formId(form.get('etapa_id'))
 
-    /* Ce se șterge se citește înainte, ca să poată fi pus înapoi.
+    /* What is being deleted is read first, so that it can be put back.
      *
-     * `RETURNING` face amândouă într-o singură instrucțiune: fără el ar fi un
-     * `SELECT` și un `DELETE` cu o fereastră între ele în care rândul se poate
-     * schimba. Notificarea primește exact ce a plecat. */
-    const stearsa = await queryOne<{
+     * `RETURNING` does both in a single statement: without it there would be a
+     * `SELECT` and a `DELETE` with a window between them in which the row can
+     * change. The notice receives exactly what left. */
+    const deletedStage = await queryOne<{
       title: string
       interval_label: string
       description: string | null
@@ -128,30 +129,31 @@ export const POST: APIRoute = async ({ request, locals }) => {
       [id],
     )
 
-    if (!stearsa) return back('Etapa nu a fost găsită.', true)
+    if (!deletedStage) return back('Etapa nu a fost găsită.', true)
 
-    return redirectWithUndo('/profesor/calendar', `Etapa „${stearsa.title}” a fost ștearsă.`, {
-      catre: '/api/etape',
+    return redirectWithUndo('/profesor/calendar', `Etapa „${deletedStage.title}” a fost ștearsă.`, {
+      to: '/api/etape',
       date: {
         actiune: 'restaureaza',
-        titlu: stearsa.title,
-        interval: stearsa.interval_label,
-        descriere: stearsa.description ?? '',
-        inceput: stearsa.starts_on ?? '',
-        sfarsit: stearsa.ends_on ?? '',
-        pozitie: String(stearsa.position),
+        titlu: deletedStage.title,
+        interval: deletedStage.interval_label,
+        descriere: deletedStage.description ?? '',
+        inceput: deletedStage.starts_on ?? '',
+        sfarsit: deletedStage.ends_on ?? '',
+        pozitie: String(deletedStage.position),
       },
     })
   }
 
-  /* Întoarcerea unei ștergeri.
+  /* Undoing a deletion.
    *
-   * Nu este o „restaurare” în sensul unui coș de reciclare: rândul se scrie din
-   * nou, cu un id nou, pe poziția pe care o avea. Nimic nu se referă la id-ul unei
-   * etape, deci diferența nu se vede — iar alternativa, un `deleted_at` pe toată
-   * tabela, ar fi cerut ca fiecare citire din portal să știe despre el.
+   * This is not a “restore” in the recycle-bin sense: the row is written again,
+   * with a new id, at the position it used to have. Nothing refers to the id of
+   * a stage, so the difference is not visible — and the alternative, a
+   * `deleted_at` over the whole table, would have required every read in the
+   * portal to know about it.
    *
-   * Poarta rămâne aceeași: directorul de departament, verificat mai sus. */
+   * The gate stays the same: the head of department, checked above. */
   if (action === 'restaureaza') {
     const title = String(form.get('titlu') ?? '').trim()
     const intervalLabel = String(form.get('interval') ?? '').trim()

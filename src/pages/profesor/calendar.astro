@@ -12,33 +12,35 @@ import { currentStage, formatDate, stages } from '../../lib/repo'
 
 const [list, current] = await Promise.all([stages(), currentStage()])
 const today = new Date().toISOString().slice(0, 10)
-const anCurent = new Date().getFullYear()
+const currentYear = new Date().getFullYear()
 
 /**
- * Ce se poate citi dintr-un rând fără să îl deschizi.
+ * What can be read off a row without opening it.
  *
- * Rândul arăta titlul și „intervalul afișat” — un text liber, scris de mână, pe
- * care nimeni nu îl verifică — și nimic altceva. Datele reale, cele care ajung în
- * fișierul de calendar și care hotărăsc ce etapă e „în curs”, se vedeau doar
- * după ce deschideai formularul, etapă cu etapă. O etapă fără date arăta exact ca
- * una completă, deși nu apare în .ics și nu poate fi niciodată cea curentă.
+ * The row showed the title and the „interval afișat” — free text, written by
+ * hand, that nobody checks — and nothing else. The real dates, the ones that end
+ * up in the calendar file and that decide which stage is „în curs”, were visible
+ * only after you opened the form, stage by stage. A stage with no dates looked
+ * exactly like a complete one, even though it does not appear in the .ics and can
+ * never be the current one.
  *
- * Se calculează aici, o dată, ce trebuie să se vadă: în ce stare e etapa, dacă
- * are date, și dacă ordinea manuală (săgețile) contrazice ordinea datelor.
+ * It is computed here, once, what has to be visible: what state the stage is in,
+ * whether it has dates, and whether the manual order (the arrows) contradicts
+ * the order of the dates.
  */
-type Stare = 'fara-date' | 'trecuta' | 'curenta' | 'viitoare'
+type StageState = 'fara-date' | 'trecuta' | 'curenta' | 'viitoare'
 
-const ETICHETE_STARE: Record<Stare, { text: string; clasa: string }> = {
-  'fara-date': { text: 'Fără date', clasa: 'badge--urgent' },
-  trecuta: { text: 'Încheiată', clasa: 'badge--neutru' },
-  curenta: { text: 'În curs', clasa: 'badge--asteptare' },
-  viitoare: { text: 'Urmează', clasa: 'badge--info' },
+const STATE_LABELS: Record<StageState, { text: string; badgeClass: string }> = {
+  'fara-date': { text: 'Fără date', badgeClass: 'badge--urgent' },
+  trecuta: { text: 'Încheiată', badgeClass: 'badge--neutru' },
+  curenta: { text: 'În curs', badgeClass: 'badge--asteptare' },
+  viitoare: { text: 'Urmează', badgeClass: 'badge--info' },
 }
 
 const etape = list.map((s, i) => {
   const inceput = s.starts_on?.slice(0, 10) ?? ''
   const sfarsit = s.ends_on?.slice(0, 10) ?? ''
-  const stare: Stare = !inceput || !sfarsit
+  const state: StageState = !inceput || !sfarsit
     ? 'fara-date'
     : current?.id === s.id
       ? 'curenta'
@@ -46,18 +48,18 @@ const etape = list.map((s, i) => {
         ? 'trecuta'
         : 'viitoare'
 
-  // Două contradicții pe care poziția în listă nu le arată singură.
-  const inversata = Boolean(inceput && sfarsit && inceput > sfarsit)
-  const anterioara = i > 0 ? list[i - 1] : null
-  const dupaUrmatoarea = Boolean(
-    inceput && anterioara?.starts_on && inceput < anterioara.starts_on.slice(0, 10),
+  // Two contradictions that the position in the list does not show on its own.
+  const reversed = Boolean(inceput && sfarsit && inceput > sfarsit)
+  const previousStage = i > 0 ? list[i - 1] : null
+  const outOfOrder = Boolean(
+    inceput && previousStage?.starts_on && inceput < previousStage.starts_on.slice(0, 10),
   )
 
-  return { ...s, inceput, sfarsit, stare, inversata, dupaUrmatoarea }
+  return { ...s, inceput, sfarsit, state, reversed, outOfOrder }
 })
 
-const fara = etape.filter((e) => e.stare === 'fara-date').length
-const contraziceri = etape.filter((e) => e.inversata || e.dupaUrmatoarea).length
+const fara = etape.filter((e) => e.state === 'fara-date').length
+const conflicts = etape.filter((e) => e.reversed || e.outOfOrder).length
 ---
 
 <ProfesorLayout
@@ -81,7 +83,7 @@ const contraziceri = etape.filter((e) => e.inversata || e.dupaUrmatoarea).length
         <span class="muted text-sm">
           {list.length} etape
           {fara > 0 && ` · ${fara} fără date`}
-          {contraziceri > 0 && ` · ${contraziceri} cu date contradictorii`}
+          {conflicts > 0 && ` · ${conflicts} cu date contradictorii`}
         </span>
       </div>
 
@@ -97,7 +99,7 @@ const contraziceri = etape.filter((e) => e.inversata || e.dupaUrmatoarea).length
         ) : (
           <ol class="stages">
             {etape.map((s, i) => (
-              <li class:list={['stage', `is-${s.stare}`]}>
+              <li class:list={['stage', `is-${s.state}`]}>
                 <div class="stage__order">
                   <span class="numeric">{String(i + 1).padStart(2, '0')}</span>
                   <div class="stage__move">
@@ -120,9 +122,9 @@ const contraziceri = etape.filter((e) => e.inversata || e.dupaUrmatoarea).length
                   <summary>
                     <span class="stage__ident">
                       <span class="stage__title">{s.title}</span>
-                      {/* Eticheta scrisă de mână și datele reale, una lângă alta:
-                          sunt lucruri diferite și pot să nu se potrivească. */}
-                      <span class="stage__zile numeric">
+                      {/* The hand-written label and the real dates, side by side:
+                          they are different things and may not agree. */}
+                      <span class="stage__days numeric">
                         {s.inceput && s.sfarsit
                           ? `${formatDate(s.inceput)} – ${formatDate(s.sfarsit)}`
                           : 'nicio dată — nu intră în calendarul descărcabil'}
@@ -130,15 +132,15 @@ const contraziceri = etape.filter((e) => e.inversata || e.dupaUrmatoarea).length
                     </span>
                     <span class="stage__meta">
                       <span class="muted">{s.interval_label}</span>
-                      <span class:list={['badge', ETICHETE_STARE[s.stare].clasa]}>
-                        {ETICHETE_STARE[s.stare].text}
+                      <span class:list={['badge', STATE_LABELS[s.state].badgeClass]}>
+                        {STATE_LABELS[s.state].text}
                       </span>
-                      {s.inversata && (
+                      {s.reversed && (
                         <span class="badge badge--urgent" title="Data de început este după cea de sfârșit">
                           Interval inversat
                         </span>
                       )}
-                      {!s.inversata && s.dupaUrmatoarea && (
+                      {!s.reversed && s.outOfOrder && (
                         <span class="badge badge--urgent" title="Începe înaintea etapei de deasupra ei">
                           Înaintea celei de sus
                         </span>
@@ -147,10 +149,11 @@ const contraziceri = etape.filter((e) => e.inversata || e.dupaUrmatoarea).length
                   </summary>
 
                   <form method="POST" action="/api/etape" class="stage__form">
-                    {/* Numele diferă intenționat de cel al butoanelor: două câmpuri
-                        „actiune” în același formular ar fi trimise amândouă, în ordinea
-                        din document, iar `form.get` întoarce prima valoare — adică
-                        niciodată pe cea a butonului apăsat. Ștergerea era imposibilă. */}
+                    {/* The name differs from the buttons' on purpose: two „actiune”
+                        fields in the same form would both be submitted, in document
+                        order, and `form.get` returns the first value — that is,
+                        never the one of the button that was pressed. Deleting was
+                        impossible. */}
                     <input type="hidden" name="actiune_implicita" value="actualizeaza" />
                     <input type="hidden" name="etapa_id" value={s.id} />
 
@@ -162,7 +165,7 @@ const contraziceri = etape.filter((e) => e.inversata || e.dupaUrmatoarea).length
                       <div class="field" style="flex:2;min-width:220px">
                         <label class="label" for={`interval-${s.id}`}>Interval afișat</label>
                         <input class="input" id={`interval-${s.id}`} name="interval" value={s.interval_label} required />
-                        <span class="hint">Textul citit de studenți, ex. „Mai {anCurent}”.</span>
+                        <span class="hint">Textul citit de studenți, ex. „Mai {currentYear}”.</span>
                       </div>
                     </div>
 
@@ -205,7 +208,7 @@ const contraziceri = etape.filter((e) => e.inversata || e.dupaUrmatoarea).length
           </div>
           <div class="field" style="flex:2;min-width:200px">
             <label class="label" for="etapa-interval">Interval afișat</label>
-            <input class="input" id="etapa-interval" name="interval" required placeholder={`Ex: Mai ${anCurent}`} />
+            <input class="input" id="etapa-interval" name="interval" required placeholder={`Ex: Mai ${currentYear}`} />
           </div>
           <div class="field" style="flex:1;min-width:160px">
             <label class="label" for="etapa-inceput">Începe</label>
@@ -254,10 +257,11 @@ const contraziceri = etape.filter((e) => e.inversata || e.dupaUrmatoarea).length
     background: var(--red-tint);
   }
 
-  /* O etapă încheiată rămâne în listă — ordinea e informația — dar nu mai cere
-     atenție. O etapă fără date o cere: nu apare în fișierul descărcabil. */
+  /* A finished stage stays in the list — the order is the information — but no
+     longer asks for attention. A stage without dates does ask for it: it does
+     not appear in the downloadable file. */
   .stage.is-trecuta .stage__title,
-  .stage.is-trecuta .stage__zile {
+  .stage.is-trecuta .stage__days {
     color: var(--ink-muted);
   }
   .stage.is-fara-date {
@@ -321,14 +325,14 @@ const contraziceri = etape.filter((e) => e.inversata || e.dupaUrmatoarea).length
     min-width: 0;
   }
 
-  /* Titlul este conținutul rândului, nu o etichetă a lui: era scris la 14px,
-     adică mai mic decât textul obișnuit al portalului. */
+  /* The title is the content of the row, not a label on it: it was set at 14px,
+     that is, smaller than the portal's ordinary text. */
   .stage__title {
     font-size: var(--t-base);
     font-weight: 600;
   }
 
-  .stage__zile {
+  .stage__days {
     font-size: var(--t-xs);
     color: var(--ink-soft);
   }

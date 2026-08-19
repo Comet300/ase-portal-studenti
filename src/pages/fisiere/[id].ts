@@ -1,5 +1,5 @@
 import type { APIRoute } from 'astro'
-import { noteazaAcces } from '../../lib/audit'
+import { recordAccess } from '../../lib/audit'
 import { queryOne } from '../../lib/db'
 import { openFile } from '../../lib/files'
 import { id as routeId } from '../../lib/ids'
@@ -12,11 +12,12 @@ import { id as routeId } from '../../lib/ids'
  * same query that fetches the file.
  */
 /**
- * Tipurile pe care le servim spre afișare directă, nu spre descărcare.
+ * The types we serve for direct display rather than for download.
  *
- * Lista este închisă și se compară cu tipul înregistrat la încărcare, nu cu ce
- * spune adresa. Un SVG, de exemplu, este un document care poate rula script și
- * de aceea nu apare aici, oricât de „imagine” ar fi.
+ * The list is closed and is compared against the type recorded at upload time,
+ * not against what the address says. An SVG, for example, is a document that can
+ * run script, and for that reason it does not appear here, however much of an
+ * „image” it may be.
  */
 const INLINE = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/gif', 'application/pdf'])
 
@@ -47,10 +48,11 @@ export const GET: APIRoute = async ({ params, locals, url, request }) => {
 
   const inline = url.searchParams.get('inline') === '1' && INLINE.has(file.mime ?? '')
 
-  // Descărcarea unui document al altcuiva lasă urmă; previzualizarea inline din
-  // fir nu, altfel fiecare derulare a conversației ar scrie un rând.
+  // Downloading somebody else's document leaves a trace; the inline preview in
+  // the thread does not, otherwise every scroll through a conversation would
+  // write a row.
   if (!inline) {
-    await noteazaAcces({
+    await recordAccess({
       userId: u.id,
       action: 'descarca_fisier',
       subject: `${fileId} · ${file.original_name}`,
@@ -64,8 +66,8 @@ export const GET: APIRoute = async ({ params, locals, url, request }) => {
       'content-length': String(stored.size),
       'content-disposition': `${inline ? 'inline' : 'attachment'}; filename*=UTF-8''${encodeURIComponent(file.original_name)}`,
       'cache-control': 'private, no-store',
-      // Fără sniffing și fără nimic activ: chiar dacă tipul înregistrat ar minți,
-      // browserul nu are voie să îl reinterpreteze și nici să execute ceva.
+      // No sniffing and nothing active: even if the recorded type were lying,
+      // the browser is not allowed to reinterpret it, nor to execute anything.
       'x-content-type-options': 'nosniff',
       'content-security-policy': "sandbox; default-src 'none'; img-src 'self'; object-src 'none'",
     },

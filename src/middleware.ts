@@ -1,6 +1,6 @@
 import { defineMiddleware } from 'astro:middleware'
 import { SESSION_COOKIE, getUserFromSession } from './lib/auth'
-import { atingePrezenta } from './lib/chat'
+import { touchPresence } from './lib/chat'
 import { sweepDeadlines } from './lib/lifecycle'
 
 /**
@@ -49,22 +49,23 @@ export const onRequest = defineMiddleware(async (context, next) => {
   const user = await getUserFromSession(sessionId)
   context.locals.user = user
 
-  /* Plasa de siguranță pentru termene.
+  /* The safety net for deadlines.
    *
-   * Sursa principală este `/api/sweep`, chemată de un planificator: legată doar
-   * de trafic, o cerere care trebuia închisă vineri seara rămânea deschisă până
-   * luni. Apelul de aici acoperă cazul în care planificatorul nu e configurat —
-   * se auto-limitează și nu ține răspunsul în loc. */
+   * The primary source is `/api/sweep`, called by a scheduler: tied to traffic
+   * alone, a request that should have been closed on Friday evening stayed open
+   * until Monday. The call from here covers the case where the scheduler is not
+   * configured — it rate-limits itself and does not hold up the response. */
   void sweepDeadlines(process.env.APP_BASE_URL ?? context.url.origin)
 
   const path = context.url.pathname
 
-  /* Prezența.
+  /* Presence.
    *
-   * O pagină cerută este dovada că omul e în portal. Se notează doar pentru
-   * navigări — nu pentru fișiere, exporturi sau API, care pot fi cerute de un
-   * prefetch sau de un tab lăsat deschis — și se scrie cel mult o dată pe minut,
-   * prin condiția din UPDATE. Nu ține răspunsul în loc. */
+   * A requested page is the proof that the person is in the portal. It is noted
+   * only for navigations — not for files, exports or the API, which can be asked
+   * for by a prefetch or by a tab left open — and it is written at most once a
+   * minute, through the condition in the UPDATE. It does not hold up the
+   * response. */
   if (
     user &&
     context.request.method === 'GET' &&
@@ -74,7 +75,7 @@ export const onRequest = defineMiddleware(async (context, next) => {
     !path.startsWith('/avatare/') &&
     !path.includes('export')
   ) {
-    void atingePrezenta(user.id)
+    void touchPresence(user.id)
   }
 
   const needsLogin =
@@ -95,19 +96,20 @@ export const onRequest = defineMiddleware(async (context, next) => {
 
   const response = await next()
 
-  /* Nimic din ce vede un utilizator autentificat nu are voie să ajungă într-un
-   * cache partajat.
+  /* Nothing an authenticated user sees is allowed to end up in a shared
+   * cache.
    *
-   * Fără acest antet, originea nu spune nimic, iar Cloudflare aplică regula lui
-   * implicită pe extensie: un export `.csv` a fost păstrat la margine patru ore
-   * și servit oricui, fără cookie. Răspunsurile pentru un vizitator rămân
-   * publice — sunt aceleași pentru toată lumea.
+   * Without this header the origin says nothing, and Cloudflare applies its own
+   * default rule by extension: a `.csv` export was kept at the edge for four
+   * hours and served to anyone, with no cookie. Responses for a visitor stay
+   * public — they are the same for everybody.
    *
-   * `no-store` interzice însă și cache-ul privat al browserului, ceea ce face
-   * inutil orice prefetch: pagina adusă înainte de clic ar fi descărcată încă o
-   * dată. Pentru navigări obișnuite este de ajuns `private` cu revalidare — tot
-   * nu ajunge la CDN, dar poate fi refolosită de browserul care a cerut-o.
-   * Descărcările și API-ul rămân la `no-store`. */
+   * `no-store`, however, also forbids the browser's private cache, which makes
+   * any prefetch pointless: the page fetched before the click would be
+   * downloaded a second time. For ordinary navigations `private` with
+   * revalidation is enough — it still does not reach the CDN, but it can be
+   * reused by the browser that asked for it. Downloads and the API stay on
+   * `no-store`. */
   if (user) {
     const path = context.url.pathname
     const strict =
@@ -122,13 +124,13 @@ export const onRequest = defineMiddleware(async (context, next) => {
         'cache-control',
         strict ? 'private, no-store' : 'private, max-age=0, must-revalidate',
       )
-      /* `cookie` este întotdeauna în joc; o pagină care se schimbă și după altceva
-       * și-o spune singură, iar aici se adaugă, nu se înlocuiește. Profilul își
-       * scoate butonul „Înapoi” din `Referer`, deci acela face parte din cheie. */
-      const propriu = response.headers.get('vary')
-      response.headers.set('vary', propriu ? `cookie, ${propriu}` : 'cookie')
+      /* `cookie` is always in play; a page that also varies on something else
+       * says so itself, and here it is added, not replaced. The profile takes
+       * its „Înapoi” button out of `Referer`, so that is part of the key too. */
+      const existingVary = response.headers.get('vary')
+      response.headers.set('vary', existingVary ? `cookie, ${existingVary}` : 'cookie')
     } catch {
-      // Un răspuns cu antete imutabile este construit de noi și nu ajunge la CDN.
+      // A response with immutable headers is built by us and never reaches the CDN.
     }
   }
 

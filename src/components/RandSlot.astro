@@ -2,25 +2,25 @@
 import { formatDate, formatTime, type Slot } from '../lib/repo'
 
 /**
- * Un interval de consultație, ca rând de tabel.
+ * One consultation slot, as a table row.
  *
- * Rândul se scrie o dată și se folosește în două locuri: în săptămâna care
- * urmează și în grupul celor încheiate. Cât era scris pe loc, a doua listă ar fi
- * însemnat aceleași cincizeci de linii încă o dată — adică două rânduri care
- * încep imediat să se abată unul de la altul.
+ * The row is written once and used in two places: in the week that is coming
+ * and in the group of the ones that have ended. While it was written in place,
+ * the second list would have meant the same fifty lines one more time — that
+ * is, two rows that immediately start drifting apart from one another.
  */
 interface Props {
-  /* Nu `slot`: acela este un atribut rezervat în Astro, iar tipul propriu al
-     componentei ajunge intersectat cu `string`. */
+  /* Not `slot`: that one is a reserved attribute in Astro, and the component's
+     own type ends up intersected with `string`. */
   interval: Slot
-  /** Un interval încheiat nu se mai anulează și nu mai cere atenție. */
+  /** An interval that has ended is no longer cancelled and asks no attention. */
   incheiat?: boolean
 }
 
 const { interval: s, incheiat = false } = Astro.props
 ---
 
-<tr class:list={{ 'is-incheiat': incheiat }}>
+<tr class:list={{ 'is-ended': incheiat }}>
   <td>{formatDate(s.starts_at)}</td>
   <td class="numeric">{formatTime(s.starts_at)}–{formatTime(s.ends_at)}</td>
   <td>
@@ -72,8 +72,8 @@ const { interval: s, incheiat = false } = Astro.props
 </tr>
 
 <style>
-  /* Ce s-a încheiat rămâne lizibil, dar nu mai concurează cu ce urmează. */
-  .is-incheiat td {
+  /* What has ended stays legible, but no longer competes with what comes next. */
+  .is-ended td {
     color: var(--ink-muted);
   }
 </style>

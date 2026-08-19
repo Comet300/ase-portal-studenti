@@ -1,23 +1,23 @@
 ---
 /**
- * Setul de pictograme al portalului.
+ * The portal's icon set.
  *
- * Erau scrise inline, cu `stroke-width` între 1.6 și 2 și dimensiuni între 14 și
- * 19px, alese de fiecare dată separat — deci două pictograme vecine nu aveau
- * aceeași greutate. Aici sunt un singur set, cu o singură greutate, la trei
- * mărimi care se potrivesc cu scala de text.
+ * They were written inline, with `stroke-width` between 1.6 and 2 and sizes
+ * between 14 and 19px, each one chosen separately — so two neighbouring icons
+ * did not carry the same weight. Here they are a single set, with a single
+ * weight, at three sizes that line up with the text scale.
  *
- * Fiecare este `aria-hidden`: o pictogramă lângă o etichetă nu are ce să anunțe,
- * iar una singură primește numele de la controlul care o conține.
+ * Every one is `aria-hidden`: an icon next to a label has nothing to announce,
+ * and one standing on its own takes its name from the control containing it.
  */
 interface Props {
-  nume: keyof typeof CAI
-  /** sm 14px · md 16px · lg 19px — aliniate cu --t-xs / --t-sm / --t-md. */
+  name: keyof typeof ICON_PATHS
+  /** sm 14px · md 16px · lg 19px — aligned with --t-xs / --t-sm / --t-md. */
   size?: 'sm' | 'md' | 'lg'
   class?: string
 }
 
-const CAI = {
+const ICON_PATHS = {
   grid: 'M3 3h7v7H3zM14 3h7v7h-7zM14 14h7v7h-7zM3 14h7v7H3z',
   users:
     'M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75',
@@ -46,7 +46,7 @@ const CAI = {
   meniu: 'M3 6h18M3 12h18M3 18h18',
 } as const
 
-const { nume, size = 'md', class: extra } = Astro.props
+const { name, size = 'md', class: extra } = Astro.props
 ---
 
 <svg
@@ -59,7 +59,7 @@ const { nume, size = 'md', class: extra } = Astro.props
   stroke-linejoin="round"
   aria-hidden="true"
 >
-  <path d={CAI[nume]} />
+  <path d={ICON_PATHS[name]} />
 </svg>
 
 <style>

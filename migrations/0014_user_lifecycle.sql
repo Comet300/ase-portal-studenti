@@ -1,24 +1,24 @@
--- Oamenii intră și ies din portal.
+-- People enter and leave the portal.
 --
--- Până acum nu făceau nici una, nici alta: singurul `INSERT INTO users` din tot
--- proiectul era în `scripts/seed.mjs`, deci o promoție se popula rulând un script
--- pe producție, iar un absolvent sau un profesor pensionat păstra un cont activ
--- la nesfârșit. Adresa de email nu se putea nici ea corecta, iar autentificarea
--- este exclusiv prin link trimis la ea — o literă greșită însemna un om închis
--- pe dinafară definitiv.
+-- Until now they did neither: the only `INSERT INTO users` in the whole project
+-- was in `scripts/seed.mjs`, so a cohort was populated by running a script on
+-- production, and a graduate or a retired teacher kept an active account
+-- indefinitely. The email address could not be corrected either, and signing in
+-- is exclusively through a link sent to it — one wrong letter meant a person
+-- shut out for good.
 --
--- Dezactivare, nu ștergere: cererile, deciziile și lucrările lui rămân în registrul
--- academic, care are rostul de a putea fi citit peste ani. Se închide doar
--- accesul, iar `deactivated_at` spune de când.
+-- Deactivation, not deletion: their requests, decisions and papers stay in the
+-- academic register, whose whole point is that it can be read years later. Only
+-- access is closed, and `deactivated_at` says since when.
 ALTER TABLE users
   ADD COLUMN IF NOT EXISTS is_active      boolean     NOT NULL DEFAULT true,
   ADD COLUMN IF NOT EXISTS deactivated_at timestamptz,
-  -- Cine l-a adus în portal. NULL pentru rândurile din seed și pentru migrare.
+  -- Who brought them into the portal. NULL for seed rows and for the migration.
   ADD COLUMN IF NOT EXISTS created_by     uuid REFERENCES users(id) ON DELETE SET NULL;
 
--- Căutarea după email este acum și calea prin care se verifică duplicatele la
--- adăugare, deci merită să fie ieftină și insensibilă la litere mari.
+-- Looking up by email is now also the way duplicates are checked when adding
+-- someone, so it is worth making it cheap and insensitive to capital letters.
 CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_lower ON users (lower(email));
 
--- Sesiunile unui om dezactivat nu au voie să supraviețuiască dezactivării.
--- Ştergerea lor este parte din operațiune, nu o curățenie ulterioară.
+-- The sessions of a deactivated person must not survive the deactivation.
+-- Deleting them is part of the operation, not a later cleanup.

@@ -4,62 +4,62 @@ import { formatDate, stages, currentStage, studentMilestones, studentRequests } 
 import { currentYearLabel } from '../lib/years'
 
 const u = Astro.locals.user
-const [stageList, currentStageRow, sesiune] = await Promise.all([
+const [stageList, currentStageRow, yearLabel] = await Promise.all([
   stages(),
   currentStage(),
   currentYearLabel(),
 ])
 
-// Un student autentificat vede propria situație în locul textului general.
+// A signed-in student sees their own situation instead of the general text.
 const requests = u?.role === 'student' ? await studentRequests(u.id) : []
 const activeRequest = requests.find((c) => c.status === 'approved' || c.status === 'pending')
 const milestones = u?.role === 'student' ? await studentMilestones(u.id) : []
-/* „Următorul termen” trebuie să fie în viitor.
+/* „Următorul termen” has to be in the future.
  *
- * Se lua primul nefinalizat, în ordine, deci pe 29 iulie pagina anunța drept
- * următor un termen din 1 martie. Dacă tot ce a rămas este restant, se spune
- * asta — nu se prezintă trecutul ca viitor. */
-const neterminate = milestones.filter((j) => j.status !== 'done')
-const azi = new Date()
-azi.setHours(0, 0, 0, 0)
+ * It used to take the first unfinished one, in order, so on 29 July the page
+ * announced a milestone from 1 March as the next one. If everything that is
+ * left is overdue, that is what is said — the past is not shown as future. */
+const unfinished = milestones.filter((j) => j.status !== 'done')
+const today = new Date()
+today.setHours(0, 0, 0, 0)
 
 const nextMilestone =
-  neterminate.find((j) => j.due_on && new Date(j.due_on) >= azi) ?? neterminate[0]
+  unfinished.find((j) => j.due_on && new Date(j.due_on) >= today) ?? unfinished[0]
 const nextMilestoneOverdue = Boolean(
-  nextMilestone?.due_on && new Date(nextMilestone.due_on) < azi,
+  nextMilestone?.due_on && new Date(nextMilestone.due_on) < today,
 )
 
 /**
- * Prima propoziție de pe ecran.
+ * The first sentence on the screen.
  *
- * Era una singură pentru toată lumea — o prezentare a portalului, arătată la
- * fel unui vizitator care nu îl cunoaște și unui student care intră a
- * cincisprezecea oară ca să vadă dacă i s-a răspuns. Iar un cadru didactic
- * primea drept acțiune principală „Cererile mele”, adică o pagină de student,
- * goală pentru el.
+ * There used to be a single one for everybody — an introduction to the portal,
+ * shown the same way to a visitor who does not know it and to a student who
+ * comes in for the fifteenth time to see whether they have been answered. And
+ * a member of the teaching staff got „Cererile mele” as the main action, that
+ * is a student page, empty for them.
  */
 const intro = (() => {
   if (!u) {
     return {
-      titlu: 'Tot ce ține de lucrarea ta, într-un singur loc',
+      title: 'Tot ce ține de lucrarea ta, într-un singur loc',
       text: 'Alegi coordonatorul, depui cererea, urmărești termenele și discuți cu profesorul — fără drumuri la secretariat și fără fire de email pierdute.',
-      actiune: { href: '/autentificare', text: 'Intră în cont' },
-      secundar: { href: '/coordonatori', text: 'Vezi coordonatorii' },
+      action: { href: '/autentificare', text: 'Intră în cont' },
+      secondary: { href: '/coordonatori', text: 'Vezi coordonatorii' },
     }
   }
 
   if (u.role !== 'student') {
     return {
-      titlu: `Bine ai revenit, ${u.name.split(' ').slice(-1)[0]}`,
+      title: `Bine ai revenit, ${u.name.split(' ').slice(-1)[0]}`,
       text: 'Ești autentificat ca și cadru didactic. Triajul cererilor, temele propuse și consultațiile sunt în zona dedicată.',
-      actiune: { href: '/profesor', text: 'Deschide zona cadrelor didactice' },
-      secundar: { href: '/coordonatori', text: 'Vezi catalogul public' },
+      action: { href: '/profesor', text: 'Deschide zona cadrelor didactice' },
+      secondary: { href: '/coordonatori', text: 'Vezi catalogul public' },
     }
   }
 
   if (activeRequest?.status === 'approved') {
     return {
-      titlu: activeRequest.title_ro,
+      title: activeRequest.title_ro,
       text: `Coordonezi lucrarea cu ${activeRequest.teacher_name}.${
         nextMilestone
           ? nextMilestoneOverdue
@@ -67,27 +67,27 @@ const intro = (() => {
             : ` Următorul termen: ${nextMilestone.title}, ${formatDate(nextMilestone.due_on)}.`
           : ''
       }`,
-      actiune: { href: '/cererile-mele', text: 'Vezi termenele lucrării' },
-      secundar: { href: '/mesaje', text: 'Scrie coordonatorului' },
+      action: { href: '/cererile-mele', text: 'Vezi termenele lucrării' },
+      secondary: { href: '/mesaje', text: 'Scrie coordonatorului' },
     }
   }
 
   if (activeRequest) {
     return {
-      titlu: `Cererea ta este la ${activeRequest.teacher_name}`,
+      title: `Cererea ta este la ${activeRequest.teacher_name}`,
       text: activeRequest.expires_at
         ? `Ai un răspuns până la ${formatDate(activeRequest.expires_at)}. Dacă nu vine până atunci, cererea se închide singură și poți depune alta.`
         : 'Aștepți răspunsul coordonatorului. Primești un email imediat ce decide.',
-      actiune: { href: '/cererile-mele', text: 'Vezi cererea' },
-      secundar: { href: '/coordonatori', text: 'Vezi coordonatorii' },
+      action: { href: '/cererile-mele', text: 'Vezi cererea' },
+      secondary: { href: '/coordonatori', text: 'Vezi coordonatorii' },
     }
   }
 
   return {
-    titlu: 'Primul pas: alege-ți coordonatorul',
+    title: 'Primul pas: alege-ți coordonatorul',
     text: 'Poți porni de la persoană sau de la temă. Cererea se depune din catalog, iar coordonatorul are o săptămână să răspundă.',
-    actiune: { href: '/coordonatori', text: 'Alege coordonator' },
-    secundar: { href: '/ghid', text: 'Citește ghidul' },
+    action: { href: '/coordonatori', text: 'Alege coordonator' },
+    secondary: { href: '/ghid', text: 'Citește ghidul' },
   }
 })()
 
@@ -101,18 +101,18 @@ const RESOURCES = [
 
 <StudentLayout
   title="Acasă"
-  description={`Sesiunea de Finalizare a Studiilor ${sesiune} — Facultatea de Marketing, ASE București`}
+  description={`Sesiunea de Finalizare a Studiilor ${yearLabel} — Facultatea de Marketing, ASE București`}
   active="acasa"
 >
   <div class="container stack stack--loose">
     <section class="hero">
       <div class="hero__text">
-        <p class="hero__sesiune">Sesiunea de Finalizare a Studiilor {sesiune}</p>
-        <h1 class="hero__titlu">{intro.titlu}</h1>
+        <p class="hero__session">Sesiunea de Finalizare a Studiilor {yearLabel}</p>
+        <h1 class="hero__title">{intro.title}</h1>
         <p class="page-lede">{intro.text}</p>
         <div class="row row--wrap" style="gap:var(--s-3)">
-          <a href={intro.actiune.href} class="btn btn--primary">{intro.actiune.text}</a>
-          <a href={intro.secundar.href} class="btn btn--secondary">{intro.secundar.text}</a>
+          <a href={intro.action.href} class="btn btn--primary">{intro.action.text}</a>
+          <a href={intro.secondary.href} class="btn btn--secondary">{intro.secondary.text}</a>
         </div>
       </div>
 
@@ -135,7 +135,7 @@ const RESOURCES = [
                     <span class="muted">
                       {nextMilestoneOverdue ? 'Termen depășit' : 'Următorul termen'}
                     </span>
-                    <strong class:list={{ 'is-restant': nextMilestoneOverdue }}>
+                    <strong class:list={{ 'is-overdue': nextMilestoneOverdue }}>
                       {nextMilestone.title} · {formatDate(nextMilestone.due_on)}
                     </strong>
                   </p>
@@ -163,7 +163,7 @@ const RESOURCES = [
             const active = currentStageRow?.id === e.id
             const past = e.ends_on ? new Date(e.ends_on) < new Date() : false
             return (
-              <li class:list={['etapa', { 'is-activa': active, 'is-trecuta': past }]}>
+              <li class:list={['etapa', { 'is-current': active, 'is-past': past }]}>
                 <span class="etapa__index numeric" aria-hidden="true">
                   {String(i + 1).padStart(2, '0')}
                 </span>
@@ -213,13 +213,13 @@ const RESOURCES = [
     gap: var(--s-4);
   }
 
-  .hero__sesiune {
+  .hero__session {
     font-size: var(--t-sm);
     font-weight: 600;
     color: var(--red);
   }
 
-  .hero__titlu {
+  .hero__title {
     font-family: var(--serif);
     font-size: var(--t-3xl);
     letter-spacing: -0.015em;
@@ -248,7 +248,7 @@ const RESOURCES = [
     gap: 2px;
     font-size: var(--t-sm);
   }
-  .is-restant {
+  .is-overdue {
     color: var(--danger);
   }
 
@@ -274,7 +274,7 @@ const RESOURCES = [
     border-bottom: 0;
   }
 
-  /* Numerotarea este reală aici: etapele sunt o secvență cu ordine obligatorie. */
+  /* The numbering is real here: the stages are a sequence in a required order. */
   .etapa__index {
     font-family: var(--serif);
     font-size: var(--t-xl);
@@ -283,10 +283,10 @@ const RESOURCES = [
     flex: none;
     width: 2.2rem;
   }
-  .etapa.is-activa .etapa__index {
+  .etapa.is-current .etapa__index {
     color: var(--red);
   }
-  .etapa.is-trecuta .etapa__index {
+  .etapa.is-past .etapa__index {
     color: var(--ok);
   }
 

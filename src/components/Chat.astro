@@ -2,7 +2,7 @@
 import Avatar from './Avatar.astro'
 import type { Conversation, Message } from '../lib/chat'
 import { formatTime, monthLabel, shortMonth, timeAgo } from '../lib/repo'
-import { prezenta } from '../lib/prezenta'
+import { prezenta } from '../lib/presence'
 import { ACCEPT } from '../lib/files'
 
 /**
@@ -21,10 +21,10 @@ const EVENT_LABELS: Record<string, string> = {
   invitation_declined: 'Propunere refuzată',
   consultation_scheduled: 'Consultație programată',
   consultation_cancelled: 'Consultație anulată',
-  /* „Locuri alocate” a fost scos: nimic nu îl scrie niciodată. Locurile se
-     acordă între director și coordonator, iar firele de discuție ale portalului
-     sunt (student, coordonator) — evenimentul nu ar avea unde să existe. Anunțul
-     rămâne pe email și pe ecranul de locuri. */
+  /* „Locuri alocate” was taken out: nothing ever writes it. Seats are granted
+     between the director and the coordinator, while the portal's threads are
+     (student, coordinator) — the event would have nowhere to exist. The notice
+     stays on email and on the seats screen. */
 }
 
 const EVENT_TONE: Record<string, string> = {
@@ -53,10 +53,10 @@ interface Props {
   userId: string
   base: string
   emptyText: string
-  /** Câte mesaje au rămas înaintea celor aduse. Zero ascunde butonul. */
-  maiVechi?: number
-  /** Fereastra cerută acum; butonul o dublează. */
-  cateMesaje?: number
+  /** How many messages are left before the ones fetched. Zero hides the button. */
+  olderCount?: number
+  /** The window asked for right now; the button doubles it. */
+  pageSize?: number
   /** Renders a third column when the caller provides `slot="context"`. */
   hasContext?: boolean
 }
@@ -69,37 +69,37 @@ const {
   userId,
   base,
   emptyText,
-  maiVechi = 0,
-  cateMesaje = 40,
+  olderCount = 0,
+  pageSize = 40,
   hasContext = false,
 } = Astro.props
 
 /**
- * Fișierele, pe luni.
+ * The files, by month.
  *
- * O coordonare de nouă luni adună douăzeci de fișiere, iar sertarul le înșira pe
- * toate la rând: „capitolul 2” apărea de trei ori, cu trei date, și nu se putea
- * spune care este cel din primăvară fără să citești fiecare rând. Luna este
- * despărțirea pe care o are ritmul lucrării.
+ * Nine months of supervision gather twenty files, and the drawer strung them all
+ * out in one row: „capitolul 2” appeared three times, with three dates, and
+ * there was no telling which one was the spring one without reading every line.
+ * The month is the division the rhythm of the thesis already has.
  */
-const fisierePeLuni = [
+const filesByMonth = [
   ...files
-    .reduce((harta, f) => {
-      const cheie = f.created_at.slice(0, 7)
-      harta.set(cheie, [...(harta.get(cheie) ?? []), f])
-      return harta
+    .reduce((byMonth, f) => {
+      const monthKey = f.created_at.slice(0, 7)
+      byMonth.set(monthKey, [...(byMonth.get(monthKey) ?? []), f])
+      return byMonth
     }, new Map<string, typeof files>())
     .entries(),
 ].sort(([a], [b]) => (a < b ? 1 : -1))
 
 /** Messages are grouped by day, the way a messaging app does it. */
-type Bucata = Message & { continuare: boolean; ultimulDinGrup: boolean }
+type GroupedMessage = Message & { continuare: boolean; lastInGroup: boolean }
 
-const days: { label: string; items: Bucata[] }[] = []
+const days: { label: string; items: GroupedMessage[] }[] = []
 const today = new Date().toDateString()
 const yesterday = new Date(Date.now() - 86400000).toDateString()
 
-const PAUZA = 5 * 60 * 1000
+const GROUP_GAP_MS = 5 * 60 * 1000
 
 for (const [i, m] of messages.entries()) {
   const d = new Date(m.created_at)
@@ -107,47 +107,48 @@ for (const [i, m] of messages.entries()) {
   const label =
     key === today ? 'Astăzi' : key === yesterday ? 'Ieri' : `${d.getDate()} ${shortMonth(m.created_at)}`
 
-  /* Cinci replici la rând de la același om erau cinci cutii identice, fiecare
-   * cu ora ei. Se leagă într-un bloc: doar ultima poartă ora, iar cele din
-   * mijloc pierd coada și marginea. */
-  const anterior = messages[i - 1]
-  const urmator = messages[i + 1]
-  const acelasiGrup = (a: Message | undefined, b: Message) =>
+  /* Five replies in a row from the same person were five identical boxes, each
+   * with its own time. They are tied into one block: only the last one carries
+   * the time, and the ones in the middle lose the tail and the border. */
+  const previous = messages[i - 1]
+  const next = messages[i + 1]
+  const sameGroup = (a: Message | undefined, b: Message) =>
     !!a &&
     a.kind === 'text' &&
     b.kind === 'text' &&
     a.sender_id === b.sender_id &&
     new Date(a.created_at).toDateString() === new Date(b.created_at).toDateString() &&
-    Math.abs(new Date(b.created_at).getTime() - new Date(a.created_at).getTime()) < PAUZA
+    Math.abs(new Date(b.created_at).getTime() - new Date(a.created_at).getTime()) < GROUP_GAP_MS
 
-  const bucata: Bucata = {
+  const item: GroupedMessage = {
     ...m,
-    continuare: m.kind === 'text' && acelasiGrup(anterior, m),
-    ultimulDinGrup: m.kind !== 'text' || !acelasiGrup(m, urmator ?? m) || !urmator,
+    continuare: m.kind === 'text' && sameGroup(previous, m),
+    lastInGroup: m.kind !== 'text' || !sameGroup(m, next ?? m) || !next,
   }
 
   const last = days.at(-1)
-  if (last?.label === label) last.items.push(bucata)
-  else days.push({ label, items: [bucata] })
+  if (last?.label === label) last.items.push(item)
+  else days.push({ label, items: [item] })
 }
 
-/** Tipurile pe care browserul le poate arăta în siguranță chiar în fir. */
-const PREVIZUALIZABILE = ['image/png', 'image/jpeg', 'image/webp', 'image/gif']
+/** The types the browser can safely show right inside the thread. */
+const PREVIEWABLE_TYPES = ['image/png', 'image/jpeg', 'image/webp', 'image/gif']
 
-const INCEPUTURI = [
+const STARTER_MESSAGES = [
   'Bună ziua! Mă bucur că lucrăm împreună.',
   'Am o întrebare despre structura lucrării.',
   'Am atașat prima versiune a capitolului.',
 ]
 ---
 
-<!-- `data-total` este reperul pentru sondaj: câte mesaje avea firul la încărcare,
-     nu câte s-au randat. De când firul e paginat cele două nu mai coincid, iar
-     pilula ar anunța „260 de mesaje noi” la deschiderea unei conversații vechi. -->
+<!-- `data-total` is the reference for the poll: how many messages the thread had
+     at load, not how many were rendered. Ever since the thread is paginated the
+     two no longer coincide, and the pill would announce „260 de mesaje noi” on
+     opening an old conversation. -->
 <div
   class:list={['chat', { 'chat--cu-context': hasContext }]}
   data-has-thread={active ? '' : undefined}
-  data-total={active ? String(messages.length + maiVechi) : undefined}
+  data-total={active ? String(messages.length + olderCount) : undefined}
 >
   <aside class="chat__list" aria-label="Conversații">
     {
@@ -176,8 +177,9 @@ const INCEPUTURI = [
   </aside>
 
   <section class="chat__thread">
-    {/* Ținta pentru fișierele trase peste fir. Stă peste tot firul, nu peste un
-        colț: la o conversație lungă, o zonă mică e imposibil de nimerit. */}
+    {/* The target for files dragged over the thread. It sits over the whole
+        thread, not over one corner: in a long conversation, a small area is
+        impossible to hit. */}
     <div class="chat__drop" aria-hidden="true">
       <span>Lasă fișierul aici ca să îl atașezi</span>
     </div>
@@ -186,9 +188,9 @@ const INCEPUTURI = [
       active ? (
         <>
           <header class="chat__header">
-            {/* Pe telefon lista de conversații se ascunde ca să încapă firul, și
-                nu mai exista niciun drum înapoi la ea în afară de butonul
-                browserului: firul arăta ca toată pagina. */}
+            {/* On a phone the conversation list is hidden so that the thread
+                fits, and there was no way back to it other than the browser's
+                own button: the thread looked like the whole page. */}
             <a class="chat__inapoi" href={base} aria-label="Toate conversațiile">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
                 <path d="M15 18l-6-6 6-6" />
@@ -197,20 +199,21 @@ const INCEPUTURI = [
             <Avatar name={active.peer_name} src={active.peer_avatar} href={`/profil/${active.peer_id}`} />
             <span class="chat__peer">
               <strong>{active.peer_name}</strong>
-              {/* Un student trimite un capitol și nu are cum să știe dacă
-                  coordonatorul e în portal acum: fie mai scrie „ați văzut?”, fie
-                  așteaptă două zile degeaba. Se scrie gros, în trei trepte —
-                  minutajul exact al altcuiva ar fi supraveghere, nu ajutor. */}
+              {/* A student sends a chapter and has no way of knowing whether
+                  the coordinator is in the portal right now: either they write
+                  „ați văzut?” on top, or they wait two days for nothing. It is
+                  written coarsely, in three steps — somebody else's exact
+                  minute-by-minute would be surveillance, not help. */}
               <small class="muted" id="prezenta-peer" data-prezenta>
                 {prezenta(active.peer_seen) ?? active.peer_detail ?? ''}
               </small>
             </span>
 
-            {/* Contextul lucrării — titlu, termene, coordonator — este a treia
-                coloană doar peste 1200px. Sub această lățime era pur și simplu
-                `display:none`, deci pe tabletă și pe telefon nu exista nicio cale
-                la el: exact acolo unde firul are cea mai mare nevoie de el, fiind
-                singurul lucru de pe ecran. Devine un sertar, ca fișierele. */}
+            {/* The thesis context — title, milestones, coordinator — is the
+                third column only above 1200px. Below that width it was simply
+                `display:none`, so on a tablet and on a phone there was no way
+                to it at all: exactly where the thread needs it most, being the
+                only thing on the screen. It becomes a drawer, like the files. */}
             {hasContext && (
               <button class="chat__fisiere-buton chat__context-buton" type="button" id="comuta-context" aria-expanded="false">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true">
@@ -230,25 +233,26 @@ const INCEPUTURI = [
           </header>
 
           <div class="chat__messages" id="chat-messages">
-            {/* Ce a rămas înainte.
-                Firul se aducea întreg: o coordonare de nouă luni randa trei sute
-                de bule ca să se citească ultimele cinci. Butonul dublează
-                fereastra și ancorează la mesajul care era primul, ca locul din
-                citire să nu se piardă la reîncărcare. */}
-            {maiVechi > 0 && (
+            {/* What is left before this point.
+                The thread was fetched whole: nine months of supervision rendered
+                three hundred bubbles so that the last five could be read. The
+                button doubles the window and anchors to the message that used to
+                be first, so that the place in the reading is not lost on
+                reload. */}
+            {olderCount > 0 && (
               <a
                 class="chat__mai-vechi"
-                href={`${base}?conversatie=${active.id}&mesaje=${cateMesaje * 2}#mesaj-${messages[0]?.id ?? ''}`}
+                href={`${base}?conversatie=${active.id}&mesaje=${pageSize * 2}#mesaj-${messages[0]?.id ?? ''}`}
               >
                 Arată mesajele mai vechi
                 <span class="muted">
-                  ({maiVechi} {maiVechi === 1 ? 'mesaj' : 'mesaje'})
+                  ({olderCount} {olderCount === 1 ? 'mesaj' : 'mesaje'})
                 </span>
               </a>
             )}
 
             {messages.length === 0 && (
-              /* Un fir gol cere un început, nu o explicație. */
+              /* An empty thread asks for a beginning, not an explanation. */
               <div class="chat__inceput">
                 <p class="empty__title">Scrie primul mesaj</p>
                 <p class="empty__text">
@@ -256,7 +260,7 @@ const INCEPUTURI = [
                   este în portal.
                 </p>
                 <div class="chat__sugestii">
-                  {INCEPUTURI.map((text) => (
+                  {STARTER_MESSAGES.map((text) => (
                     <button class="chat__sugestie" type="button" data-inceput={text}>
                       {text}
                     </button>
@@ -290,17 +294,17 @@ const INCEPUTURI = [
                     ]}
                     id={m.id === messages.at(-1)?.id ? 'ultim-mesaj' : `mesaj-${m.id}`}
                   >
-                    {/* Rândurile scrise înainte de această schimbare mai poartă
-                        vechiul text de umplutură; nu are ce căuta într-o bulă. */}
+                    {/* Rows written before this change still carry the old
+                        filler text; it has no business inside a bubble. */}
                     {m.body && m.body !== '(fișier atașat)' && <p class="bubble__body">{m.body}</p>}
 
-                    {/* Un mesaj poate purta mai multe fișiere: un capitol vine cu
-                        chestionarul și cu fișierul de date. Imaginile se arată,
-                        restul se numesc. */}
+                    {/* A message can carry several files: a chapter arrives with
+                        the questionnaire and with the data file. Images are
+                        shown, the rest are named. */}
                     {(m.files ?? []).map((f) =>
-                      PREVIZUALIZABILE.includes(f.mime ?? '') ? (
-                        /* O imagine numită prin fișierul ei este o imagine pe care
-                           nu o vezi. Se arată; clic o deschide întreagă. */
+                      PREVIEWABLE_TYPES.includes(f.mime ?? '') ? (
+                        /* An image named through its file is an image you do
+                           not see. It is shown; a click opens it whole. */
                         <a class="bubble__imagine" href={`/fisiere/${f.id}?inline=1`} target="_blank" rel="noopener">
                           <img src={`/fisiere/${f.id}?inline=1`} alt={f.name ?? 'Imagine atașată'} loading="lazy" />
                         </a>
@@ -314,13 +318,13 @@ const INCEPUTURI = [
                       ),
                     )}
 
-                    {m.ultimulDinGrup && (
+                    {m.lastInGroup && (
                       <span class="bubble__time numeric">
                         <time datetime={m.created_at} title={formatTime(m.created_at)}>
                           {formatTime(m.created_at)}
                         </time>
-                        {/* Starea de citit era deja în baza de date și nu o vedea
-                            nimeni. O bifă: trimis. Două: citit. */}
+                        {/* The read state was already in the database and
+                            nobody ever saw it. One tick: sent. Two: read. */}
                         {m.sender_id === userId && (
                           <span class="bubble__stare" title={m.read_at ? `Văzut ${formatTime(m.read_at)}` : 'Trimis'}>
                             {m.read_at ? '✓✓' : '✓'}
@@ -335,18 +339,20 @@ const INCEPUTURI = [
             ))}
           </div>
 
-          {/* Când conversația e derulată în sus, mesajul nou ajunge sub margine
-              fără niciun semn. Pilula spune că s-a întâmplat ceva jos. */}
+          {/* When the conversation is scrolled up, the new message lands below
+              the edge with no sign at all. The pill says something happened down
+              there. */}
           <button class="chat__noi" type="button" id="mesaje-noi" hidden>
             Mesaje mai noi ↓
           </button>
 
-          {/* Ceva a sosit cât timp firul era deschis. Pagina nu se schimbă sub
-              mână — apeși dacă vrei să vezi. */}
+          {/* Something arrived while the thread was open. The page does not
+              change under your hand — you press it if you want to see. */}
           <button class="chat__noi chat__noi--primite" type="button" id="mesaje-primite" hidden></button>
 
-          {/* Toate fișierele firului, în ordine cronologică. Stă peste conversație
-              ca un sertar, ca să nu fure lățime când nu e nevoie de el. */}
+          {/* All of the thread's files, in chronological order. It sits over the
+              conversation as a drawer, so that it does not steal width when it
+              is not needed. */}
           <aside class="fisiere-drawer" id="fisiere-drawer" role="dialog" aria-modal="false" aria-label="Fișiere din conversație" hidden>
             <div class="fisiere-drawer__cap">
               <strong>Fișiere din conversație</strong>
@@ -374,16 +380,16 @@ const INCEPUTURI = [
                 <li class="fisiere-drawer__gol" id="fisiere-fara-rezultat" hidden>
                   Niciun fișier cu numele acesta.
                 </li>
-                {fisierePeLuni.map(([luna, dinLuna]) => (
-                  <li class="fisiere-drawer__grup" data-luna={luna}>
+                {filesByMonth.map(([month, monthFiles]) => (
+                  <li class="fisiere-drawer__grup" data-luna={month}>
                     <p class="fisiere-drawer__luna">
-                      <span>{monthLabel(dinLuna[0].created_at)}</span>
+                      <span>{monthLabel(monthFiles[0].created_at)}</span>
                       <span class="muted numeric">
-                        {dinLuna.length} {dinLuna.length === 1 ? 'fișier' : 'fișiere'}
+                        {monthFiles.length} {monthFiles.length === 1 ? 'fișier' : 'fișiere'}
                       </span>
                     </p>
                     <ul>
-                      {dinLuna.map((f) => (
+                      {monthFiles.map((f) => (
                         <li data-nume-fisier={f.original_name.toLowerCase()}>
                           <a class="fisier" href={`/fisiere/${f.id}`}>
                             <span class="fisier__icon" aria-hidden="true">
@@ -410,8 +416,8 @@ const INCEPUTURI = [
               </ul>
             )}
 
-            {/* Nouă fișiere însemnau nouă clicuri și nouă „Salvează ca”, pentru
-                fiecare student, la fiecare depunere de dosar. */}
+            {/* Nine files meant nine clicks and nine „Salvează ca”, for every
+                student, at every submission of a file. */}
             {files.length > 1 && (
               <div class="fisiere-drawer__jos">
                 <a class="btn btn--secondary btn--sm" href={`/fisiere/conversatie/${active.id}.zip`}>
@@ -426,9 +432,9 @@ const INCEPUTURI = [
             <input type="hidden" name="conversation_id" value={active.id} />
             <input type="hidden" name="redirect" value={`${base}?conversatie=${active.id}`} />
 
-            {/* Butonul este un buton, nu o etichetă: o etichetă nu primește
-                focus de la tastatură, deci atașarea unui fișier era imposibilă
-                fără mouse. Câmpul rămâne în pagină, ascuns vizual dar accesibil. */}
+            {/* The button is a button, not a label: a label takes no keyboard
+                focus, so attaching a file was impossible without a mouse. The
+                field stays in the page, visually hidden but accessible. */}
             <input type="file" name="file" class="visually-hidden" id="camp-fisier" accept={ACCEPT} multiple />
             <button class="attach" type="button" id="alege-fisier">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
@@ -438,13 +444,14 @@ const INCEPUTURI = [
             </button>
 
             <div class="chat__camp">
-              {/* Fișierele alese se văd înainte de trimitere: altfel nu ai cum să
-                  știi ce s-a atașat, nici cum să te răzgândești. Bara de jos arată
-                  cât a urcat totul, iar „✕” de pe strat oprește încărcarea.
+              {/* The chosen files are visible before sending: otherwise there is
+                  no way to know what got attached, nor how to change your mind.
+                  The bar underneath shows how much of the whole has gone up, and
+                  the „✕” on the layer stops the upload.
 
-                  Lista se construiește din JavaScript, un rând pe fișier: un
-                  capitol vine cu chestionarul și cu fișierul de date, iar înainte
-                  însemna trei mesaje pentru un singur gând. */}
+                  The list is built from JavaScript, one row per file: a chapter
+                  arrives with the questionnaire and with the data file, and
+                  before this it meant three messages for a single thought. */}
               <div class="atasamente" id="atasamente" hidden>
                 <ul class="atasamente__lista" id="atasamente-lista"></ul>
                 <span class="atasamente__bara" id="atasamente-bara"></span>
@@ -473,8 +480,8 @@ const INCEPUTURI = [
   {
     hasContext && (
       <aside class="chat__context" id="chat-context">
-        {/* Închide sertarul; la lățime mare butonul nu se vede deloc, pentru că
-            acolo coloana este mereu deschisă. */}
+        {/* Closes the drawer; at a large width the button is not visible at
+            all, because there the column is always open. */}
         <button class="chat__context-inchide" type="button" id="inchide-context" aria-label="Închide">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
             <path d="M18 6L6 18M6 6l12 12" />
@@ -487,9 +494,9 @@ const INCEPUTURI = [
 </div>
 
 <script>
-  import { porneste } from '../scripts/chat'
+  import { start } from '../scripts/chat'
 
-  porneste()
+  start()
 </script>
 
 <style>
@@ -605,11 +612,11 @@ const INCEPUTURI = [
     display: flex;
     flex-direction: column;
     min-width: 0;
-    /* Fără această linie, minimul automat al unui element flex este dat de
-       conținut: firul crește peste celula lui de grilă, lista de mesaje nu mai
-       derulează niciodată, iar `.chat { overflow: hidden }` taie zona de scris
-       sub marginea de jos. Pe telefon nu se vedea, pentru că regula de mai jos
-       îi dă o înălțime explicită. */
+    /* Without this line, the automatic minimum of a flex item is set by its
+       content: the thread grows past its grid cell, the message list never
+       scrolls again, and `.chat { overflow: hidden }` cuts the compose area off
+       below the bottom edge. On a phone it did not show, because the rule
+       further down gives it an explicit height. */
     min-height: 0;
     background: var(--bg);
   }
@@ -662,8 +669,8 @@ const INCEPUTURI = [
     padding: var(--s-3) var(--s-4);
     background: var(--surface);
     border: 1px solid var(--border);
-    /* Colțurile aproape drepte ale portalului sunt potrivite pentru un formular
-       instituțional; într-o conversație arătau ca niște celule de tabel. */
+    /* The portal's almost square corners suit an institutional form; inside a
+       conversation they looked like table cells. */
     border-radius: 14px;
     border-bottom-left-radius: var(--r-sm);
     display: flex;
@@ -671,9 +678,10 @@ const INCEPUTURI = [
     gap: var(--s-1);
   }
 
-  /* Replicile proprii erau roșu plin — adică sigiliul instituției pe jumătate
-     din suprafața ecranului, într-un loc care e mobilier, nu acțiune. Rămâne
-     aceeași familie de culoare, la intensitatea care distinge fără să domine. */
+  /* One's own replies were solid red — that is, the institution's seal over
+     half the surface of the screen, in a place that is furniture, not action. It
+     stays the same colour family, at the intensity that tells apart without
+     dominating. */
   .bubble--mine {
     align-self: flex-end;
     background: var(--red-tint);
@@ -683,8 +691,8 @@ const INCEPUTURI = [
     border-bottom-right-radius: var(--r-sm);
   }
 
-  /* Cinci replici la rând de la același om se citesc ca un bloc, nu ca cinci
-     cutii: continuarea pierde coada și se lipește de cea de dinainte. */
+  /* Five replies in a row from the same person read as one block, not as five
+     boxes: the continuation loses the tail and sticks to the one before it. */
   .bubble--continuare {
     margin-top: calc(var(--s-2) * -1 + 2px);
     border-top-left-radius: var(--r-sm);
@@ -714,7 +722,7 @@ const INCEPUTURI = [
     color: var(--info);
   }
 
-  /* O poză numită prin fișierul ei este o poză pe care nu o vezi. */
+  /* A photo named through its file is a photo you do not see. */
   .bubble__imagine {
     display: block;
     max-width: 260px;
@@ -729,7 +737,7 @@ const INCEPUTURI = [
     object-fit: cover;
   }
 
-  /* Bula provizorie, cât mesajul urcă spre server. */
+  /* The provisional bubble, while the message is on its way to the server. */
   .bubble.is-pending {
     opacity: 0.6;
   }
@@ -750,8 +758,8 @@ const INCEPUTURI = [
     cursor: pointer;
   }
 
-  /* Doar ultima bulă intră cu mișcare — animate toate, un fir lung ar tremura
-     la fiecare încărcare. */
+  /* Only the last bubble enters with motion — with all of them animated, a long
+     thread would shudder at every load. */
   .chat__messages > .bubble:last-child {
     animation: bula-noua var(--base) var(--ease-spring);
   }
@@ -783,7 +791,7 @@ const INCEPUTURI = [
     color: var(--ink);
   }
 
-  /* --- ținta pentru fișiere trase peste fir ------------------------------- */
+  /* --- the target for files dragged over the thread ----------------------- */
 
   .chat__drop {
     position: absolute;
@@ -805,10 +813,10 @@ const INCEPUTURI = [
     opacity: 1;
   }
 
-  /* --- pilula „mesaje mai noi” --------------------------------------------- */
+  /* --- the „mesaje mai noi” pill ------------------------------------------- */
 
-  /* Un mesaj primit este o veste, nu o comandă de derulare: stă sus, unde ajung
-     lucrurile noi, și poartă culoarea informativă. */
+  /* A received message is news, not an order to scroll: it sits at the top,
+     where new things arrive, and carries the informative colour. */
   .chat__noi--primite {
     top: 72px;
     bottom: auto;
@@ -834,7 +842,7 @@ const INCEPUTURI = [
     animation: bula-noua var(--base) var(--ease);
   }
 
-  /* --- firul gol ----------------------------------------------------------- */
+  /* --- the empty thread ---------------------------------------------------- */
 
   .chat__mai-vechi {
     align-self: center;
@@ -875,8 +883,8 @@ const INCEPUTURI = [
     margin-top: var(--s-2);
   }
 
-  /* Trei începuturi de conversație: un fir gol cere o primă propoziție, nu o
-     explicație despre cum funcționează emailul. */
+  /* Three conversation openers: an empty thread asks for a first sentence, not
+     an explanation of how the email works. */
   .chat__sugestie {
     padding: var(--s-2) var(--s-3);
     border: 1px solid var(--border-strong);
@@ -895,8 +903,8 @@ const INCEPUTURI = [
     color: var(--ink);
   }
 
-  /* Un eveniment nu are „autor” în același sens: se așază pe toată lățimea,
-     centrat, cu un chenar întrerupt — nu poate fi confundat cu o replică. */
+  /* An event has no „author” in the same sense: it lays itself across the full
+     width, centred, with a dashed border — it cannot be taken for a reply. */
   .eveniment {
     align-self: center;
     width: min(100%, 62ch);
@@ -977,11 +985,11 @@ const INCEPUTURI = [
     font-size: var(--t-xs);
   }
 
-  /* Sertarul acoperă conversația în loc să o îngusteze: e o consultare scurtă,
-     nu o a treia coloană permanentă. */
-  /* Sertarul pornea de la 56px — o măsurătoare a antetului scrisă cu mâna, care
-     nu mai era adevărată de când antetul are avatar. Acoperă firul de sus până
-     jos și intră alunecând dinspre margine. */
+  /* The drawer covers the conversation instead of narrowing it: it is a short
+     consultation, not a permanent third column. */
+  /* The drawer used to start at 56px — a hand-written measurement of the header,
+     which stopped being true once the header got an avatar. It covers the thread
+     from top to bottom and slides in from the edge. */
   .fisiere-drawer {
     position: absolute;
     inset: 0 0 0 auto;
@@ -1043,8 +1051,8 @@ const INCEPUTURI = [
     gap: 2px;
   }
 
-  /* Capul de lună: lipicios, ca la derularea unei liste lungi să știi în ce lună
-     ești, nu doar prin ce nume treci. */
+  /* The month heading: sticky, so that while scrolling a long list you know
+     which month you are in, not only which names you are going past. */
   .fisiere-drawer__luna {
     position: sticky;
     top: 0;
@@ -1132,9 +1140,9 @@ const INCEPUTURI = [
     min-width: 0;
   }
 
-  /* Stratul cu fișierele alese: un rând per fișier, cu bara de încărcare comună
-     dedesubt — progresul raportat de browser este al cererii întregi, nu al
-     fiecărui fișier, deci o bară pe fișier ar minți. */
+  /* The layer with the chosen files: one row per file, with the shared upload
+     bar underneath — the progress the browser reports is that of the whole
+     request, not of each file, so one bar per file would lie. */
   .atasamente {
     position: relative;
     padding-bottom: 3px;
@@ -1262,8 +1270,8 @@ const INCEPUTURI = [
     height: 17px;
   }
 
-  /* Drumul înapoi la listă și butonul de context apar doar unde chiar lipsesc
-     lucrurile la care duc. */
+  /* The way back to the list and the context button appear only where the
+     things they lead to are genuinely missing. */
   .chat__inapoi {
     display: none;
     place-items: center;
@@ -1316,7 +1324,8 @@ const INCEPUTURI = [
       grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);
     }
 
-    /* Contextul devine sertar: acoperă firul cât e consultat, ca fișierele. */
+    /* The context becomes a drawer: it covers the thread while it is being
+       consulted, like the files. */
     .chat__context {
       position: absolute;
       inset: 0 0 0 auto;
@@ -1359,7 +1368,7 @@ const INCEPUTURI = [
     .chat__send-label {
       display: none;
     }
-    /* Numele coordonatorului și două butoane nu încap pe un rând de telefon. */
+    /* The coordinator's name and two buttons do not fit on one phone row. */
     .chat__context-buton span,
     .chat__fisiere-buton {
       font-size: var(--t-xs);

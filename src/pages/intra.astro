@@ -3,12 +3,13 @@ import { consumeMagicLink, createSession, SESSION_COOKIE } from '../lib/auth'
 import { internalPath } from '../lib/http'
 
 /**
- * Consumă tokenul din email, deschide sesiunea și trimite utilizatorul unde trebuie.
+ * Consumes the token from the email, opens the session and sends the user where
+ * they belong.
  *
- * Ultima instrucțiune din frontmatter-ul unui fișier .astro fără corp nu este
- * verificată de `astro check` — aici a supraviețuit luni de zile un `redirectLa`
- * inexistent, rămas dintr-o redenumire. De aceea logica stă în `lib/http.ts`, iar
- * aici rămâne doar apelul.
+ * The last statement in the frontmatter of a .astro file without a body is not
+ * checked by `astro check` — a nonexistent `redirectLa`, left over from a
+ * rename, survived here for months. That is why the logic lives in
+ * `lib/http.ts` and only the call stays here.
  */
 
 const token = Astro.url.searchParams.get('token') ?? ''

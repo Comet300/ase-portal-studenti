@@ -1,19 +1,19 @@
--- Ce anume s-a întâmplat, nu doar în care conversație.
+-- What exactly happened, not just which conversation it happened in.
 --
--- Fiecare notificare ducea în firul de discuție, singurul lucru pe care un
--- eveniment îl știa despre sine. „Locuri alocate” deschidea un chat, „Cerere
--- aprobată” la fel, iar decizia pe care cititorul voia să o vadă era pe alt
--- ecran, pe care trebuia să îl caute singur.
+-- Every notification led to the conversation thread, the only thing an event
+-- knew about itself. „Locuri alocate” opened a chat, „Cerere aprobată” did the
+-- same, and the decision the reader wanted to see was on another screen, which
+-- they had to go and find on their own.
 --
--- Se păstrează subiectul, nu adresa: destinația depinde de rolul cititorului
--- (același interval de consultație e /consultatii pentru student și
--- /profesor/consultatii pentru coordonator), iar o cale scrisă la momentul
--- deciziei ar fi îmbătrânit odată cu rutele.
+-- The subject is kept, not the address: the destination depends on the reader's
+-- role (the same consultation slot is /consultatii for the student and
+-- /profesor/consultatii for the coordinator), and a path written at the moment
+-- of the decision would have aged along with the routes.
 ALTER TABLE messages
   ADD COLUMN IF NOT EXISTS subject_kind text
     CHECK (subject_kind IN ('request', 'invitation', 'slot')),
   ADD COLUMN IF NOT EXISTS subject_id uuid;
 
--- Fără cheie externă: subiectul poate fi șters (o cerere retrasă, un interval
--- anulat) fără ca notificarea care îl anunță să dispară din istoric. Ecranul
--- verifică la citire dacă mai există.
+-- No foreign key: the subject can be deleted (a withdrawn request, a cancelled
+-- slot) without the notification that announces it disappearing from the
+-- history. The screen checks on read whether it still exists.

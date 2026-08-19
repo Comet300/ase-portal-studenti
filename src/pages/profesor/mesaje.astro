@@ -3,7 +3,7 @@ import Chat from '../../components/Chat.astro'
 import ProfesorLayout from '../../layouts/ProfesorLayout.astro'
 import {
   conversationMessages,
-  MESAJE_PE_PAGINA,
+  MESSAGES_PER_PAGE,
   markRead,
   myConversation,
   myConversations,
@@ -39,20 +39,21 @@ const requested =
 const active = requested ? await myConversation(u.id, requested) : (conversations[0] ?? null)
 
 if (active) await markRead(u.id, active.id)
-/* Câte mesaje se cer.
+/* How many messages get asked for.
  *
- * Firul se deschide pe ultimele; „mai vechi” dublează fereastra și ancorează la
- * mesajul care era primul, ca să nu se piardă locul din citire. Plafonat, ca un
- * parametru scris de mână să nu poată cere toată baza. */
-const cerute = Number(Astro.url.searchParams.get('mesaje') ?? '')
-const cateMesaje = Number.isFinite(cerute)
-  ? Math.min(Math.max(cerute, MESAJE_PE_PAGINA), MESAJE_PE_PAGINA * 16)
-  : MESAJE_PE_PAGINA
+ * The thread opens on the most recent ones; „mai vechi” doubles the window and
+ * anchors on the message that used to be the first, so the place reached in the
+ * reading is not lost. Capped, so that a hand-written parameter cannot ask for
+ * the whole database. */
+const requestedCount = Number(Astro.url.searchParams.get('mesaje') ?? '')
+const pageSize = Number.isFinite(requestedCount)
+  ? Math.min(Math.max(requestedCount, MESSAGES_PER_PAGE), MESSAGES_PER_PAGE * 16)
+  : MESSAGES_PER_PAGE
 
-const fir = active
-  ? await conversationMessages(u.id, active.id, cateMesaje)
-  : { mesaje: [], maiVechi: 0 }
-const messages = fir.mesaje
+const thread = active
+  ? await conversationMessages(u.id, active.id, pageSize)
+  : { mesaje: [], olderCount: 0 }
+const messages = thread.mesaje
 
 /**
  * The context column.
@@ -134,8 +135,8 @@ function fileSize(bytes: string | null): string {
     conversations={conversations}
     active={active}
     messages={messages}
-    maiVechi={fir.maiVechi}
-    cateMesaje={cateMesaje}
+    olderCount={thread.olderCount}
+    pageSize={pageSize}
     userId={u.id}
     base="/profesor/mesaje"
     files={files.map((f) => ({ ...f, size_label: fileSize(f.size_bytes) }))}

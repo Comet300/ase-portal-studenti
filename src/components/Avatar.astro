@@ -22,25 +22,25 @@ const { name, src, size = 'sm', href, class: extra } = Astro.props
 const Tag = href ? 'a' : 'span'
 
 /**
- * O nuanță proprie fiecărui nume.
+ * A tint of its own for every name.
  *
- * O listă de treizeci de studenți era o coloană de cercuri identice, în care
- * ochiul nu se putea agăța de nimic. Culoarea vine din nume, deci este stabilă
- * între pagini și între sesiuni, și rămâne în registrul instituției: tonuri
- * șterse, nu paletă de aplicație de chat.
+ * A list of thirty students was a column of identical circles, with nothing for
+ * the eye to catch on. The colour comes from the name, so it is stable across
+ * pages and across sessions, and it stays within the institution's register:
+ * muted tones, not the palette of a chat application.
  */
-const NUANTE = [
-  { fundal: '#eceef3', text: '#3c4a63' },
-  { fundal: '#eff1ea', text: '#4a5537' },
-  { fundal: '#f4ece8', text: '#6b463a' },
-  { fundal: '#eaeff1', text: '#37535c' },
-  { fundal: '#f1ecf1', text: '#5a3f58' },
-  { fundal: '#f2efe6', text: '#5f5230' },
+const TINTS = [
+  { background: '#eceef3', text: '#3c4a63' },
+  { background: '#eff1ea', text: '#4a5537' },
+  { background: '#f4ece8', text: '#6b463a' },
+  { background: '#eaeff1', text: '#37535c' },
+  { background: '#f1ecf1', text: '#5a3f58' },
+  { background: '#f2efe6', text: '#5f5230' },
 ]
 
-let suma = 0
-for (const ch of name) suma = (suma + ch.codePointAt(0)!) % 4096
-const nuanta = NUANTE[suma % NUANTE.length]
+let sum = 0
+for (const ch of name) sum = (sum + ch.codePointAt(0)!) % 4096
+const tint = TINTS[sum % TINTS.length]
 ---
 
 <Tag
@@ -48,7 +48,7 @@ const nuanta = NUANTE[suma % NUANTE.length]
   href={href}
   title={href ? name : undefined}
   data-photo={src ? '' : undefined}
-  style={src ? undefined : `--fundal:${nuanta.fundal};--text:${nuanta.text}`}
+  style={src ? undefined : `--fundal:${tint.background};--text:${tint.text}`}
 >
   {
     src ? (

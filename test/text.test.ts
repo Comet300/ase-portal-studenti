@@ -3,11 +3,11 @@ import assert from 'node:assert/strict'
 import { numar } from '../src/lib/text.ts'
 
 /**
- * Acordul cu numeralul.
+ * Agreement with the numeral.
  *
- * Regula românească pentru „de” după 19 este exact felul de detaliu pe care un
- * portal îl scrie greșit peste tot și nimeni nu îl raportează, dar care face
- * textul să sune ca tradus automat. Aici se decide o dată.
+ * The Romanian rule for „de” after 19 is exactly the kind of detail a portal
+ * gets wrong everywhere and nobody ever reports, but which makes the text read
+ * like machine translation. It is settled here, once.
  */
 
 describe('numar', () => {
@@ -41,7 +41,7 @@ describe('numar', () => {
   it('zecimalele se scriu cu virgulă și merg la plural', () => {
     assert.equal(numar(1.5, 'oră', 'ore'), '1,5 ore')
     assert.equal(numar(2.5, 'oră', 'ore'), '2,5 ore')
-    // Nici măcar 20,5 nu cere „de”: numeralul nu mai e întreg.
+    // Not even 20,5 takes „de”: the numeral is no longer a whole number.
     assert.equal(numar(20.5, 'oră', 'ore'), '20,5 ore')
   })
 })

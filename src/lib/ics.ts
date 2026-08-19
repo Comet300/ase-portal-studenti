@@ -1,8 +1,8 @@
 /**
- * Generare de invitații de calendar.
+ * Generating calendar invitations.
  *
- * Un fișier .ics atașat la email ajunge în Google Calendar, Outlook și Apple
- * Calendar fără integrare externă, fără OAuth și fără dependențe.
+ * An .ics file attached to an email arrives in Google Calendar, Outlook and
+ * Apple Calendar with no external integration, no OAuth and no dependencies.
  */
 
 export interface CalendarEvent {
@@ -10,7 +10,7 @@ export interface CalendarEvent {
   title: string
   description?: string
   location?: string
-  /** Adresa întâlnirii online, dacă există. Devine butonul „Participă”. */
+  /** The online meeting address, if there is one. Becomes the „Participă” button. */
   meetingUrl?: string
   start: Date
   end: Date
@@ -22,14 +22,15 @@ export interface CalendarEvent {
 }
 
 /**
- * Identitatea unui eveniment, pentru clientul de calendar.
+ * The identity of an event, for the calendar client.
  *
- * Trebuie să fie aceeași la creare, la modificare și la anulare — altfel
- * `METHOD:CANCEL` nu găsește ce să anuleze și lasă în calendar o oră fantomă.
- * Existau trei scheme diferite în trei fișiere; acum e una singură, aici.
+ * It has to be the same on creation, on modification and on cancellation —
+ * otherwise `METHOD:CANCEL` finds nothing to cancel and leaves a ghost hour in
+ * the calendar. There were three different schemes in three files; now there is
+ * a single one, here.
  *
- * Un interval de grup are câte un eveniment pentru fiecare invitat, deci
- * identitatea îl include și pe el.
+ * A group slot has one event per invitee, so the identity includes the invitee
+ * too.
  */
 export function consultationUid(slotId: string, studentId: string): string {
   return `consultatie-${slotId}-${studentId}@portal-studenti.ase.ro`
@@ -39,7 +40,7 @@ function utc(d: Date): string {
   return d.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '')
 }
 
-/** RFC 5545 cere lines de maximum 75 de octeți, continuate cu un spațiu. */
+/** RFC 5545 requires lines of at most 75 bytes, continued with a space. */
 function fold(linie: string): string {
   const bytes = Buffer.from(linie, 'utf8')
   if (bytes.byteLength <= 75) return linie
@@ -80,9 +81,9 @@ export function buildIcs(ev: CalendarEvent): string {
     `SUMMARY:${escapeText(ev.title)}`,
     ev.description ? `DESCRIPTION:${escapeText(ev.description)}` : '',
     ev.location ? `LOCATION:${escapeText(ev.location)}` : '',
-    /* Adresa întâlnirii, ca proprietate, nu doar îngropată în descriere:
-     * Google Calendar și Outlook scot din ea butonul „Participă”, iar
-     * `X-GOOGLE-CONFERENCE` este ce citește Google anume. */
+    /* The meeting address as a property, not merely buried in the description:
+     * Google Calendar and Outlook build the „Participă” button out of it, and
+     * `X-GOOGLE-CONFERENCE` is what Google in particular reads. */
     ev.meetingUrl ? `URL:${escapeText(ev.meetingUrl)}` : '',
     ev.meetingUrl ? `X-GOOGLE-CONFERENCE:${escapeText(ev.meetingUrl)}` : '',
     `ORGANIZER;CN=${escapeText(ev.organizerName)}:mailto:${ev.organizerEmail}`,
@@ -101,7 +102,7 @@ export function buildIcs(ev: CalendarEvent): string {
   return lines.map(fold).join('\r\n') + '\r\n'
 }
 
-/** Calendarul sesiunii, ca fișier descărcabil — etapele ca evenimente de zi întreagă. */
+/** The session calendar, as a downloadable file — the stages as all-day events. */
 export function stagesIcs(
   stages: { title: string; description: string | null; starts_on: string | null; ends_on: string | null }[],
   sessionLabel = '',
@@ -118,7 +119,7 @@ export function stagesIcs(
 
   for (const [i, e] of stages.entries()) {
     if (!e.starts_on || !e.ends_on) continue
-    // DTEND este exclusiv pentru evenimentele de zi întreagă.
+    // DTEND is exclusive for all-day events.
     const end = new Date(e.ends_on)
     end.setDate(end.getDate() + 1)
 

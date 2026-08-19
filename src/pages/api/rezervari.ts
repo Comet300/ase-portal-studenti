@@ -8,7 +8,7 @@ import { redirectWithNotice, sessionExpired } from '../../lib/http'
 import { formAction } from '../../lib/forms'
 import { id as formId } from '../../lib/ids'
 
-/** Rezervarea și anularea unui interval de consultație, cu invitație în calendar. */
+/** Booking and cancelling a consultation slot, with a calendar invitation. */
 export const POST: APIRoute = async ({ request, locals, url }) => {
   const u = locals.user
   if (!u) return sessionExpired()
@@ -21,20 +21,20 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
   const back = (message: string, isError = false) =>
     redirectWithNotice('/consultatii', message, isError)
 
-  // Un id absent nu s-ar potrivi cu niciun rând oricum; refuzat aici, mesajul
-  // este despre ce s-a întâmplat, nu „intervalul nu mai este disponibil”.
+  // A missing id would not match any row anyway; refused here, the message is
+  // about what happened, not "the slot is no longer available".
   if (!slotId) return back('Intervalul nu a fost identificat.', true)
 
   if (action === 'anuleaza') {
-    /* Anularea trebuie să ajungă și la coordonator.
+    /* The cancellation has to reach the coordinator as well.
      *
-     * Dialogul de confirmare îi spunea studentului, negru pe alb, că
-     * „coordonatorul vede anularea”. Codul făcea un singur UPDATE și se
-     * întorcea: niciun email, niciun eveniment în fir, nicio anulare în
-     * calendar — deși `ics.ts` are `METHOD:CANCEL` scris de la început și
-     * nimeni nu i-l cerea vreodată. Ora rămânea în calendarul cadrului
-     * didactic pentru totdeauna. */
-    const anulata = await queryOne<{
+     * The confirmation dialog told the student, in black and white, that "the
+     * coordinator sees the cancellation". The code did a single UPDATE and
+     * returned: no email, no event in the thread, no cancellation in the
+     * calendar — even though `ics.ts` has had `METHOD:CANCEL` written in it
+     * from the start and nobody ever asked it for one. The hour stayed in the
+     * teacher's calendar forever. */
+    const cancelled = await queryOne<{
       starts_at: string
       ends_at: string
       mode: string
@@ -56,32 +56,32 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
       [u.id, slotId],
     )
 
-    if (!anulata) return back('Rezervarea nu a fost găsită.', true)
+    if (!cancelled) return back('Rezervarea nu a fost găsită.', true)
 
-    const cand = `${formatDate(anulata.starts_at)}, ${formatTime(anulata.starts_at)}–${formatTime(anulata.ends_at)}`
+    const when = `${formatDate(cancelled.starts_at)}, ${formatTime(cancelled.starts_at)}–${formatTime(cancelled.ends_at)}`
 
     await postEvent({
       studentId: u.id,
-      teacherId: anulata.teacher_id,
+      teacherId: cancelled.teacher_id,
       senderId: u.id,
       eventType: 'consultation_cancelled',
-      body: `${anulata.student_name} a anulat consultația din ${cand}. Locul este din nou liber.`,
+      body: `${cancelled.student_name} a anulat consultația din ${when}. Locul este din nou liber.`,
       createConversation: false,
       subjectKind: 'slot',
       subjectId: slotId,
     })
 
-    // Anularea din calendar: același UID, `SEQUENCE` mai mare, `METHOD:CANCEL`.
+    // The calendar cancellation: the same UID, a higher `SEQUENCE`, `METHOD:CANCEL`.
     const anulare = buildIcs({
       uid: consultationUid(slotId, u.id),
-      title: `Consultație cu ${anulata.student_name}`,
-      location: anulata.mode === 'online' ? (anulata.meeting_url ?? 'Online') : (anulata.location ?? 'Cabinet'),
-      start: new Date(anulata.starts_at),
-      end: new Date(anulata.ends_at),
-      organizerName: anulata.teacher_name,
-      organizerEmail: anulata.teacher_email,
-      attendeeName: anulata.student_name,
-      attendeeEmail: anulata.student_email,
+      title: `Consultație cu ${cancelled.student_name}`,
+      location: cancelled.mode === 'online' ? (cancelled.meeting_url ?? 'Online') : (cancelled.location ?? 'Cabinet'),
+      start: new Date(cancelled.starts_at),
+      end: new Date(cancelled.ends_at),
+      organizerName: cancelled.teacher_name,
+      organizerEmail: cancelled.teacher_email,
+      attendeeName: cancelled.student_name,
+      attendeeEmail: cancelled.student_email,
       cancelled: true,
     })
 
@@ -90,33 +90,34 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
     ]
 
     void sendEmail({
-      to: anulata.teacher_email,
-      subject: `Consultație anulată — ${cand}`,
+      to: cancelled.teacher_email,
+      subject: `Consultație anulată — ${when}`,
       html: template(
         'O consultație a fost anulată',
-        html`<p><strong>${anulata.student_name}</strong> a anulat consultația din ${cand}.</p>
+        html`<p><strong>${cancelled.student_name}</strong> a anulat consultația din ${when}.</p>
          <p>Intervalul este din nou disponibil pentru ceilalți studenți pe care îi coordonezi.</p>`,
         { text: 'Vezi programul', url: `${process.env.APP_BASE_URL ?? url.origin}/profesor/consultatii` },
       ),
       attachments: atasament,
     }).catch((err) => console.error('[rezervari] anularea nu a fost anunțată', err))
 
-    /* Și către cel care a anulat.
+    /* And to the one who cancelled.
      *
-     * Rezervarea trimite invitația în calendar amândurora; anularea o retrăgea
-     * doar de la coordonator. Studentul care își anula propria consultație rămânea
-     * cu evenimentul acceptat în calendarul lui, pentru totdeauna — știa că a
-     * anulat, dar calendarul lui nu, și tocmai calendarul îl anunță marți la 14:00.
+     * Booking sends the calendar invitation to both of them; cancelling withdrew
+     * it only from the coordinator. The student who cancelled their own
+     * consultation was left with the accepted event in their calendar, forever —
+     * they knew they had cancelled, but their calendar did not, and it is the
+     * calendar that reminds them on Tuesday at 14:00.
      *
-     * Același UID și același `SEQUENCE`, deci este exact evenimentul lui, retras. */
+     * The same UID and the same `SEQUENCE`, so it is exactly their event, withdrawn. */
     void sendEmail({
-      to: anulata.student_email,
-      subject: `Consultația din ${cand} a fost anulată`,
+      to: cancelled.student_email,
+      subject: `Consultația din ${when} a fost anulată`,
       html: template(
         'Consultația a fost anulată',
         html`<p>
-           Bună, ${anulata.student_name.split(' ')[0]}. Ai anulat consultația din ${cand} cu
-           <strong>${anulata.teacher_name}</strong>.
+           Bună, ${cancelled.student_name.split(' ')[0]}. Ai anulat consultația din ${when} cu
+           <strong>${cancelled.teacher_name}</strong>.
          </p>
          <p>Am retras și invitația din calendar. Poți rezerva un alt interval oricând.</p>`,
         { text: 'Vezi intervalele libere', url: `${process.env.APP_BASE_URL ?? url.origin}/consultatii` },
@@ -127,15 +128,17 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
     return back('Rezervarea a fost anulată. Coordonatorul a fost anunțat.')
   }
 
-  /* Slotul trebuie să fie liber, viitor, neanulat — și al coordonatorului tău.
+  /* The slot must be free, in the future, not cancelled — and your own
+   * coordinator's.
    *
-   * Ultimele două condiții lipseau: pagina arăta doar intervalele coordonatorului
-   * propriu, dar interfața nu este o autorizare. Cu un `slot_id` obținut oricum,
-   * oricine autentificat putea rezerva la orice cadru didactic, inclusiv un
-   * interval rezervat prin `student_id` pentru un student anume.
+   * The last two conditions were missing: the page showed only the slots of the
+   * student's own coordinator, but the interface is not an authorization. With a
+   * `slot_id` obtained some other way, anyone authenticated could book with any
+   * teacher, including a slot reserved through `student_id` for one particular
+   * student.
    *
-   * Toate condițiile stau în INSERT, deci două cereri simultane nu pot ocupa
-   * amândouă ultimul loc. */
+   * All the conditions sit in the INSERT, so two simultaneous requests cannot
+   * both take the last seat. */
   const booking = await queryOne<{ id: string }>(
     `INSERT INTO bookings (slot_id, student_id, subject)
      SELECT s.id, $1, NULLIF($3, '')

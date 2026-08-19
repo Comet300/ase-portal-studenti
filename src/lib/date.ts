@@ -1,11 +1,12 @@
 /**
- * Datele, scrise în românește.
+ * Dates, written in Romanian.
  *
- * Într-un fișier propriu, fără nicio dependență, pentru două motive care sunt de
- * fapt același: formatarea unei date nu are nimic de-a face cu baza de date, iar
- * cât stătea în `repo.ts` nu se putea nici testa, nici importa în browser fără să
- * tragă cu ea conexiunea la Postgres. Un test care are nevoie de `DATABASE_URL`
- * ca să verifice că duminica intră în săptămâna corectă nu se scrie niciodată.
+ * In a file of its own, with no dependency at all, for two reasons that are in
+ * fact the same one: formatting a date has nothing to do with the database, and
+ * while it sat in `repo.ts` it could be neither tested nor imported in the
+ * browser without dragging the Postgres connection along with it. A test that
+ * needs `DATABASE_URL` in order to check that Sunday falls in the right week
+ * never gets written.
  */
 
 
@@ -24,80 +25,82 @@ export function formatDate(iso: string | null, withTime = false): string {
 }
 
 /**
- * Luni, ca reper de grupare.
+ * Monday, as the grouping anchor.
  *
- * Un program de consultații se citește pe săptămâni — „ce am săptămâna asta” —
- * nu pe treizeci de rânduri la rând. Săptămâna începe luni, ca în calendarul
- * românesc, iar `getDay()` pune duminica la zero, deci ea se împinge la coada
- * săptămânii care se încheie.
+ * A consultation schedule is read by weeks — "what do I have this week" —
+ * not as thirty rows one after another. The week starts on Monday, as in the
+ * Romanian calendar, and `getDay()` puts Sunday at zero, so it is pushed to the
+ * tail of the week that is ending.
  */
 export function startOfWeek(iso: string): string {
   const d = new Date(iso)
   d.setHours(0, 0, 0, 0)
   const zi = d.getDay()
   d.setDate(d.getDate() - (zi === 0 ? 6 : zi - 1))
-  return ziLocala(d)
+  return localDay(d)
 }
 
 /**
- * Ziua, scrisă din componentele locale.
+ * The day, written from the local components.
  *
- * `toISOString()` trece prin UTC, iar portalul rulează pe `Europe/Bucharest`: la
- * miezul nopții de luni, ora locală este 21:00 duminică în UTC, deci ziua ieșea
- * cu una mai mică. Efectul: fiecare luni cădea în săptămâna dinainte, și grupurile
- * de consultații se numeau „26 iulie – 1 august” — adică de duminică până sâmbătă.
- * Arăta destul de plauzibil ca să treacă neobservat.
+ * `toISOString()` goes through UTC, and the portal runs on `Europe/Bucharest`: at
+ * midnight on Monday, the local time is 21:00 Sunday in UTC, so the day came out
+ * one lower. The effect: every Monday fell into the week before, and the groups
+ * of consultations were named „26 iulie – 1 august” — that is, Sunday to Saturday.
+ * It looked plausible enough to go unnoticed.
  */
-function ziLocala(d: Date): string {
+function localDay(d: Date): string {
   const l = String(d.getMonth() + 1).padStart(2, '0')
   const z = String(d.getDate()).padStart(2, '0')
   return `${d.getFullYear()}-${l}-${z}`
 }
 
 /**
- * Cum se numește o săptămână, față de cea în care ești.
+ * What a week is called, relative to the one you are in.
  *
- * „Săptămâna 4–10 august” este exact, dar „săptămâna aceasta” este ce caută
- * ochiul, iar cele două nu se exclud: prima rămâne ca subtitlu.
+ * „Săptămâna 4–10 august” is exact, but „săptămâna aceasta” is what the eye is
+ * looking for, and the two do not exclude each other: the first stays as a
+ * subtitle.
  */
 export function weekLabel(mondayIso: string, todayIso = new Date().toISOString().slice(0, 10)) {
-  const luni = new Date(mondayIso + 'T00:00:00')
-  const duminica = new Date(luni)
-  duminica.setDate(duminica.getDate() + 6)
+  const monday = new Date(mondayIso + 'T00:00:00')
+  const sunday = new Date(monday)
+  sunday.setDate(sunday.getDate() + 6)
 
   const aceasta = startOfWeek(todayIso)
-  const diferenta = Math.round(
-    (luni.getTime() - new Date(aceasta + 'T00:00:00').getTime()) / (7 * 86_400_000),
+  const weeksAway = Math.round(
+    (monday.getTime() - new Date(aceasta + 'T00:00:00').getTime()) / (7 * 86_400_000),
   )
 
-  const nume =
-    diferenta === 0
+  const name =
+    weeksAway === 0
       ? 'Săptămâna aceasta'
-      : diferenta === 1
+      : weeksAway === 1
         ? 'Săptămâna viitoare'
-        : diferenta === -1
+        : weeksAway === -1
           ? 'Săptămâna trecută'
           : null
 
   const interval =
-    luni.getMonth() === duminica.getMonth()
-      ? `${luni.getDate()}–${duminica.getDate()} ${MONTHS[luni.getMonth()]}`
-      : `${luni.getDate()} ${MONTHS[luni.getMonth()]} – ${duminica.getDate()} ${MONTHS[duminica.getMonth()]}`
+    monday.getMonth() === sunday.getMonth()
+      ? `${monday.getDate()}–${sunday.getDate()} ${MONTHS[monday.getMonth()]}`
+      : `${monday.getDate()} ${MONTHS[monday.getMonth()]} – ${sunday.getDate()} ${MONTHS[sunday.getMonth()]}`
 
-  return { nume: nume ?? interval, interval: nume ? interval : null }
+  return { name: name ?? interval, interval: name ? interval : null }
 }
 
 /**
- * „august 2026”, pentru capul unui grup de fișiere.
+ * „august 2026”, for the head of a group of files.
  *
- * Fișierele unei coordonări se adună o dată pe lună — un capitol, un set de date
- * — deci luna este singura despărțire naturală într-o listă care crește. Anul se
- * scrie doar când nu e cel curent, altfel se repetă în fiecare cap de grup.
+ * The files of one supervision gather once a month — a chapter, a data set —
+ * so the month is the only natural division in a list that keeps growing. The
+ * year is written only when it is not the current one, otherwise it repeats in
+ * every group header.
  */
 export function monthLabel(iso: string, todayIso = new Date().toISOString()): string {
   const d = new Date(iso)
-  const anCurent = new Date(todayIso).getFullYear()
-  return d.getFullYear() === anCurent
+  const currentYear = new Date(todayIso).getFullYear()
+  return d.getFullYear() === currentYear
     ? MONTHS[d.getMonth()]
     : `${MONTHS[d.getMonth()]} ${d.getFullYear()}`
 }

@@ -62,7 +62,7 @@ export async function openYear(
     copyStages: boolean
     copyTopics: boolean
     copyProgrammes: boolean
-    /** Aceleași numere de locuri pe coordonator, nu doar rândurile goale. */
+    /** The same seat numbers per coordinator, not just the empty rows. */
     copySeats: boolean
   },
 ): Promise<string> {
@@ -128,14 +128,14 @@ export async function openYear(
       )
     }
 
-    /* Fiecare coordonator are nevoie de un rând, ca tabelul de alocări al
-     * directorului să nu fie gol în prima zi. Numerele se preiau la cerere.
+    /* Every coordinator needs a row, so that the director's allocation table is
+     * not empty on the first day. The numbers are carried over on request.
      *
-     * Alocările nu se schimbă aproape niciodată de la un an la altul — sunt
-     * capacitatea reală a fiecărui cadru didactic — dar porneau la zero, deci
-     * primul lucru de făcut într-un an nou era să reintroduci patruzeci de
-     * numere pe care le știa deja portalul. Rămâne o opțiune, pentru că uneori
-     * chiar se renegociază. */
+     * The allocations almost never change from one year to the next — they are
+     * the real capacity of each member of staff — but they started at zero, so
+     * the first thing to do in a new year was to type back in forty numbers the
+     * portal already knew. It stays an option, because sometimes they really are
+     * renegotiated. */
     if (from && options.copySeats) {
       await client.query(
         `INSERT INTO seat_allocations (teacher_id, academic_year_id, bachelor_seats, master_seats)

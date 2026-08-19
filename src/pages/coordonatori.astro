@@ -78,8 +78,8 @@ const freeTeachers = teachers.filter((t) => !t.is_full).length
     </nav>
 
     <div class="filtre panel">
-      <div class="panel__body filtre__rand">
-        <div class="field filtre__cauta">
+      <div class="panel__body filters__row">
+        <div class="field filters__search">
           <label class="label" for="cauta">Caută</label>
           <input
             class="input"
@@ -126,7 +126,7 @@ const freeTeachers = teachers.filter((t) => !t.is_full).length
           <input type="checkbox" id="doar-libere" />
           <span>Doar cu locuri libere</span>
         </label>
-        {/* Ca să vezi tot trebuia să duci înapoi, manual, trei liste derulante. */}
+        {/* To see everything you had to walk three dropdowns back by hand. */}
         <button class="btn btn--ghost btn--sm" type="button" id="goleste-filtre" hidden>
           Golește filtrele
         </button>
@@ -141,7 +141,7 @@ const freeTeachers = teachers.filter((t) => !t.is_full).length
       }
     </p>
 
-    {/* ------------------------------------------------- după coordonator */}
+    {/* --------------------------------------------------- by coordinator */}
     {
       view === 'coordonatori' && (
         <ul class="lista-coord" id="lista">
@@ -151,7 +151,7 @@ const freeTeachers = teachers.filter((t) => !t.is_full).length
             const free = p.bachelor_seats + p.master_seats - (p.bachelor_taken + p.master_taken)
             return (
               <li
-                class:list={['coord', { 'is-plin': p.is_full }]}
+                class:list={['coord', { 'is-full': p.is_full }]}
                 data-nume={`${p.name} ${p.interests ?? ''}`.toLowerCase()}
                 data-departament={p.department ?? ''}
                 data-teme={theirTopics.map((t) => `${t.title} ${t.methods ?? ''}`).join(' ').toLowerCase()}
@@ -159,10 +159,10 @@ const freeTeachers = teachers.filter((t) => !t.is_full).length
                 data-limbi={[...new Set(theirTopics.map((t) => t.language))].join(' ')}
                 data-liber={p.is_full ? 'nu' : 'da'}
               >
-                <div class="coord__cap">
+                <div class="coord__head">
                   <Avatar name={p.name} src={p.avatar_path} size="md" href={`/profil/${p.id}`} />
                   <div class="coord__ident">
-                    <h2 class="coord__nume">
+                    <h2 class="coord__name">
                       <a href={`/profil/${p.id}`}>{p.name}</a>
                     </h2>
                     <p class="muted text-xs">
@@ -181,17 +181,17 @@ const freeTeachers = teachers.filter((t) => !t.is_full).length
 
                   {u?.role === 'student' &&
                     (p.is_full ? (
-                      <span class="btn btn--secondary coord__actiune is-dezactivat" aria-disabled="true">
+                      <span class="btn btn--secondary coord__action is-disabled" aria-disabled="true">
                         Fără locuri disponibile
                       </span>
                     ) : (
-                      <a class="btn btn--primary coord__actiune" href={`/cererile-mele?coordonator=${p.id}`}>
+                      <a class="btn btn--primary coord__action" href={`/cererile-mele?coordonator=${p.id}`}>
                         Depune cerere de coordonare
                       </a>
                     ))}
                 </div>
 
-                {p.interests && <p class="coord__interese">{p.interests}</p>}
+                {p.interests && <p class="coord__interests">{p.interests}</p>}
 
                 {theirTopics.length > 0 ? (
                   <ul class="teme">
@@ -257,13 +257,13 @@ const freeTeachers = teachers.filter((t) => !t.is_full).length
       )
     }
 
-    {/* -------------------------------------------------------- după temă */}
+    {/* --------------------------------------------------------- by topic */}
     {
       view === 'teme' && (
         <ul class="lista-teme" id="lista">
           {allTopics.map((t) => (
             <li
-              class:list={['card-tema', { 'is-plin': t.teacher_is_full }]}
+              class:list={['card-tema', { 'is-full': t.teacher_is_full }]}
               data-nume={`${t.teacher_name} ${t.title} ${t.methods ?? ''} ${t.description ?? ''}`.toLowerCase()}
               data-teme={`${t.title} ${t.methods ?? ''}`.toLowerCase()}
               data-niveluri={t.level}
@@ -327,9 +327,9 @@ const freeTeachers = teachers.filter((t) => !t.is_full).length
       )
     }
 
-    {/* Lista completă a studenților unui coordonator. Un singur dialog,
-        completat din cardul apăsat — 9 dialoguri identice în pagină ar fi
-        9 copii ale aceluiași markup. */}
+    {/* The full list of a coordinator's students. A single dialog, filled in
+        from the card that was pressed — 9 identical dialogs in the page would
+        be 9 copies of the same markup. */}
     <dialog id="dialog-echipa" aria-labelledby="titlu-echipa">
       <div class="echipa">
         <div class="echipa__cap">
@@ -349,11 +349,11 @@ const freeTeachers = teachers.filter((t) => !t.is_full).length
             data-echipa-date={p.id}
             set:html={JSON.stringify({
               nume: p.name,
-              studenti: theirStudents.map((s) => ({
+              students: theirStudents.map((s) => ({
                 id: s.student_id,
                 nume: s.student_name,
                 titlu: s.title_ro,
-                grup: [s.program === 'master' ? 'Master' : 'Licență', s.specialization]
+                group: [s.program === 'master' ? 'Master' : 'Licență', s.specialization]
                   .filter(Boolean)
                   .join(' · '),
               })),
@@ -363,8 +363,9 @@ const freeTeachers = teachers.filter((t) => !t.is_full).length
       })
     }
 
-    {/* Era un paragraf simplu, stilat altfel decât orice altă stare goală din
-        portal, care sfătuia să debifezi o casetă fără să ți-o pună la îndemână. */}
+    {/* It was a plain paragraph, styled unlike every other empty state in the
+        portal, which advised unticking a checkbox without putting it within
+        reach. */}
     <section class="panel" id="fara-rezultate" hidden>
       <div class="empty">
         <p class="empty__title">Nimic nu corespunde filtrelor</p>
@@ -410,8 +411,8 @@ const freeTeachers = teachers.filter((t) => !t.is_full).length
       c.hidden = !visible
       if (visible) visibleCount++
 
-      // În vederea pe coordonatori, temele care nu se potrivesc dispar și ele,
-      // ca lista din card să nu contrazică filtrul de deasupra.
+      // In the coordinator view, the topics that do not match disappear too,
+      // so that the list inside the card does not contradict the filter above.
       c.querySelectorAll<HTMLLIElement>('.tema').forEach((t) => {
         const okLevel = !n || t.dataset.level === n
         const okLanguage = !l || t.dataset.limba === l
@@ -429,30 +430,31 @@ const freeTeachers = teachers.filter((t) => !t.is_full).length
     emptyLabel.hidden = visibleCount > 0
   }
 
-  /* --- filtrele trăiesc în adresă -----------------------------------------
+  /* --- the filters live in the address --------------------------------------
    *
-   * Pagina cea mai folosită din portal era singura ale cărei filtre nu ajungeau
-   * niciodată în URL: nu puteai trimite unui coleg „cei patru coordonatori de
-   * master în engleză cu locuri libere”, deschiderea unui profil și Back te
-   * întorceau la o listă nefiltrată, iar o reîncărcare ștergea tot. Ecranul
-   * vecin, /profesor/facultate, face exact aceeași treabă cu parametri GET.
+   * The most used page in the portal was the only one whose filters never made
+   * it into the URL: you could not send a colleague „cei patru coordonatori de
+   * master în engleză cu locuri libere”, opening a profile and then Back
+   * brought you back to an unfiltered list, and a reload wiped everything. The
+   * neighbouring screen, /profesor/facultate, does exactly the same job with
+   * GET parameters.
    *
-   * `replaceState` la fiecare tastă ar umple istoricul; se scrie după o pauză
-   * scurtă, iar Back/Forward reașază controalele. */
-  const CAMPURI: [string, HTMLInputElement | HTMLSelectElement | null][] = [
+   * `replaceState` on every keystroke would fill the history; it is written
+   * after a short pause, and Back/Forward put the controls back. */
+  const FILTER_FIELDS: [string, HTMLInputElement | HTMLSelectElement | null][] = [
     ['q', search],
     ['nivel', level],
     ['limba', language],
     ['departament', dep],
   ]
 
-  let ceas: ReturnType<typeof setTimeout> | undefined
+  let timer: ReturnType<typeof setTimeout> | undefined
 
-  function scrieAdresa() {
+  function writeUrl() {
     const p = new URLSearchParams(location.search)
-    for (const [cheie, el] of CAMPURI) {
-      if (el?.value) p.set(cheie, el.value)
-      else p.delete(cheie)
+    for (const [key, el] of FILTER_FIELDS) {
+      if (el?.value) p.set(key, el.value)
+      else p.delete(key)
     }
     if (onlyFree.checked) p.set('libere', '1')
     else p.delete('libere')
@@ -461,10 +463,10 @@ const freeTeachers = teachers.filter((t) => !t.is_full).length
     history.replaceState({}, '', q ? `${location.pathname}?${q}` : location.pathname)
   }
 
-  function citesteAdresa() {
+  function readUrl() {
     const p = new URLSearchParams(location.search)
-    for (const [cheie, el] of CAMPURI) {
-      if (el && p.has(cheie)) el.value = p.get(cheie) ?? ''
+    for (const [key, el] of FILTER_FIELDS) {
+      if (el && p.has(key)) el.value = p.get(key) ?? ''
     }
     onlyFree.checked = p.get('libere') === '1'
   }
@@ -472,26 +474,26 @@ const freeTeachers = teachers.filter((t) => !t.is_full).length
   for (const el of [search, level, language, dep, onlyFree]) {
     el?.addEventListener('input', () => {
       filter()
-      clearTimeout(ceas)
-      ceas = setTimeout(scrieAdresa, 250)
+      clearTimeout(timer)
+      timer = setTimeout(writeUrl, 250)
     })
   }
 
-  // O adresă lipită în bară trebuie să arate exact lista pe care o descrie.
-  citesteAdresa()
+  // An address pasted into the bar has to show exactly the list it describes.
+  readUrl()
 
   window.addEventListener('popstate', () => {
-    citesteAdresa()
+    readUrl()
     filter()
   })
 
-  /* --- golirea filtrelor ---------------------------------------------------
+  /* --- clearing the filters -----------------------------------------------
    *
-   * Ca să vezi tot trebuia să duci înapoi, manual, trei liste derulante. */
+   * To see everything you had to walk three dropdowns back by hand. */
   const reset = document.getElementById('goleste-filtre')
-  const resetGol = document.getElementById('goleste-filtre-gol')
+  const resetFromEmpty = document.getElementById('goleste-filtre-gol')
 
-  function aratăReset() {
+  function showReset() {
     const active =
       Boolean(search.value) ||
       Boolean(level.value) ||
@@ -508,39 +510,39 @@ const freeTeachers = teachers.filter((t) => !t.is_full).length
     if (dep) dep.value = ''
     onlyFree.checked = false
     filter()
-    scrieAdresa()
-    aratăReset()
+    writeUrl()
+    showReset()
     search.focus()
   }
 
   reset?.addEventListener('click', goleste)
-  resetGol?.addEventListener('click', goleste)
+  resetFromEmpty?.addEventListener('click', goleste)
 
   for (const el of [search, level, language, dep, onlyFree]) {
-    el?.addEventListener('input', aratăReset)
+    el?.addEventListener('input', showReset)
   }
-  aratăReset()
+  showReset()
 
-  /* --- lista completă a studenților unui coordonator --------------------- */
+  /* --- the full list of a coordinator's students -------------------------- */
 
   const echipa = document.getElementById('dialog-echipa') as HTMLDialogElement | null
-  const echipaLista = document.getElementById('echipa-lista')
-  const echipaTitlu = document.getElementById('echipa-titlu')
+  const teamList = document.getElementById('echipa-lista')
+  const teamTitle = document.getElementById('echipa-titlu')
 
   document.querySelectorAll<HTMLButtonElement>('[data-echipa]').forEach((b) => {
     b.addEventListener('click', () => {
       const holder = document.querySelector(`[data-echipa-date="${b.dataset.echipa}"]`)
-      if (!holder || !echipaLista) return
+      if (!holder || !teamList) return
 
       const date = JSON.parse(holder.textContent ?? '{}')
-      if (echipaTitlu) {
-        echipaTitlu.textContent = `${date.nume} — ${date.studenti.length} ${
-          date.studenti.length === 1 ? 'student coordonat' : 'studenți coordonați'
+      if (teamTitle) {
+        teamTitle.textContent = `${date.nume} — ${date.students.length} ${
+          date.students.length === 1 ? 'student coordonat' : 'studenți coordonați'
         }`
       }
 
-      echipaLista.replaceChildren(
-        ...date.studenti.map((s: { id: string; nume: string; titlu: string; grup: string }) => {
+      teamList.replaceChildren(
+        ...date.students.map((s: { id: string; nume: string; titlu: string; group: string }) => {
           const li = document.createElement('li')
           const a = document.createElement('a')
           a.href = `/profil/${s.id}`
@@ -548,7 +550,7 @@ const freeTeachers = teachers.filter((t) => !t.is_full).length
           a.innerHTML =
             `<strong></strong><small class="muted"></small><span class="muted echipa__titlu"></span>`
           a.querySelector('strong')!.textContent = s.nume
-          a.querySelector('small')!.textContent = s.grup
+          a.querySelector('small')!.textContent = s.group
           a.querySelector('.echipa__titlu')!.textContent = s.titlu
           li.appendChild(a)
           return li
@@ -563,8 +565,8 @@ const freeTeachers = teachers.filter((t) => !t.is_full).length
     ?.querySelector('[data-inchide-echipa]')
     ?.addEventListener('click', () => echipa.close())
 
-  // Filtrele pornesc din grupa studentului, deci prima rulare nu e redundantă:
-  // ea aplică nivelul și limba deja selectate.
+  // The filters start from the student's group, so the first run is not
+  // redundant: it applies the level and the language already selected.
   filter()
 </script>
 
@@ -609,20 +611,21 @@ const freeTeachers = teachers.filter((t) => !t.is_full).length
     color: var(--red);
   }
 
-  /* Câmpurile au etichetă deasupra, caseta nu — aliniate pe centru, caseta
-     plutea la mijlocul rândului, deasupra bazei celorlalte controale. Se aliniază
-     toate la bază, iar caseta primește exact înălțimea unui câmp. */
-  /* Fiecare filtru își cere lățimea de care are nevoie, iar rândul se rupe
-     singur. Cu `flex:1` egal pentru toate, „Toate departamentele” se tăia la
-     „Toate departamer”. */
-  .filtre__rand {
+  /* The fields have a label above them, the checkbox does not — centre-aligned,
+     the checkbox floated in the middle of the row, above the baseline of the
+     other controls. They all align to the baseline, and the checkbox gets
+     exactly the height of a field. */
+  /* Each filter asks for the width it needs, and the row wraps on its own.
+     With an equal `flex:1` for all of them, „Toate departamentele” was cut off
+     at „Toate departamer”. */
+  .filters__row {
     display: flex;
     flex-wrap: wrap;
     align-items: flex-end;
     gap: var(--s-4);
   }
 
-  .filtre__cauta {
+  .filters__search {
     flex: 3 1 240px;
     min-width: 0;
   }
@@ -634,8 +637,8 @@ const freeTeachers = teachers.filter((t) => !t.is_full).length
     flex: 1 1 220px;
   }
 
-  /* Caseta nu are etichetă deasupra, deci ar pluti peste controalele care au:
-     înălțimea unui câmp o așază pe aceeași linie de bază. */
+  /* The checkbox has no label above it, so it would float over the controls
+     that do: the height of a field puts it on the same baseline. */
   .doar-libere {
     display: flex;
     align-items: center;
@@ -666,15 +669,15 @@ const freeTeachers = teachers.filter((t) => !t.is_full).length
     gap: var(--s-4);
   }
 
-  /* Un coordonator plin rămâne lizibil, dar nu mai concurează vizual cu cei
-     disponibili — informația e „nu aici”, nu „nu există”. */
-  .coord.is-plin,
-  .card-tema.is-plin {
+  /* A full coordinator stays legible, but no longer competes visually with the
+     available ones — the information is „nu aici”, not „nu există”. */
+  .coord.is-full,
+  .card-tema.is-full {
     background: var(--surface-sunken);
     border-style: dashed;
   }
 
-  .coord__cap {
+  .coord__head {
     display: flex;
     align-items: center;
     gap: var(--s-3);
@@ -686,32 +689,33 @@ const freeTeachers = teachers.filter((t) => !t.is_full).length
     min-width: 0;
   }
 
-  .coord__nume {
+  .coord__name {
     font-family: var(--serif);
     font-size: var(--t-md);
     font-weight: 600;
   }
-  .coord__nume a {
+  .coord__name a {
     color: inherit;
     text-decoration: none;
   }
-  .coord__nume a:hover {
+  .coord__name a:hover {
     color: var(--red);
   }
 
-  .coord__interese {
+  .coord__interests {
     font-size: var(--t-sm);
     color: var(--ink-soft);
     text-wrap: pretty;
   }
 
-  .is-dezactivat {
+  .is-disabled {
     opacity: 0.5;
     pointer-events: none;
   }
 
-  /* Cine sunt studenții contează mai mult decât câți: fețele întâi, numărul
-     după. Lista completă stă într-un dialog, ca să nu lungească fiecare card. */
+  /* Who the students are matters more than how many: the faces first, the
+     number after. The full list sits in a dialog, so that it does not lengthen
+     every card. */
   .coord__echipa {
     display: flex;
     align-items: center;
@@ -762,7 +766,7 @@ const freeTeachers = teachers.filter((t) => !t.is_full).length
     box-shadow: 0 0 0 2px var(--surface);
   }
 
-  .coord__actiune {
+  .coord__action {
     flex: none;
   }
 
@@ -794,9 +798,9 @@ const freeTeachers = teachers.filter((t) => !t.is_full).length
     border-bottom: 0;
   }
 
-  /* Rândurile din dialog sunt construite în JavaScript, deci nu primesc
-     atributul de scope pe care Astro îl adaugă la compilare — fără `:global`
-     regulile de aici nu s-ar aplica deloc și lista ar apărea nestilizată. */
+  /* The rows in the dialog are built in JavaScript, so they do not get the
+     scope attribute Astro adds at compile time — without `:global` the rules
+     here would not apply at all and the list would come out unstyled. */
   .echipa__lista :global(.echipa__student) {
     display: flex;
     flex-direction: column;
@@ -851,7 +855,7 @@ const freeTeachers = teachers.filter((t) => !t.is_full).length
     padding-top: var(--s-2);
   }
 
-  /* --- vederea pe teme ---------------------------------------------------- */
+  /* --- the topic view ---------------------------------------------------- */
 
   .lista-teme {
     list-style: none;
@@ -911,8 +915,9 @@ const freeTeachers = teachers.filter((t) => !t.is_full).length
     border-top: 1px solid var(--border);
   }
 
-  /* Numele se scurtează înainte ca butonul să cadă pe rândul următor: altfel
-     un nume lung rupe alinierea picioarelor de card pe tot rândul. */
+  /* The name is truncated before the button drops to the next line: otherwise
+     a long name breaks the alignment of the card footers across the whole
+     row. */
   .card-tema__profesor {
     display: flex;
     align-items: center;

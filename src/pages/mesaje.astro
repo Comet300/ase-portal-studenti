@@ -3,7 +3,7 @@ import Chat from '../components/Chat.astro'
 import StudentLayout from '../layouts/StudentLayout.astro'
 import {
   conversationMessages,
-  MESAJE_PE_PAGINA,
+  MESSAGES_PER_PAGE,
   ensureSupervisorConversation,
   markRead,
   myConversation,
@@ -23,20 +23,20 @@ const requested = Astro.url.searchParams.get('conversatie')
 const active = requested ? await myConversation(u.id, requested) : (conversations[0] ?? null)
 
 if (active) await markRead(u.id, active.id)
-/* Câte mesaje se cer.
+/* How many messages are asked for.
  *
- * Firul se deschide pe ultimele; „mai vechi” dublează fereastra și ancorează la
- * mesajul care era primul, ca să nu se piardă locul din citire. Plafonat, ca un
- * parametru scris de mână să nu poată cere toată baza. */
-const cerute = Number(Astro.url.searchParams.get('mesaje') ?? '')
-const cateMesaje = Number.isFinite(cerute)
-  ? Math.min(Math.max(cerute, MESAJE_PE_PAGINA), MESAJE_PE_PAGINA * 16)
-  : MESAJE_PE_PAGINA
+ * The thread opens on the last ones; „mai vechi” doubles the window and anchors
+ * to the message that used to be the first, so the reading position is not lost.
+ * Capped, so that a hand-written parameter cannot ask for the whole database. */
+const requestedCount = Number(Astro.url.searchParams.get('mesaje') ?? '')
+const pageSize = Number.isFinite(requestedCount)
+  ? Math.min(Math.max(requestedCount, MESSAGES_PER_PAGE), MESSAGES_PER_PAGE * 16)
+  : MESSAGES_PER_PAGE
 
-const fir = active
-  ? await conversationMessages(u.id, active.id, cateMesaje)
-  : { mesaje: [], maiVechi: 0 }
-const messages = fir.mesaje
+const thread = active
+  ? await conversationMessages(u.id, active.id, pageSize)
+  : { mesaje: [], olderCount: 0 }
+const messages = thread.mesaje
 
 /** Everything exchanged in the open thread, newest first — the files drawer. */
 const files = active
@@ -78,8 +78,8 @@ function fileSize(bytes: string | null): string {
         conversations={conversations}
         active={active}
         messages={messages}
-        maiVechi={fir.maiVechi}
-        cateMesaje={cateMesaje}
+        olderCount={thread.olderCount}
+        pageSize={pageSize}
         userId={u.id}
         base="/mesaje"
         files={files}
@@ -90,9 +90,9 @@ function fileSize(bytes: string | null): string {
 </StudentLayout>
 
 <style>
-  /* Firul își umple propria cutie, deci pagina trebuie să îi dea una: altfel
-     `height: 100%` se măsoară față de un părinte fără înălțime, iar pagina
-     derulează în locul conversației. */
+  /* The thread fills its own box, so the page has to give it one: otherwise
+     `height: 100%` is measured against a parent with no height, and the page
+     scrolls instead of the conversation. */
   .chat-wrap {
     height: min(74vh, 780px);
     min-height: 420px;

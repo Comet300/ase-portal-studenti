@@ -107,12 +107,12 @@ export async function destroySession(sessionId: string | undefined): Promise<voi
 }
 
 /**
- * Contul după adresă — doar dacă mai e deschis.
+ * The account behind an address — only while it is still open.
  *
- * Un cont dezactivat nu primește link de acces, iar sesiunile lui nu mai
- * validează (vezi `getUserFromSession`). Răspunsul rutei de autentificare rămâne
- * identic pentru o adresă necunoscută și pentru una închisă: altfel formularul ar
- * spune cine a fost cândva în portal.
+ * A deactivated account receives no sign-in link, and its sessions no longer
+ * validate (see `getUserFromSession`). The sign-in route's answer stays
+ * identical for an unknown address and for a closed one: otherwise the form
+ * would say who was once in the portal.
  */
 export function findUserByEmail(email: string): Promise<User | null> {
   return queryOne<User>(

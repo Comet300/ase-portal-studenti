@@ -1,37 +1,38 @@
 import type { APIRoute } from 'astro'
-import { noteazaAcces } from '../../lib/audit'
+import { recordAccess } from '../../lib/audit'
 import { isDepartmentHead } from '../../lib/auth'
 import { execute, query, queryOne, transaction } from '../../lib/db'
 import { formAction } from '../../lib/forms'
 import { deadEnd, internalPath, redirectWithNotice } from '../../lib/http'
 import { id as formId } from '../../lib/ids'
-import { citesteRanduriConturi, rolCont, type RandCont } from '../../lib/conturi'
+import { parseAccountRows, parseAccountRole, type AccountRow } from '../../lib/accounts'
 import { numar } from '../../lib/text'
 
 /**
- * Conturile portalului: cine intră, cine iese, cu ce adresă.
+ * The portal's accounts: who comes in, who goes out, with what address.
  *
- * Până acum nu exista nicio cale. Singurul `INSERT INTO users` din tot proiectul
- * era în `scripts/seed.mjs`, deci o promoție se popula rulând un script pe
- * producție; nimeni nu putea fi scos; iar o adresă greșită la creare închidea
- * omul pe dinafară definitiv, fiindcă autentificarea trece exclusiv prin ea.
+ * Until now there was no way at all. The only `INSERT INTO users` in the whole
+ * project was in `scripts/seed.mjs`, so a cohort was populated by running a
+ * script against production; nobody could be taken out; and a wrong address at
+ * creation locked the person out for good, because authentication goes
+ * exclusively through it.
  *
- * Toate verbele sunt ale directorului de departament — el ține evidența — și
- * toate lasă urmă în jurnalul de acces: sunt schimbări asupra identității altcuiva,
- * exact categoria pentru care jurnalul există.
+ * All the verbs belong to the department head — he is the one who keeps the
+ * records — and all of them leave a trace in the access log: they are changes to
+ * somebody else's identity, exactly the category the log exists for.
  */
 
 const PAGE = '/profesor/conturi'
 
-/** Programele anului curent, ca să se poată lega un student de grupa lui. */
-async function programePeNume() {
+/** The current year's programmes, so that a student can be tied to their group. */
+async function programmesByName() {
   const rows = await query<{ id: string; level: string; name: string; language: string }>(
     `SELECT id, level, name, language FROM study_programmes
       WHERE academic_year_id = (SELECT id FROM academic_years WHERE is_current) AND is_active`,
   )
-  const harta = new Map<string, (typeof rows)[number]>()
-  for (const p of rows) harta.set(p.name.toLowerCase(), p)
-  return harta
+  const byName = new Map<string, (typeof rows)[number]>()
+  for (const p of rows) byName.set(p.name.toLowerCase(), p)
+  return byName
 }
 
 export const POST: APIRoute = async ({ request, locals }) => {
@@ -42,12 +43,12 @@ export const POST: APIRoute = async ({ request, locals }) => {
 
   const form = await request.formData()
   const action = formAction(form)
-  const inapoi = internalPath(String(form.get('redirect') ?? ''), PAGE)
-  const back = (m: string, e = false) => redirectWithNotice(inapoi, m, e)
+  const backUrl = internalPath(String(form.get('redirect') ?? ''), PAGE)
+  const back = (m: string, e = false) => redirectWithNotice(backUrl, m, e)
 
-  /* --- adaugă o singură persoană ------------------------------------------ */
+  /* --- add a single person ------------------------------------------------ */
   if (action === 'adauga') {
-    const linie = [
+    const line = [
       String(form.get('nume') ?? ''),
       String(form.get('email') ?? ''),
       String(form.get('rol') ?? ''),
@@ -57,50 +58,50 @@ export const POST: APIRoute = async ({ request, locals }) => {
       String(form.get('grupa') ?? ''),
     ].join(';')
 
-    // Aceeași citire ca la lista lipită: un singur set de reguli, nu două.
-    const { bune, respinse } = citesteRanduriConturi(linie)
-    if (bune.length === 0) return back(respinse[0]?.motiv ?? 'Rândul nu a putut fi citit.', true)
+    // The same parsing as for the pasted list: one set of rules, not two.
+    const { accepted, rejected } = parseAccountRows(line)
+    if (accepted.length === 0) return back(rejected[0]?.reason ?? 'Rândul nu a putut fi citit.', true)
 
-    const scrise = await adauga(bune, u!.id, await programePeNume())
-    if (scrise.duplicate > 0) {
-      return back(`Există deja un cont cu adresa ${bune[0].email}.`, true)
+    const insertResult = await adauga(accepted, u!.id, await programmesByName())
+    if (insertResult.duplicate > 0) {
+      return back(`Există deja un cont cu adresa ${accepted[0].email}.`, true)
     }
 
-    await noteazaAcces({ userId: u!.id, action: 'adauga_cont', subject: bune[0].email, rowCount: 1, request })
-    return back(`${bune[0].name} a fost adăugat. Poate intra cu un link cerut de pe pagina de autentificare.`)
+    await recordAccess({ userId: u!.id, action: 'adauga_cont', subject: accepted[0].email, rowCount: 1, request })
+    return back(`${accepted[0].name} a fost adăugat. Poate intra cu un link cerut de pe pagina de autentificare.`)
   }
 
-  /* --- lista lipită din foaia de calcul ------------------------------------ */
+  /* --- the list pasted from the spreadsheet -------------------------------- */
   if (action === 'importa') {
-    const brut = String(form.get('randuri') ?? '').trim()
-    if (!brut) return back('Lipsesc rândurile de importat.', true)
+    const raw = String(form.get('randuri') ?? '').trim()
+    if (!raw) return back('Lipsesc rândurile de importat.', true)
 
-    const { bune, respinse } = citesteRanduriConturi(brut)
-    if (bune.length === 0) {
+    const { accepted, rejected } = parseAccountRows(raw)
+    if (accepted.length === 0) {
       return back(
-        `Niciun rând nu a putut fi citit. ${respinse.slice(0, 3).map((r) => `rândul ${r.numar}: ${r.motiv}`).join('; ')}`,
+        `Niciun rând nu a putut fi citit. ${rejected.slice(0, 3).map((r) => `rândul ${r.numar}: ${r.reason}`).join('; ')}`,
         true,
       )
     }
 
-    const scrise = await adauga(bune, u!.id, await programePeNume())
+    const insertResult = await adauga(accepted, u!.id, await programmesByName())
 
-    await noteazaAcces({
+    await recordAccess({
       userId: u!.id, action: 'adauga_cont',
-      subject: `import · ${bune.length} rânduri`, rowCount: scrise.noi, request,
+      subject: `import · ${accepted.length} rânduri`, rowCount: insertResult.inserted, request,
     })
 
     return back(
-      `${numar(scrise.noi, 'cont adăugat', 'conturi adăugate')}.` +
-        (scrise.duplicate > 0 ? ` ${numar(scrise.duplicate, 'exista deja', 'existau deja')}.` : '') +
-        (respinse.length > 0
-          ? ` ${numar(respinse.length, 'rând respins', 'rânduri respinse')} — ${respinse.slice(0, 3).map((r) => `rândul ${r.numar}: ${r.motiv}`).join('; ')}${respinse.length > 3 ? '; …' : ''}.`
+      `${numar(insertResult.inserted, 'cont adăugat', 'conturi adăugate')}.` +
+        (insertResult.duplicate > 0 ? ` ${numar(insertResult.duplicate, 'exista deja', 'existau deja')}.` : '') +
+        (rejected.length > 0
+          ? ` ${numar(rejected.length, 'rând respins', 'rânduri respinse')} — ${rejected.slice(0, 3).map((r) => `rândul ${r.numar}: ${r.reason}`).join('; ')}${rejected.length > 3 ? '; …' : ''}.`
           : ''),
-      respinse.length > 0,
+      rejected.length > 0,
     )
   }
 
-  /* --- închide / redeschide accesul ---------------------------------------- */
+  /* --- close / reopen access ----------------------------------------------- */
   if (action === 'dezactiveaza' || action === 'reactiveaza') {
     const cine = formId(form.get('utilizator_id'))
     const inchide = action === 'dezactiveaza'
@@ -118,11 +119,12 @@ export const POST: APIRoute = async ({ request, locals }) => {
     )
     if (!om) return back('Persoana nu a fost găsită.', true)
 
-    /* Sesiunile deschise nu supraviețuiesc închiderii: altfel cineva dezactivat
-     * ar rămâne înăuntru până expiră cookie-ul, adică până la o lună. */
+    /* Open sessions do not survive the closing: otherwise somebody who has been
+     * deactivated would stay inside until the cookie expires, that is, for up to
+     * a month. */
     if (inchide) await execute('DELETE FROM sessions WHERE user_id = $1', [cine])
 
-    await noteazaAcces({
+    await recordAccess({
       userId: u!.id,
       action: inchide ? 'dezactiveaza_cont' : 'reactiveaza_cont',
       subject: om.email, request,
@@ -135,7 +137,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
     )
   }
 
-  /* --- corectează adresa --------------------------------------------------- */
+  /* --- correct the address ------------------------------------------------- */
   if (action === 'schimba_email') {
     const cine = formId(form.get('utilizator_id'))
     const nou = String(form.get('email') ?? '').trim().toLowerCase()
@@ -150,12 +152,13 @@ export const POST: APIRoute = async ({ request, locals }) => {
     )
     if (ocupat) return back(`Adresa ${nou} este deja folosită de alt cont.`, true)
 
-    /* Adresa veche se citește înainte, explicit.
+    /* The old address is read beforehand, explicitly.
      *
-     * Un `(SELECT email …)` în `RETURNING` chiar ar întoarce valoarea dinainte —
-     * subinterogarea vede instantaneul de la începutul instrucțiunii — dar asta
-     * este exact felul de corectitudine pe care nimeni nu o poate verifica citind
-     * codul, iar jurnalul de acces și ștergerea linkurilor depind de ea. */
+     * A `(SELECT email …)` inside `RETURNING` really would return the value from
+     * before — the subquery sees the snapshot taken at the start of the
+     * statement — but that is exactly the kind of correctness nobody can check by
+     * reading the code, and the access log and the deletion of the links both
+     * depend on it. */
     const inainte = await queryOne<{ name: string; email: string }>(
       `SELECT name, email FROM users WHERE id = $1`,
       [cine],
@@ -165,11 +168,11 @@ export const POST: APIRoute = async ({ request, locals }) => {
     await execute(`UPDATE users SET email = $2 WHERE id = $1`, [cine, nou])
     const om = { name: inainte.name, vechi: inainte.email }
 
-    /* Schimbarea adresei este o schimbare de identitate: linkurile de acces
-     * nefolosite, emise pentru adresa veche, nu mai au voie să funcționeze. */
+    /* Changing the address is a change of identity: unused access links, issued
+     * for the old address, are no longer allowed to work. */
     await execute(`DELETE FROM magic_link_tokens WHERE lower(email) = lower($1)`, [om.vechi])
 
-    await noteazaAcces({
+    await recordAccess({
       userId: u!.id, action: 'schimba_email',
       subject: `${om.vechi} → ${nou}`, request,
     })
@@ -181,21 +184,22 @@ export const POST: APIRoute = async ({ request, locals }) => {
 }
 
 /**
- * Scrie rândurile, într-o singură tranzacție.
+ * Writes the rows, in a single transaction.
  *
- * `ON CONFLICT DO NOTHING` pe adresă: un import repetat nu dublează pe nimeni și
- * nu suprascrie datele cuiva care e deja înăuntru — dacă secretariatul retrimite
- * lista cu o coloană schimbată, schimbarea se face explicit, nu pe furiș.
+ * `ON CONFLICT DO NOTHING` on the address: a repeated import does not duplicate
+ * anybody and does not overwrite the data of someone already inside — if the
+ * registry sends the list again with one column changed, the change is made
+ * explicitly, not on the sly.
  */
 async function adauga(
-  randuri: RandCont[],
-  deCatre: string,
-  programe: Map<string, { id: string; level: string; name: string; language: string }>,
-): Promise<{ noi: number; duplicate: number }> {
+  randuri: AccountRow[],
+  createdBy: string,
+  programmes: Map<string, { id: string; level: string; name: string; language: string }>,
+): Promise<{ inserted: number; duplicate: number }> {
   return transaction(async (client) => {
-    let noi = 0
+    let inserted = 0
     for (const r of randuri) {
-      const p = r.programme ? programe.get(r.programme.toLowerCase()) : undefined
+      const p = r.programme ? programmes.get(r.programme.toLowerCase()) : undefined
       const { rowCount } = await client.query(
         `INSERT INTO users (email, name, role, student_number, programme_id,
                             program, specialization, study_language, study_year, study_group, created_by)
@@ -204,11 +208,11 @@ async function adauga(
         [
           r.email, r.name, r.role, r.studentNumber,
           p?.id ?? null, p?.level ?? null, p?.name ?? null, p?.language ?? null,
-          r.year, r.group, deCatre,
+          r.year, r.group, createdBy,
         ],
       )
-      noi += rowCount ?? 0
+      inserted += rowCount ?? 0
     }
-    return { noi, duplicate: randuri.length - noi }
+    return { inserted, duplicate: randuri.length - inserted }
   })
 }

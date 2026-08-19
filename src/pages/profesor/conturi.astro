@@ -4,32 +4,35 @@ import Metrica from '../../components/Metrica.astro'
 import ProfesorLayout from '../../layouts/ProfesorLayout.astro'
 import Taburi from '../../components/Taburi.astro'
 import { query } from '../../lib/db'
-import { COLOANE_CONTURI } from '../../lib/conturi'
+import { ACCOUNT_COLUMNS } from '../../lib/accounts'
 import { formatDate } from '../../lib/repo'
 import { numar } from '../../lib/text'
 import { LANGUAGE_LABELS, LEVEL_LABELS, currentYear, programmes } from '../../lib/years'
 
 /**
- * Conturile portalului.
+ * The portal's accounts.
  *
- * Ecranul care lipsea. Portalul putea muta un student între programe, îi putea
- * schimba grupa și anul — dar nu îl putea aduce în ființă: singurul
- * `INSERT INTO users` din tot proiectul era într-un script de seed. O promoție se
- * popula rulând acel script pe producție, iar cine avea o literă greșită în adresă
- * rămânea închis pe dinafară pentru totdeauna.
+ * The screen that was missing. The portal could move a student between
+ * programmes, could change their group and year — but could not bring them into
+ * being: the only `INSERT INTO users` in the whole project was in a seed script.
+ * A cohort was populated by running that script on production, and whoever had
+ * one wrong letter in their address stayed locked out forever.
  *
- * Aici se adaugă unul câte unul sau cu lista lipită din foaia secretariatului, se
- * corectează adresele, și se închide accesul celor care pleacă — fără să se
- * șteargă nimic din ce au făcut, fiindcă asta este un registru academic.
+ * Here they are added one by one or with the list pasted from the registrar's
+ * spreadsheet, addresses are corrected, and access is closed for those who
+ * leave — without deleting anything they did, because this is an academic
+ * register.
  */
 
-const SECTIUNI = ['toti', 'adauga'] as const
-const cerut = Astro.url.searchParams.get('sectiune') ?? ''
-const sectiune = (SECTIUNI as readonly string[]).includes(cerut) ? cerut : 'toti'
+const SECTIONS = ['toti', 'adauga'] as const
+const requestedSection = Astro.url.searchParams.get('sectiune') ?? ''
+const sectiune = (SECTIONS as readonly string[]).includes(requestedSection)
+  ? requestedSection
+  : 'toti'
 
-const cauta = (Astro.url.searchParams.get('q') ?? '').trim().toLowerCase()
-const rolFiltru = Astro.url.searchParams.get('rol') ?? ''
-const araraInactivi = Astro.url.searchParams.get('inactivi') === '1'
+const searchQuery = (Astro.url.searchParams.get('q') ?? '').trim().toLowerCase()
+const roleFilter = Astro.url.searchParams.get('rol') ?? ''
+const showInactive = Astro.url.searchParams.get('inactivi') === '1'
 
 const conturi = await query<{
   id: string
@@ -55,38 +58,38 @@ const conturi = await query<{
     ORDER BY u.is_active DESC, u.role, u.name`,
 )
 
-const vizibili = conturi.filter((o) => {
-  if (!araraInactivi && !o.is_active) return false
-  if (rolFiltru && o.role !== rolFiltru) return false
-  if (cauta) {
+const visibleAccounts = conturi.filter((o) => {
+  if (!showInactive && !o.is_active) return false
+  if (roleFilter && o.role !== roleFilter) return false
+  if (searchQuery) {
     const tot = `${o.name} ${o.email} ${o.student_number ?? ''} ${o.specialization ?? ''}`
-    if (!tot.toLowerCase().includes(cauta)) return false
+    if (!tot.toLowerCase().includes(searchQuery)) return false
   }
   return true
 })
 
-const activi = conturi.filter((o) => o.is_active)
+const activeAccounts = conturi.filter((o) => o.is_active)
 const total = {
-  studenti: activi.filter((o) => o.role === 'student').length,
-  cadre: activi.filter((o) => o.role !== 'student').length,
-  inchisi: conturi.length - activi.length,
-  faraCoordonare: activi.filter((o) => o.role === 'student' && o.coordonari === 0).length,
+  studenti: activeAccounts.filter((o) => o.role === 'student').length,
+  cadre: activeAccounts.filter((o) => o.role !== 'student').length,
+  closed: conturi.length - activeAccounts.length,
+  withoutSupervision: activeAccounts.filter((o) => o.role === 'student' && o.coordonari === 0).length,
 }
 
 const an = await currentYear()
-const programeleAnului = an ? (await programmes(an.id)).filter((p) => p.is_active) : []
+const yearProgrammes = an ? (await programmes(an.id)).filter((p) => p.is_active) : []
 
-const ROL_TEXT: Record<string, string> = {
+const ROLE_TEXT: Record<string, string> = {
   student: 'Student',
   teacher: 'Cadru didactic',
   head: 'Director de departament',
 }
 
-const inapoi = Astro.url.pathname + Astro.url.search
+const backUrl = Astro.url.pathname + Astro.url.search
 
-const sectiuni = [
-  { cheie: 'toti', text: 'Toate conturile', contor: vizibili.length },
-  { cheie: 'adauga', text: 'Adaugă', contor: null },
+const sections = [
+  { key: 'toti', text: 'Toate conturile', count: visibleAccounts.length },
+  { key: 'adauga', text: 'Adaugă', count: null },
 ]
 ---
 
@@ -96,7 +99,7 @@ const sectiuni = [
   active="conturi"
 >
   <Taburi
-    taburi={sectiuni.map((s) => ({ ...s, href: `/profesor/conturi?sectiune=${s.cheie}` }))}
+    taburi={sections.map((s) => ({ ...s, href: `/profesor/conturi?sectiune=${s.key}` }))}
     activ={sectiune}
     eticheta="Secțiuni"
   />
@@ -105,14 +108,14 @@ const sectiuni = [
     sectiune === 'toti' && (
       <div class="stack stack--loose">
         <div class="grid-auto">
-          <Metrica valoare={total.studenti} eticheta="studenți cu acces" />
-          <Metrica valoare={total.cadre} eticheta="cadre didactice" />
+          <Metrica value={total.studenti} label="studenți cu acces" />
+          <Metrica value={total.cadre} label="cadre didactice" />
           <Metrica
-            valoare={total.faraCoordonare}
-            eticheta="studenți fără coordonare"
-            alerta={total.faraCoordonare > 0}
+            value={total.withoutSupervision}
+            label="studenți fără coordonare"
+            alerta={total.withoutSupervision > 0}
           />
-          <Metrica valoare={total.inchisi} eticheta="conturi închise" />
+          <Metrica value={total.closed} label="conturi închise" />
         </div>
 
         <form method="GET" class="panel">
@@ -120,20 +123,20 @@ const sectiuni = [
           <div class="panel__body row row--wrap" style="gap:var(--s-3);align-items:flex-end">
             <div class="field" style="flex:2;min-width:220px">
               <label class="label" for="q">Caută</label>
-              <input class="input" id="q" name="q" type="search" value={cauta}
+              <input class="input" id="q" name="q" type="search" value={searchQuery}
                 placeholder="Nume, adresă sau număr matricol…" />
             </div>
             <div class="field" style="min-width:180px">
               <label class="label" for="rol">Rol</label>
               <select class="select" id="rol" name="rol">
                 <option value="">Toate rolurile</option>
-                {Object.entries(ROL_TEXT).map(([v, t]) => (
-                  <option value={v} selected={rolFiltru === v}>{t}</option>
+                {Object.entries(ROLE_TEXT).map(([v, t]) => (
+                  <option value={v} selected={roleFilter === v}>{t}</option>
                 ))}
               </select>
             </div>
             <label class="doar-libere">
-              <input type="checkbox" name="inactivi" value="1" checked={araraInactivi} />
+              <input type="checkbox" name="inactivi" value="1" checked={showInactive} />
               <span>Arată și conturile închise</span>
             </label>
             <button class="btn btn--secondary" type="submit">Filtrează</button>
@@ -143,10 +146,10 @@ const sectiuni = [
         <section class="panel">
           <div class="panel__header">
             <h2 class="section-title">Conturi</h2>
-            <span class="muted text-sm">{numar(vizibili.length, 'persoană', 'persoane')}</span>
+            <span class="muted text-sm">{numar(visibleAccounts.length, 'persoană', 'persoane')}</span>
           </div>
 
-          {vizibili.length === 0 ? (
+          {visibleAccounts.length === 0 ? (
             <div class="empty">
               <p class="empty__title">Niciun cont pentru filtrele alese</p>
               <p class="empty__text">
@@ -171,7 +174,7 @@ const sectiuni = [
                   </tr>
                 </thead>
                 <tbody>
-                  {vizibili.map((o) => (
+                  {visibleAccounts.map((o) => (
                     <>
                     <tr id={`cont-${o.id}`} class:list={{ 'is-inchis': !o.is_active }}>
                       <td>
@@ -184,7 +187,7 @@ const sectiuni = [
                         </div>
                       </td>
                       <td class="muted celula-email">{o.email}</td>
-                      <td class="muted">{ROL_TEXT[o.role]}</td>
+                      <td class="muted">{ROLE_TEXT[o.role]}</td>
                       <td class="muted text-xs">
                         {o.role === 'student'
                           ? [o.specialization, o.study_group, o.study_year ? `anul ${o.study_year}` : null]
@@ -208,16 +211,17 @@ const sectiuni = [
                       </td>
                     </tr>
 
-                    {/* Rândul de editare, ca la „Studenții facultății”: pe toată
-                        lățimea, deschis doar când e nevoie. Adresa și accesul stau
-                        împreună, fiindcă amândouă hotărăsc dacă omul poate intra. */}
+                    {/* The editing row, as on „Studenții facultății”: across the
+                        full width, opened only when needed. The address and the
+                        access sit together, because both decide whether the
+                        person can get in. */}
                     <tr class="editor-rand" id={`editor-${o.id}`} hidden>
                       <td colspan="6">
                         <div class="editor">
                           <form method="POST" action="/api/conturi" class="editor__adresa">
                             <input type="hidden" name="actiune" value="schimba_email" />
                             <input type="hidden" name="utilizator_id" value={o.id} />
-                            <input type="hidden" name="redirect" value={`${inapoi}#cont-${o.id}`} />
+                            <input type="hidden" name="redirect" value={`${backUrl}#cont-${o.id}`} />
                             <div class="field" style="flex:1;min-width:240px">
                               <label class="label" for={`email-${o.id}`}>Adresă de email</label>
                               <input class="input" id={`email-${o.id}`} name="email" type="email"
@@ -234,7 +238,7 @@ const sectiuni = [
                             <input type="hidden" name="actiune"
                               value={o.is_active ? 'dezactiveaza' : 'reactiveaza'} />
                             <input type="hidden" name="utilizator_id" value={o.id} />
-                            <input type="hidden" name="redirect" value={`${inapoi}#cont-${o.id}`} />
+                            <input type="hidden" name="redirect" value={`${backUrl}#cont-${o.id}`} />
                             <p class="hint" style="margin:0">
                               {o.is_active
                                 ? `Închiderea accesului nu șterge nimic: cele ${o.coordonari} coordonări și tot ce a scris rămân în arhivă.`
@@ -302,7 +306,7 @@ const sectiuni = [
                 <label class="label" for="program">Program de studiu</label>
                 <select class="select" id="program" name="program">
                   <option value="">—</option>
-                  {programeleAnului.map((p) => (
+                  {yearProgrammes.map((p) => (
                     <option value={p.name}>
                       {LEVEL_LABELS[p.level]} · {p.name} · {LANGUAGE_LABELS[p.language]}
                     </option>
@@ -343,7 +347,7 @@ const sectiuni = [
             <div class="field">
               <label class="label" for="randuri">Rânduri</label>
               <textarea class="textarea" id="randuri" name="randuri" rows="6" required spellcheck="false"
-                placeholder={`${COLOANE_CONTURI.join(';')}
+                placeholder={`${ACCOUNT_COLUMNS.join(';')}
 Ioana Dumitru;ioana.dumitru@stud.ase.ro;student;MK-2025-0142;Marketing;3;RO-1503
 Prof. univ. dr. Elena Radu;elena.radu@ase.ro;cadru didactic;;;;`}
                 data-autogrow />
@@ -380,60 +384,60 @@ Prof. univ. dr. Elena Radu;elena.radu@ase.ro;cadru didactic;;;;`}
 </ProfesorLayout>
 
 <script>
-  import { COLOANE_CONTURI, citesteRanduriConturi } from '../../lib/conturi'
+  import { ACCOUNT_COLUMNS, parseAccountRows } from '../../lib/accounts'
 
-  /* --- rândul de editare, unul singur odată -------------------------------- */
+  /* --- the editing row, one at a time -------------------------------------- */
   document.querySelectorAll<HTMLButtonElement>('[data-editeaza]').forEach((b) => {
     b.addEventListener('click', () => {
       const rand = document.getElementById(`editor-${b.dataset.editeaza}`)
       if (!rand) return
-      const deschis = !rand.hidden
+      const wasOpen = !rand.hidden
       document.querySelectorAll<HTMLElement>('.editor-rand').forEach((r) => (r.hidden = true))
       document.querySelectorAll<HTMLButtonElement>('[data-editeaza]')
         .forEach((x) => x.setAttribute('aria-expanded', 'false'))
-      if (deschis) return
+      if (wasOpen) return
       rand.hidden = false
       b.setAttribute('aria-expanded', 'true')
       rand.querySelector<HTMLInputElement>('input[name="email"]')?.focus()
     })
   })
 
-  /* --- previzualizarea listei lipite ---------------------------------------
+  /* --- the preview of the pasted list --------------------------------------
    *
-   * Aceeași funcție care citește rândurile în rută le citește și aici, deci
-   * tabelul arătat și cel scris nu pot să difere. O listă de la secretariat are
-   * întotdeauna două rânduri stricate, iar ele trebuie văzute înainte de a crea
-   * două sute de conturi. */
-  const caseta = document.getElementById('randuri') as HTMLTextAreaElement | null
-  const zona = document.getElementById('previzualizare')
+   * The same function that reads the rows in the route reads them here too, so
+   * the table shown and the one written cannot differ. A list from the registrar
+   * always has two broken rows, and those have to be seen before two hundred
+   * accounts are created. */
+  const textarea = document.getElementById('randuri') as HTMLTextAreaElement | null
+  const previewArea = document.getElementById('previzualizare')
   const cap = document.getElementById('previzualizare-cap')
   const corp = document.getElementById('previzualizare-corp')
   const sumar = document.getElementById('previzualizare-sumar')
-  const zonaRespinse = document.getElementById('respinse')
-  const listaRespinse = document.getElementById('respinse-lista')
+  const rejectedArea = document.getElementById('respinse')
+  const rejectedList = document.getElementById('respinse-lista')
 
-  if (caseta && zona && cap && corp && sumar && zonaRespinse && listaRespinse) {
-    const deseneaza = () => {
-      const { bune, respinse } = citesteRanduriConturi(caseta.value)
-      const celule = caseta.value
+  if (textarea && previewArea && cap && corp && sumar && rejectedArea && rejectedList) {
+    const render = () => {
+      const { accepted, rejected } = parseAccountRows(textarea.value)
+      const cellRows = textarea.value
         .split('\n').map((l) => l.trim()).filter(Boolean)
         .map((l) => l.split(l.includes('\t') && !l.includes(';') ? '\t' : ';').map((c) => c.trim()))
 
-      zona.hidden = celule.length === 0
+      previewArea.hidden = cellRows.length === 0
 
       cap.textContent = ''
-      for (const nume of COLOANE_CONTURI) {
+      for (const columnName of ACCOUNT_COLUMNS) {
         const th = document.createElement('th')
         th.scope = 'col'
-        th.textContent = nume
+        th.textContent = columnName
         cap.appendChild(th)
       }
 
       corp.textContent = ''
-      celule.forEach((rand, i) => {
+      cellRows.forEach((rand, i) => {
         const tr = document.createElement('tr')
-        if (respinse.find((r) => r.numar === i + 1)) tr.className = 'rand-respins'
-        COLOANE_CONTURI.forEach((_, col) => {
+        if (rejected.find((r) => r.numar === i + 1)) tr.className = 'rand-respins'
+        ACCOUNT_COLUMNS.forEach((_, col) => {
           const td = document.createElement('td')
           td.textContent = rand[col] ?? ''
           tr.appendChild(td)
@@ -441,29 +445,29 @@ Prof. univ. dr. Elena Radu;elena.radu@ase.ro;cadru didactic;;;;`}
         corp.appendChild(tr)
       })
 
-      const studenti = bune.filter((b) => b.role === 'student').length
+      const studenti = accepted.filter((b) => b.role === 'student').length
       sumar.textContent =
-        `${bune.length} de adăugat` +
+        `${accepted.length} de adăugat` +
         (studenti ? ` · ${studenti} studenți` : '') +
-        (respinse.length ? ` · ${respinse.length} de corectat` : '')
+        (rejected.length ? ` · ${rejected.length} de corectat` : '')
 
-      zonaRespinse.hidden = respinse.length === 0
-      listaRespinse.textContent = ''
-      for (const r of respinse) {
+      rejectedArea.hidden = rejected.length === 0
+      rejectedList.textContent = ''
+      for (const r of rejected) {
         const li = document.createElement('li')
-        li.textContent = `Rândul ${r.numar}: ${r.motiv}`
-        listaRespinse.appendChild(li)
+        li.textContent = `Rândul ${r.numar}: ${r.reason}`
+        rejectedList.appendChild(li)
       }
     }
 
-    document.getElementById('verifica-randuri')?.addEventListener('click', deseneaza)
-    caseta.addEventListener('paste', () => setTimeout(deseneaza, 0))
+    document.getElementById('verifica-randuri')?.addEventListener('click', render)
+    textarea.addEventListener('paste', () => setTimeout(render, 0))
   }
 </script>
 
 <style>
-  /* Un cont închis rămâne lizibil — este parte din registru — dar nu mai cere
-     atenție ca unul activ. */
+  /* A closed account stays legible — it is part of the register — but no longer
+     asks for attention the way an active one does. */
   .is-inchis td {
     color: var(--ink-muted);
   }
@@ -480,7 +484,8 @@ Prof. univ. dr. Elena Radu;elena.radu@ase.ro;cadru didactic;;;;`}
     background: var(--surface-sunken);
   }
 
-  /* Adresa și accesul, unul lângă altul: amândouă hotărăsc dacă omul poate intra. */
+  /* The address and the access, side by side: both decide whether the person
+     can get in. */
   .editor {
     display: grid;
     grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);

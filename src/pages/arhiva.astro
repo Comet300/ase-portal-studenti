@@ -84,14 +84,14 @@ const levels = {
 
     <div class="grid-auto">
       <Metrica
-        valoare={filtered.length}
-        eticheta={`${filtered.length === 1 ? 'lucrare' : 'lucrări'} în ${year?.label ?? ''}`}
+        value={filtered.length}
+        label={`${filtered.length === 1 ? 'lucrare' : 'lucrări'} în ${year?.label ?? ''}`}
       />
-      <Metrica valoare={levels.bachelor} eticheta={LEVEL_LABELS.bachelor.toLowerCase()} />
-      <Metrica valoare={levels.master} eticheta={LEVEL_LABELS.master.toLowerCase()} />
+      <Metrica value={levels.bachelor} label={LEVEL_LABELS.bachelor.toLowerCase()} />
+      <Metrica value={levels.master} label={LEVEL_LABELS.master.toLowerCase()} />
       <Metrica
-        valoare={grouped.length}
-        eticheta={grouped.length === 1 ? 'coordonator' : 'coordonatori'}
+        value={grouped.length}
+        label={grouped.length === 1 ? 'coordonator' : 'coordonatori'}
       />
     </div>
 

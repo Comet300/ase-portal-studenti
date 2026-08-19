@@ -3,28 +3,28 @@ import { recentEvents, unreadEvents } from '../lib/chat'
 import { timeAgo } from '../lib/repo'
 
 /**
- * Ce s-a întâmplat cât ai fost plecat.
+ * What happened while you were away.
  *
- * Emailul era singurul canal prin care portalul anunța ceva. Cine nu își
- * verifica inboxul — sau îl avea plin — nu afla că o cerere a fost aprobată, că
- * a primit o propunere sau că i s-a programat o consultație, decât dacă
- * deschidea din întâmplare ecranul potrivit.
+ * Email was the only channel through which the portal announced anything.
+ * Whoever did not check their inbox — or had it full — never found out that a
+ * request had been approved, that a proposal had arrived or that a consultation
+ * had been scheduled, unless they happened to open the right screen.
  *
- * Evenimentele există deja, scrise în firele de discuție de fiecare decizie.
- * Aici sunt doar adunate la un loc.
+ * The events already exist, written into the conversation threads by every
+ * decision. Here they are only gathered in one place.
  */
 
 interface Props {
-  /** Unde duce fiecare rând: firul de discuție, din perspectiva rolului. */
-  baseMesaje: string
+  /** Where each row leads: the conversation thread, from the role's point of view. */
+  messagesBase: string
 }
 
-const { baseMesaje } = Astro.props
+const { messagesBase } = Astro.props
 const u = Astro.locals.user!
 
-const [evenimente, necitite] = await Promise.all([recentEvents(u.id), unreadEvents(u.id)])
+const [events, necitite] = await Promise.all([recentEvents(u.id), unreadEvents(u.id)])
 
-const ETICHETE: Record<string, string> = {
+const EVENT_LABELS: Record<string, string> = {
   request_approved: 'Cerere aprobată',
   request_rejected: 'Cerere respinsă',
   request_expired: 'Cerere expirată',
@@ -37,36 +37,37 @@ const ETICHETE: Record<string, string> = {
 }
 
 /**
- * Unde duce o notificare.
+ * Where a notification leads.
  *
- * Toate duceau în firul de discuție, pentru că asta e tot ce știa un eveniment
- * despre sine. Dar „Cerere aprobată” înseamnă o decizie cu un motiv scris, iar
- * ea se citește în „Cererile mele”, nu în chat; „Consultație programată”
- * înseamnă un interval din program.
+ * All of them led into the conversation thread, because that is all an event
+ * knew about itself. But „Cerere aprobată” means a decision with a written
+ * reason, and that one is read in „Cererile mele”, not in the chat;
+ * „Consultație programată” means a slot in the schedule.
  *
- * Subiectul e păstrat ca tip și id, nu ca adresă, tocmai pentru că răspunsul
- * depinde de cine citește: același interval e pe două ecrane diferite pentru
- * student și pentru coordonator. Când nu se știe, rămâne firul — care conține
- * oricum evenimentul, scris în el la momentul deciziei.
+ * The subject is kept as a kind and an id, not as a URL, precisely because the
+ * answer depends on who is reading: the same slot is on two different screens
+ * for the student and for the coordinator. When it is not known, the thread
+ * remains — it holds the event anyway, written into it at the moment of the
+ * decision.
  */
-const eStudent = u.role === 'student'
+const isStudent = u.role === 'student'
 
-function destinatie(e: { subject_kind: string | null; subject_id: string | null; conversation_id: string }) {
-  const fir = `${baseMesaje}?conversatie=${e.conversation_id}`
+function destination(e: { subject_kind: string | null; subject_id: string | null; conversation_id: string }) {
+  const threadHref = `${messagesBase}?conversatie=${e.conversation_id}`
   switch (e.subject_kind) {
     case 'request':
-      return eStudent
+      return isStudent
         ? `/cererile-mele${e.subject_id ? `#cerere-${e.subject_id}` : ''}`
         : `/profesor/studenti?sectiune=cereri${e.subject_id ? `#cerere-${e.subject_id}` : ''}`
-    /* Fără ancoră: propunerile se afișează doar cât sunt deschise, în capul
-       paginii. Una acceptată sau refuzată nu mai are rând, iar un fragment către
-       el ar fi o legătură care nu duce nicăieri. */
+    /* No anchor: proposals are shown only while they are open, at the top of
+       the page. An accepted or declined one no longer has a row, and a fragment
+       pointing at it would be a link that leads nowhere. */
     case 'invitation':
-      return eStudent ? '/cererile-mele' : '/profesor/studenti?sectiune=invitatii'
+      return isStudent ? '/cererile-mele' : '/profesor/studenti?sectiune=invitatii'
     case 'slot':
-      return eStudent ? '/consultatii' : '/profesor/consultatii'
+      return isStudent ? '/consultatii' : '/profesor/consultatii'
     default:
-      return fir
+      return threadHref
   }
 }
 ---
@@ -83,20 +84,20 @@ function destinatie(e: { subject_kind: string | null; subject_id: string | null;
     <p class="clopotel__titlu">Notificări</p>
 
     {
-      evenimente.length === 0 ? (
+      events.length === 0 ? (
         <p class="clopotel__gol">
           Nimic nou. Aici ajung deciziile, propunerile și consultațiile programate.
         </p>
       ) : (
         <ul class="clopotel__lista">
-          {evenimente.map((e) => (
+          {events.map((e) => (
             <li>
               <a
-                class:list={['notificare', { 'is-necitit': !e.read_at }]}
-                href={destinatie(e)}
+                class:list={['notificare', { 'is-unread': !e.read_at }]}
+                href={destination(e)}
               >
                 <span class="notificare__eticheta">
-                  {ETICHETE[e.event_type ?? ''] ?? 'Actualizare'}
+                  {EVENT_LABELS[e.event_type ?? ''] ?? 'Actualizare'}
                 </span>
                 <span class="notificare__corp">{e.body}</span>
                 <span class="notificare__jos">
@@ -141,7 +142,7 @@ function destinatie(e: { subject_kind: string | null; subject_id: string | null;
     height: 19px;
   }
 
-  /* Punctul poartă numărul: „ai ceva” și „ai patru lucruri” cer reacții diferite. */
+  /* The dot carries the number: „ai ceva” and „ai patru lucruri” call for different reactions. */
   .clopotel__punct {
     position: absolute;
     top: 6px;
@@ -222,8 +223,8 @@ function destinatie(e: { subject_kind: string | null; subject_id: string | null;
     border-bottom: 0;
   }
 
-  /* Necitit este un marcaj pe margine, nu o spălare a rândului cu roșu. */
-  .notificare.is-necitit {
+  /* Unread is a mark on the edge, not a wash of red across the row. */
+  .notificare.is-unread {
     box-shadow: inset 3px 0 0 var(--info);
   }
 

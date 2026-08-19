@@ -18,41 +18,42 @@ import { LEVEL_LABELS, groupLabel, languageLabel } from '../lib/years'
 
 const u = Astro.locals.user!
 
-// Un cadru didactic care ajunge aici își vede propriile cereri (nu are), deci
-// îl trimitem în zona lui în loc să-i arătăm un ecran gol fără sens.
+// A member of the teaching staff who lands here sees their own requests (they
+// have none), so they are sent to their own area instead of a meaningless empty
+// screen.
 if (u.role !== 'student') return Astro.redirect('/profesor', 302)
 
 /**
- * Unde se află cererea în săptămâna de așteptare.
+ * Where the request stands in the week of waiting.
  *
- * Fereastra nu e scrisă în cod aici: se măsoară între depunere și expirare, ca
- * să rămână adevărată dacă `DECISION_WINDOW_DAYS` se schimbă vreodată.
+ * The window is not written in code here: it is measured between submission and
+ * expiry, so that it stays true if `DECISION_WINDOW_DAYS` ever changes.
  */
 /**
- * Cât mai e până la un termen, ca stare.
+ * How much is left until a deadline, as a state.
  *
- * Coada coordonatorului avea deja numărătoarea asta; partea care așteaptă —
- * studentul — primea doar o dată calendaristică.
+ * The coordinator's queue already had this count; the side that waits — the
+ * student — got only a calendar date.
  */
-function termenRamas(expiresAt: string | null | undefined) {
+function timeRemaining(expiresAt: string | null | undefined) {
   if (!expiresAt) return null
   const zile = Math.ceil((new Date(expiresAt).getTime() - Date.now()) / 86_400_000)
   if (zile < 0) return null
   return {
     text: zile === 0 ? 'expiră astăzi' : zile === 1 ? '1 zi rămasă' : `${zile} zile rămase`,
-    clasa: zile <= 2 ? 'badge--urgent' : 'badge--asteptare',
+    badgeClass: zile <= 2 ? 'badge--urgent' : 'badge--asteptare',
   }
 }
 
 function asteptare(submittedAt: string | null, expiresAt: string | null) {
   if (!submittedAt || !expiresAt) return null
 
-  const inceput = new Date(submittedAt).getTime()
-  const sfarsit = new Date(expiresAt).getTime()
-  const total = Math.max(1, Math.round((sfarsit - inceput) / 86_400_000))
-  const trecut = (Date.now() - inceput) / 86_400_000
+  const start = new Date(submittedAt).getTime()
+  const end = new Date(expiresAt).getTime()
+  const total = Math.max(1, Math.round((end - start) / 86_400_000))
+  const elapsed = (Date.now() - start) / 86_400_000
 
-  return { total, zi: Math.min(total, Math.max(1, Math.ceil(trecut))) }
+  return { total, zi: Math.min(total, Math.max(1, Math.ceil(elapsed))) }
 }
 
 const [requests, milestones, teachers, topics, invitations] = await Promise.all([
@@ -107,7 +108,7 @@ const shouldOpenForm = Boolean(openWith.teacher) && !hasActiveRequest
       }
     </header>
 
-    {/* ---------------------------------------------------- propuneri primite */}
+    {/* --------------------------------------------------- proposals received */}
     {
       pendingInvitations.map((i) => (
         <section class="propunere">
@@ -117,15 +118,15 @@ const shouldOpenForm = Boolean(openWith.teacher) && !hasActiveRequest
               <strong class="propunere__titlu">
                 {i.teacher_name} îți propune să îți coordoneze lucrarea
               </strong>
-              {/* O dată de expirare este o informație; câte zile mai sunt este
-                  un motiv să răspunzi. */}
+              {/* An expiry date is a piece of information; how many days are
+                  left is a reason to answer. */}
               <span class="muted text-xs">
                 Propunere primită {formatDate(i.created_at)}
               </span>
               {(() => {
-                const t = termenRamas(i.expires_at)
+                const t = timeRemaining(i.expires_at)
                 return t ? (
-                  <span class:list={['badge', t.clasa]} style="align-self:flex-start">
+                  <span class:list={['badge', t.badgeClass]} style="align-self:flex-start">
                     {t.text}
                   </span>
                 ) : null
@@ -219,10 +220,10 @@ const shouldOpenForm = Boolean(openWith.teacher) && !hasActiveRequest
 
                 {c.status === 'pending' && (
                   <>
-                    {/* Săptămâna de așteptare este intervalul în care studentul
-                        intră cel mai des în portal și găsea o singură propoziție
-                        cu o dată. Se vede unde e în ea, ce se întâmplă la capăt
-                        și ce poate face între timp. */}
+                    {/* The week of waiting is the stretch in which the student
+                        opens the portal most often, and found a single sentence
+                        with a date. It shows where they stand in it, what
+                        happens at the end and what they can do meanwhile. */}
                     {(() => {
                       const a = asteptare(c.submitted_at, c.expires_at)
                       return a ? (
@@ -288,9 +289,9 @@ const shouldOpenForm = Boolean(openWith.teacher) && !hasActiveRequest
                   </div>
                 )}
 
-                {/* O cerere retrasă rămânea o carcasă fără explicație și fără
-                    ieșire, deși retragerea este exact starea după care urmează,
-                    aproape întotdeauna, o cerere nouă. */}
+                {/* A withdrawn request stayed a shell with no explanation and
+                    no way out, even though withdrawal is exactly the state
+                    after which a new request almost always follows. */}
                 {(c.status === 'rejected' || c.status === 'expired' || c.status === 'withdrawn') && (
                   <div class="motiv">
                     <strong>
@@ -440,9 +441,9 @@ const shouldOpenForm = Boolean(openWith.teacher) && !hasActiveRequest
         </div>
 
         <div class="field">
-          {/* „Opțional” aparține etichetei, nu placeholderului: un placeholder
-              dispare la prima tastă, iar cine revine la câmp nu mai are de unde
-              să știe dacă e obligatoriu. */}
+          {/* „Opțional” belongs to the label, not to the placeholder: a
+              placeholder disappears at the first keystroke, and whoever comes
+              back to the field has no way left to know whether it is required. */}
           <label class="label" for="titlu_en">
             Titlul lucrării în engleză <span class="muted">(opțional)</span>
           </label>
@@ -463,8 +464,8 @@ const shouldOpenForm = Boolean(openWith.teacher) && !hasActiveRequest
           <span class="hint"><span id="contor-scop">0</span> caractere · minimum 40</span>
         </div>
 
-        {/* Obiectivele descriu lucrarea; motivația descrie alegerea. Coordonatorul
-            decide pe amândouă, iar a doua e cea care lipsea. */}
+        {/* The objectives describe the thesis; the motivation describes the choice.
+            The coordinator decides on both, and the second was the one missing. */}
         <div class="field">
           <label class="label" for="motivatie">De ce ai ales această temă</label>
           <textarea
@@ -516,8 +517,8 @@ const shouldOpenForm = Boolean(openWith.teacher) && !hasActiveRequest
     </form>
   </dialog>
 
-  {/* Refuzul cere un motiv: coordonatorul a scris o propunere personală și merită
-      să știe de ce nu s-a potrivit. */}
+  {/* Declining asks for a reason: the coordinator wrote a personal proposal and
+      deserves to know why it did not fit. */}
   <dialog id="dialog-refuz" aria-labelledby="titlu-refuz">
     <form method="POST" action="/api/invitatii" class="formular">
       <div class="formular__cap">
@@ -580,8 +581,8 @@ const shouldOpenForm = Boolean(openWith.teacher) && !hasActiveRequest
   count(objectivesField, 'contor-scop')
   count(motivationField, 'contor-motivatie')
 
-  // Temele se restrâng la coordonatorul ales, ca să nu se poată cere o temă
-  // care aparține altcuiva.
+  // The topics narrow to the chosen coordinator, so that a topic belonging to
+  // someone else cannot be requested.
   function syncTopics() {
     const chosen = teacherSelect?.value
     for (const o of [...topicSelect.options]) {
@@ -593,37 +594,38 @@ const shouldOpenForm = Boolean(openWith.teacher) && !hasActiveRequest
 
   teacherSelect?.addEventListener('change', () => {
     syncTopics()
-    // Schimbarea coordonatorului invalidează tema aleasă, deci și titlul luat din ea.
+    // Changing the coordinator invalidates the chosen topic, and so the title taken from it.
     fillTitleFromTopic()
   })
   syncTopics()
 
-  /* Titlul urmează tema aleasă, în ambele sensuri.
+  /* The title follows the chosen topic, in both directions.
    *
-   * Completa doar câmpul gol, deci a doua alegere nu schimba nimic și „propun o
-   * temă proprie" lăsa pe ecran titlul temei respinse. Se rescrie la fiecare
-   * schimbare, mai puțin dacă studentul a scris deja ceva de mână. */
-  let titluDinTema = ''
+   * It filled only the empty field, so a second choice changed nothing and
+   * „propun o temă proprie" left the title of the discarded topic on screen. It
+   * is rewritten on every change, unless the student has already written
+   * something by hand. */
+  let titleFromTopic = ''
 
   const fillTitleFromTopic = () => {
     const ales = topicSelect.selectedOptions[0]?.dataset.title ?? ''
-    const scrisDeMana = title.value.trim() !== '' && title.value !== titluDinTema
-    if (scrisDeMana) return
+    const writtenByHand = title.value.trim() !== '' && title.value !== titleFromTopic
+    if (writtenByHand) return
 
     title.value = ales
-    titluDinTema = ales
+    titleFromTopic = ales
   }
   topicSelect?.addEventListener('change', fillTitleFromTopic)
 
-  // Venind din catalog cu un coordonator (și poate o temă) deja aleși,
-  // formularul se deschide direct și cu titlul completat.
+  // Arriving from the catalogue with a coordinator (and perhaps a topic)
+  // already chosen, the form opens straight away and with the title filled in.
   if (dialog?.hasAttribute('data-deschide-imediat')) {
     fillTitleFromTopic()
     openDialog()
   }
 
   document.getElementById('spre-pas-2')?.addEventListener('click', () => {
-    // Validarea nativă rulează înainte de previzualizare.
+    // Native validation runs before the preview.
     if (
       !title.value ||
       objectivesField.value.length < 40 ||
@@ -650,14 +652,14 @@ const shouldOpenForm = Boolean(openWith.teacher) && !hasActiveRequest
     if (step2) step2.hidden = true
   })
 
-  /* --- refuzul unei propuneri ------------------------------------------- */
+  /* --- declining a proposal --------------------------------------------- */
 
   const refuz = document.getElementById('dialog-refuz') as HTMLDialogElement | null
   document.querySelectorAll<HTMLButtonElement>('[data-refuza]').forEach((b) => {
     b.addEventListener('click', () => {
-      const camp = document.getElementById('refuz-id') as HTMLInputElement | null
+      const invitationIdField = document.getElementById('refuz-id') as HTMLInputElement | null
       const nume = document.getElementById('refuz-nume')
-      if (camp) camp.value = b.dataset.refuza ?? ''
+      if (invitationIdField) invitationIdField.value = b.dataset.refuza ?? ''
       if (nume) nume.textContent = b.dataset.nume ?? 'coordonator'
       refuz?.showModal()
     })
@@ -666,11 +668,11 @@ const shouldOpenForm = Boolean(openWith.teacher) && !hasActiveRequest
     ?.querySelectorAll('[data-inchide-refuz]')
     .forEach((b) => b.addEventListener('click', () => refuz.close()))
 
-  /* --- retragerea cererii -------------------------------------------------
+  /* --- withdrawing the request --------------------------------------------
    *
-   * Retragerea era un câmp și un buton roșu la vedere permanentă, lângă restul
-   * cererii: se putea apăsa din greșeală, iar acțiunea nu se poate desface.
-   * Acum se cere de două ori. */
+   * Withdrawal was a field and a red button permanently in view, next to the
+   * rest of the request: it could be pressed by mistake, and the action cannot
+   * be undone. Now it is asked for twice. */
   document.querySelectorAll<HTMLButtonElement>('[data-retrage]').forEach((b) => {
     b.addEventListener('click', () => {
       const form = document.getElementById(`retragere-${b.dataset.retrage}`)
@@ -685,18 +687,18 @@ const shouldOpenForm = Boolean(openWith.teacher) && !hasActiveRequest
     b.addEventListener('click', () => {
       const id = b.dataset.anulezaRetragerea ?? b.dataset.anuleazaRetragerea
       const form = document.getElementById(`retragere-${id}`)
-      const declansator = document.querySelector<HTMLElement>(`[data-retrage="${id}"]`)
+      const trigger = document.querySelector<HTMLElement>(`[data-retrage="${id}"]`)
       if (form) form.hidden = true
-      if (declansator) {
-        declansator.hidden = false
-        declansator.focus()
+      if (trigger) {
+        trigger.hidden = false
+        trigger.focus()
       }
     })
   })
 </script>
 
 <style>
-  /* Săptămâna de așteptare, ca lungime pe ecran. Șapte segmente, câte unul pe zi. */
+  /* The week of waiting, as a length on screen. Seven segments, one per day. */
   .asteptare {
     display: flex;
     flex-direction: column;
@@ -745,8 +747,8 @@ const shouldOpenForm = Boolean(openWith.teacher) && !hasActiveRequest
     border-radius: var(--r-md);
     font-size: var(--t-sm);
   }
-  /* Propunerea nu este o notificare: e o decizie care așteaptă studentul, așa că
-     stă deasupra listei și poartă sigiliul roșu. */
+  /* A proposal is not a notification: it is a decision waiting for the student,
+     so it sits above the list and carries the red seal. */
   .propunere {
     display: flex;
     flex-direction: column;

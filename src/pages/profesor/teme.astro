@@ -4,11 +4,12 @@ import { teacherTopics } from '../../lib/repo'
 import { LANGUAGE_LABELS, languageLabel } from '../../lib/years'
 
 /**
- * Temele propuse de un cadru didactic.
+ * The topics proposed by a member of the teaching staff.
  *
- * Ecran propriu, nu un tab: catalogul de teme se editează la începutul sesiunii
- * și apoi rar, dar este ceea ce văd toți studenții care caută un coordonator —
- * îngropat sub „Studenți & Cereri" era greu de găsit tocmai când conta.
+ * A screen of its own, not a tab: the topic catalogue is edited at the start of
+ * the session and rarely afterwards, but it is what every student looking for a
+ * coordinator sees — buried under „Studenți & Cereri" it was hard to find
+ * exactly when it mattered.
  */
 
 const u = Astro.locals.user!
@@ -22,8 +23,9 @@ const teme = await teacherTopics(u.id)
 >
     <section class="panel">
       <div class="panel__header">
-        {/* Titlul paginii spune deja „Teme propuse”; antetul panoului repeta
-            cuvânt cu cuvânt și nu adăuga nimic. Aici e util numărul. */}
+        {/* The page title already says „Teme propuse”; the panel header
+            repeated it word for word and added nothing. What is useful
+            here is the count. */}
         <h2 class="section-title">În catalog</h2>
         <span class="muted text-sm">
           {teme.filter((t) => t.is_active).length} din {teme.length}
@@ -42,7 +44,7 @@ const teme = await teacherTopics(u.id)
       ) : (
         <ul class="teme">
           {teme.map((t) => (
-            <li class:list={['tema', { 'is-inactiva': !t.is_active }]}>
+            <li class:list={['tema', { 'is-inactive': !t.is_active }]}>
               <div class="tema__cap">
                 <span class="badge badge--taxon">
                   {t.level === 'master' ? 'Master' : 'Licență'}
@@ -60,8 +62,8 @@ const teme = await teacherTopics(u.id)
               <form method="POST" action="/api/teme" style="margin-top:auto">
                 <input type="hidden" name="actiune" value="comuta" />
                 <input type="hidden" name="tema_id" value={t.id} />
-                {/* Ghost pe fundal alb nu are contur, deci arăta ca un link, nu
-                    ca un buton — exact reproșul primit de două ori până acum. */}
+                {/* Ghost on a white background has no outline, so it looked like a
+                    link, not a button — exactly the complaint received twice so far. */}
                 <button class="btn btn--secondary btn--sm" type="submit">
                   {t.is_active ? 'Retrage din catalog' : 'Publică din nou'}
                 </button>
@@ -106,10 +108,10 @@ const teme = await teacherTopics(u.id)
             <input class="input" id="tema-locuri" name="locuri" type="number" min="1" max="20" value="2" />
           </div>
 
-          {/* Descrierea este singurul loc în care un student află despre ce e
-              vorba. Catalogul o afișa și o căuta de la început, dar formularul
-              nu o cerea niciodată, așa că fiecare temă publicată din portal
-              rămânea fără ea. */}
+          {/* The description is the only place where a student finds out what
+              the topic is about. The catalogue displayed it and searched it
+              from the start, but the form never asked for it, so every topic
+              published from the portal was left without one. */}
           <div class="field tema-noua__descriere">
             <label class="label" for="tema-descriere">Descriere</label>
             <textarea
@@ -142,10 +144,10 @@ const teme = await teacherTopics(u.id)
 </ProfesorLayout>
 
 <style>
-  /* Douăsprezece coloane, fiecare câmp cu deschiderea lui declarată.
-     `auto-fit` dădea tuturor aceeași lățime — un titlu de lucrare primea 160px,
-     la fel ca numărul de locuri — iar stilurile inline rămase de la varianta
-     flex băteau regula de mai jos și scoteau câmpurile unul peste altul. */
+  /* Twelve columns, each field with its own span declared.
+     `auto-fit` gave them all the same width — a thesis title got 160px, just
+     like the number of seats — and the inline styles left over from the flex
+     version beat the rule below and pushed the fields on top of one another. */
   .tema-noua {
     display: grid;
     grid-template-columns: repeat(12, minmax(0, 1fr));
@@ -207,7 +209,7 @@ const teme = await teacherTopics(u.id)
     border: 1px solid var(--border);
     border-radius: var(--r-md);
   }
-  .tema.is-inactiva {
+  .tema.is-inactive {
     opacity: 0.55;
   }
 

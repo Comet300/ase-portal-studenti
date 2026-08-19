@@ -16,16 +16,16 @@ export interface Conversation {
   peer_id: string
   peer_name: string
   peer_detail: string | null
-  /** Când a fost celălalt ultima dată în portal. Doar între cei doi. */
+  /** When the other person was last in the portal. Only between the two of them. */
   peer_seen: string | null
   peer_avatar: string | null
   last_message: string | null
   unread: number
-  /** Se mai poate scrie? Un fir fără o legătură vie rămâne doar de citit. */
+  /** Can it still be written to? A thread without a live pairing is read-only. */
   is_active: boolean
 }
 
-export interface MesajFisier {
+export interface MessageFile {
   id: string
   name: string
   mime: string | null
@@ -42,27 +42,28 @@ export interface Message {
   read_at: string | null
   sender_name: string
   /**
-   * Atașamentele mesajului, în ordinea încărcării.
+   * The message's attachments, in upload order.
    *
-   * Un `LEFT JOIN` pe `files` a fost de ajuns cât un mesaj avea cel mult un
-   * fișier. De când poate avea mai multe, aceeași îmbinare ar întoarce mesajul de
-   * trei ori — adică trei bule identice în fir, cu același text. Se adună în
-   * interogare, nu în pagină.
+   * A `LEFT JOIN` on `files` was enough while a message had at most one file.
+   * Now that it can have several, that same join would return the message three
+   * times — that is, three identical bubbles in the thread, with the same text.
+   * They are aggregated in the query, not in the page.
    */
-  files: MesajFisier[]
+  files: MessageFile[]
 }
 
 /**
- * Mai există o legătură vie între cei doi?
+ * Is there still a live pairing between the two?
  *
- * Un fir se deschidea la aprobarea unei cereri și rămânea deschis pentru
- * totdeauna — inclusiv dacă cererea era retrasă sau respinsă după. Rezultatul:
- * un student fără coordonator avea o conversație funcțională cu un cadru
- * didactic care nu îl coordona, iar POST-ul o accepta, pentru că autoriza doar
- * pe apartenența la conversație.
+ * A thread opened when a request was approved and stayed open forever —
+ * including when the request was withdrawn or rejected afterwards. The result:
+ * a student with no supervisor had a working conversation with a member of
+ * staff who was not supervising them, and the POST accepted it, because it
+ * authorised on membership of the conversation alone.
  *
- * Firul nu se ascunde — un motiv de respingere poate fi tot ce s-a spus vreodată
- * între ei, iar acolo trebuie să rămână găsibil. Devine doar de citit.
+ * The thread is not hidden — a rejection reason may be everything that was ever
+ * said between them, and it has to stay findable there. It only becomes
+ * read-only.
  */
 const PAIRING_LIVE = `(
   EXISTS (SELECT 1 FROM requests r
@@ -85,16 +86,16 @@ export function myConversations(userId: string, asStudent: boolean) {
             COALESCE(peer.academic_title, peer.student_number) AS peer_detail,
             peer.last_seen_at::text AS peer_seen,
             peer.avatar_path AS peer_avatar,
-            /* Un mesaj care e doar un fișier nu are text, deci previzualizarea
-               îl numește. Înainte se scria literal „(fișier atașat)” în corpul
-               mesajului, iar lista de conversații arăta acel șir în loc de
-               numele documentului trimis — un text de umplutură scăpat în
-               producție. */
+            /* A message that is only a file has no text, so the preview names
+               it. Before, the literal „(fișier atașat)” was written into the body
+               of the message, and the conversation list showed that string
+               instead of the name of the document that had been sent — filler
+               text that had escaped into production. */
             (SELECT COALESCE(
                       NULLIF(m.body, ''),
-                      /* Un mesaj poate purta mai multe fișiere: previzualizarea
-                         numește primul și spune câte mai vin după el, în loc să
-                         pretindă că a fost trimis unul singur. */
+                      /* A message can carry several files: the preview names
+                         the first and says how many more follow it, instead of
+                         pretending a single one was sent. */
                       (SELECT CASE WHEN count(*) > 1
                                    THEN (array_agg(f.original_name ORDER BY f.position, f.created_at))[1]
                                         || ' + ' || (count(*) - 1) || ' altele'
@@ -134,26 +135,26 @@ export function myConversation(userId: string, conversationId: string) {
   )
 }
 
-/** Câte mesaje se aduc implicit — de la coadă, ca într-o aplicație de mesaje. */
-export const MESAJE_PE_PAGINA = 40
+/** How many messages are fetched by default — from the tail, as in a messaging app. */
+export const MESSAGES_PER_PAGE = 40
 
 /**
- * Firul, de la coadă înainte.
+ * The thread, from the tail forwards.
  *
- * Se aduceau toate. O coordonare ține nouă luni, iar un fir de trei sute de
- * mesaje însemna trei sute de bule randate ca să se citească ultimele cinci —
- * cu tot cu fișierele lor și cu derularea la final, deci munca era vizibil
- * degeaba. Se aduc ultimele `limita`, în ordine crescătoare; restul rămâne la un
- * clic distanță.
+ * All of it was fetched. A supervision lasts nine months, and a thread of three
+ * hundred messages meant three hundred bubbles rendered so that the last five
+ * could be read — attachments and all, and with the scroll going to the end, so
+ * the work was visibly for nothing. The last `limit` are fetched, in ascending
+ * order; the rest stays one click away.
  *
- * `maiVechi` spune dacă a rămas ceva înaintea lor, ca pagina să nu ofere un buton
- * care nu aduce nimic.
+ * `olderCount` says whether anything is left before them, so that the page does
+ * not offer a button that brings back nothing.
  */
 export async function conversationMessages(
   userId: string,
   conversationId: string,
-  limita = MESAJE_PE_PAGINA,
-): Promise<{ mesaje: Message[]; maiVechi: number }> {
+  limit = MESSAGES_PER_PAGE,
+): Promise<{ mesaje: Message[]; olderCount: number }> {
   const [mesaje, total] = await Promise.all([
     query<Message>(
       `SELECT * FROM (
@@ -174,7 +175,7 @@ export async function conversationMessages(
           LIMIT $3
        ) recente
        ORDER BY created_at`,
-      [userId, conversationId, limita],
+      [userId, conversationId, limit],
     ),
     queryOne<{ n: number }>(
       `SELECT count(*)::int AS n
@@ -185,26 +186,27 @@ export async function conversationMessages(
     ),
   ])
 
-  return { mesaje, maiVechi: Math.max(0, (total?.n ?? 0) - mesaje.length) }
+  return { mesaje, olderCount: Math.max(0, (total?.n ?? 0) - mesaje.length) }
 }
 
 /**
- * Cât de departe a ajuns firul, fără să îl aducă.
+ * How far the thread has got, without fetching it.
  *
- * Sondajul care întreabă „a apărut ceva?” chema `conversationMessages`, deci
- * aducea tot firul — cu fișierele agregate pentru fiecare mesaj — la fiecare
- * cincisprezece secunde, ca să numere trei lucruri. Se numără în SQL. De când
- * firul se aduce paginat, ar fi și greșit: `total` ar fi fost mărimea ferestrei.
+ * The poll that asks „has anything appeared?” called `conversationMessages`, so
+ * it fetched the whole thread — with the files aggregated for every message —
+ * every fifteen seconds, in order to count three things. The counting is done in
+ * SQL. Now that the thread is fetched a page at a time it would also be wrong:
+ * `total` would have been the size of the window.
  */
-export function firRezumat(userId: string, conversationId: string) {
+export function threadSummary(userId: string, conversationId: string) {
   return queryOne<{ total: number; ultim: string | null; noi: number; peer_seen: string | null }>(
     `SELECT count(*)::int AS total,
             max(m.created_at)::text AS ultim,
             count(*) FILTER (WHERE m.sender_id <> $1 AND m.read_at IS NULL)::int AS noi,
-            /* Prezența celuilalt, luată din aceeași interogare pe care firul
-               deschis o face oricum la fiecare douăzeci de secunde: o cerere în
-               plus doar pentru asta ar fi fost o cerere degeaba. Se vede doar
-               între cei doi — apartenența e verificată chiar aici. */
+            /* The other person's presence, taken from the same query the open
+               thread makes anyway every twenty seconds: one extra request just
+               for this would have been a request for nothing. It is visible only
+               between the two of them — membership is checked right here. */
             (SELECT p.last_seen_at::text FROM users p
               WHERE p.id = CASE WHEN c.student_id = $1 THEN c.teacher_id ELSE c.student_id END)
               AS peer_seen
@@ -217,13 +219,14 @@ export function firRezumat(userId: string, conversationId: string) {
 }
 
 /**
- * „Am mai fost pe aici acum un minut.”
+ * „I was around here a minute ago.”
  *
- * Se scrie cel mult o dată pe minut, printr-un `WHERE` care compară ce e deja în
- * rând: altfel fiecare cerere a fiecărui utilizator ar fi un UPDATE. Nu aruncă —
- * un portal nu are voie să se oprească pentru că nu a putut nota o prezență.
+ * Written at most once a minute, through a `WHERE` that compares what is already
+ * in the row: otherwise every request of every user would be an UPDATE. It does
+ * not throw — a portal is not allowed to stop because it could not note a
+ * presence.
  */
-export async function atingePrezenta(userId: string): Promise<void> {
+export async function touchPresence(userId: string): Promise<void> {
   try {
     await execute(
       `UPDATE users
@@ -270,11 +273,12 @@ export async function postEvent(e: {
   /** Open the thread if the pair has none yet. Off for events that may precede one. */
   createConversation?: boolean
   /**
-   * Ce anume s-a întâmplat, ca notificarea să poată duce acolo.
+   * What exactly happened, so that the notification can lead there.
    *
-   * Se scrie subiectul, nu o adresă: aceeași consultație are alt ecran pentru
-   * student și pentru coordonator, iar o cale salvată acum ar fi îmbătrânit
-   * odată cu rutele. Fără el, notificarea deschide firul de discuție.
+   * The subject is stored, not an address: the same consultation has a different
+   * screen for the student and for the coordinator, and a path saved now would
+   * have aged along with the routes. Without it, the notification opens the
+   * conversation thread.
    */
   subjectKind?: 'request' | 'invitation' | 'slot'
   subjectId?: string | null
@@ -342,7 +346,7 @@ export async function ensureSupervisorConversation(studentId: string): Promise<s
   return row?.id ?? null
 }
 
-export interface Notificare {
+export interface NotificationRow {
   id: string
   event_type: string | null
   body: string
@@ -351,23 +355,23 @@ export interface Notificare {
   conversation_id: string
   subject_kind: 'request' | 'invitation' | 'slot' | null
   subject_id: string | null
-  /** Cine a produs evenimentul — celălalt din conversație, nu cititorul. */
+  /** Who produced the event — the other party in the conversation, not the reader. */
   peer_name: string
 }
 
 /**
- * Ce s-a întâmplat, pentru cineva care tocmai s-a întors.
+ * What happened, for somebody who has just come back.
  *
- * Portalul scria de la început fiecare decizie ca eveniment în firul perechii —
- * aprobări, respingeri, propuneri, consultații programate, locuri alocate. Nu
- * exista însă niciun loc care să le arate laolaltă: un student care nu își
- * citea emailul nu avea de unde afla că i s-a răspuns decât deschizând pe rând
- * fiecare ecran.
+ * The portal wrote every decision as an event in the pair's thread from the
+ * start — approvals, rejections, proposals, scheduled consultations, allocated
+ * seats. There was, however, no place that showed them together: a student who
+ * did not read their email had no way of finding out that they had been
+ * answered other than by opening every screen in turn.
  *
- * Fără tabel nou și fără coloană nouă: aceleași rânduri, citite altfel.
+ * No new table and no new column: the same rows, read differently.
  */
 export function recentEvents(userId: string, limit = 20) {
-  return query<Notificare>(
+  return query<NotificationRow>(
     `SELECT m.id, m.event_type, m.body, m.created_at, m.read_at, m.conversation_id,
             m.subject_kind, m.subject_id, peer.name AS peer_name
        FROM messages m
@@ -382,7 +386,7 @@ export function recentEvents(userId: string, limit = 20) {
   )
 }
 
-/** Câte dintre ele nu au fost încă văzute. */
+/** How many of them have not been seen yet. */
 export async function unreadEvents(userId: string): Promise<number> {
   const row = await queryOne<{ n: number }>(
     `SELECT count(*)::int AS n

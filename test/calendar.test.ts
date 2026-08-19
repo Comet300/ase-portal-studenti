@@ -3,25 +3,25 @@ import assert from 'node:assert/strict'
 import { monthLabel, startOfWeek, weekLabel } from '../src/lib/date.ts'
 
 /**
- * Gruparea pe săptămâni și pe luni.
+ * Grouping by week and by month.
  *
- * Sunt funcții de calendar, adică exact locul unde greșelile nu se văd: „luni”
- * calculat greșit mută un interval într-o săptămână vecină și nimeni nu observă
- * până nu se ratează o consultație. Duminica este capcana — `getDay()` o pune la
- * zero, deci o săptămână românească se termină cu ziua cu numărul cel mai mic.
+ * These are calendar functions, that is, exactly the place where mistakes do not
+ * show: a wrongly computed „luni” moves a slot into a neighbouring week and
+ * nobody notices until a consultation is missed. Sunday is the trap — `getDay()`
+ * puts it at zero, so a Romanian week ends with the lowest-numbered day.
  */
 
 describe('startOfWeek', () => {
   it('duce orice zi la lunea săptămânii ei', () => {
-    // 2026-08-03 este o luni.
-    for (const [zi, aștept] of [
-      ['2026-08-03', '2026-08-03'], // luni
-      ['2026-08-05', '2026-08-03'], // miercuri
-      ['2026-08-08', '2026-08-03'], // sâmbătă
-      ['2026-08-09', '2026-08-03'], // duminică — capcana
-      ['2026-08-10', '2026-08-10'], // luni următoare
+    // 2026-08-03 is a Monday.
+    for (const [zi, expected] of [
+      ['2026-08-03', '2026-08-03'], // Monday
+      ['2026-08-05', '2026-08-03'], // Wednesday
+      ['2026-08-08', '2026-08-03'], // Saturday
+      ['2026-08-09', '2026-08-03'], // Sunday — the trap
+      ['2026-08-10', '2026-08-10'], // the following Monday
     ] as const) {
-      assert.equal(startOfWeek(zi + 'T12:00:00'), aștept, zi)
+      assert.equal(startOfWeek(zi + 'T12:00:00'), expected, zi)
     }
   })
 
@@ -36,28 +36,28 @@ describe('startOfWeek', () => {
 })
 
 describe('weekLabel', () => {
-  const azi = '2026-08-05' // miercuri
+  const today = '2026-08-05' // Wednesday
 
   it('numește săptămânile din jurul celei curente', () => {
-    assert.equal(weekLabel('2026-08-03', azi).nume, 'Săptămâna aceasta')
-    assert.equal(weekLabel('2026-08-10', azi).nume, 'Săptămâna viitoare')
-    assert.equal(weekLabel('2026-07-27', azi).nume, 'Săptămâna trecută')
+    assert.equal(weekLabel('2026-08-03', today).name, 'Săptămâna aceasta')
+    assert.equal(weekLabel('2026-08-10', today).name, 'Săptămâna viitoare')
+    assert.equal(weekLabel('2026-07-27', today).name, 'Săptămâna trecută')
   })
 
   it('păstrează intervalul exact ca subtitlu al unui nume', () => {
-    const e = weekLabel('2026-08-03', azi)
+    const e = weekLabel('2026-08-03', today)
     assert.equal(e.interval, '3–9 august')
   })
 
   it('o săptămână depărtată se numește prin interval, fără subtitlu', () => {
-    const e = weekLabel('2026-09-14', azi)
-    assert.equal(e.nume, '14–20 septembrie')
+    const e = weekLabel('2026-09-14', today)
+    assert.equal(e.name, '14–20 septembrie')
     assert.equal(e.interval, null, 'nu se repetă ce e deja în nume')
   })
 
   it('o săptămână care traversează două luni le scrie pe amândouă', () => {
-    const e = weekLabel('2026-08-31', azi)
-    assert.equal(e.nume, '31 august – 6 septembrie')
+    const e = weekLabel('2026-08-31', today)
+    assert.equal(e.name, '31 august – 6 septembrie')
   })
 })
 

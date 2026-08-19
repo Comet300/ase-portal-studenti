@@ -4,43 +4,43 @@ import RandSlot from '../../components/RandSlot.astro'
 import { startOfWeek, supervisedStudents, teacherSlots, weekLabel } from '../../lib/repo'
 
 /**
- * Programul de consultații.
+ * The consultation schedule.
  *
- * Ecran propriu, nu un tab: este singurul lucru din portal cu o oră fixă, iar
- * un coordonator care vrea să deschidă două ore mâine nu ar trebui să treacă
- * prin triajul cererilor ca să ajungă la el.
+ * A screen of its own, not a tab: it is the only thing in the portal with a
+ * fixed hour, and a coordinator who wants to open two hours tomorrow should not
+ * have to go through the request triage to get to it.
  */
 
 const u = Astro.locals.user!
 const [sloturi, studenti] = await Promise.all([teacherSlots(u.id), supervisedStudents(u.id)])
 
-const azi = new Date().toISOString().slice(0, 10)
-const cuStudent = Astro.url.searchParams.get('cu') ?? ''
+const today = new Date().toISOString().slice(0, 10)
+const withStudentId = Astro.url.searchParams.get('cu') ?? ''
 
 /**
- * Programul, împărțit cum se citește.
+ * The schedule, split the way it is read.
  *
- * Erau treizeci de rânduri într-un singur tabel, în ordine cronologică — deci
- * intervalele trecute stăteau în capul listei, iar cele pe care se poate face
- * ceva începeau pe la jumătate, după derulare. Un program se consultă pe
- * săptămâni și aproape numai înainte.
+ * There were thirty rows in a single table, in chronological order — so past
+ * intervals sat at the head of the list, and the ones something can be done
+ * about started around halfway down, after scrolling. A schedule is consulted by
+ * weeks and almost only forwards.
  *
- * Ce a trecut nu se șterge: rămâne, numărat și strâns, pentru că cineva chiar
- * întreabă „când ne-am văzut ultima dată”.
+ * What has passed is not deleted: it stays, counted and gathered together,
+ * because somebody really does ask „when did we last see each other”.
  */
 const acum = Date.now()
-const viitoare = sloturi.filter((s) => new Date(s.ends_at).getTime() >= acum)
-const trecute = sloturi
+const upcoming = sloturi.filter((s) => new Date(s.ends_at).getTime() >= acum)
+const past = sloturi
   .filter((s) => new Date(s.ends_at).getTime() < acum)
   .sort((a, b) => (a.starts_at < b.starts_at ? 1 : -1))
 
-const saptamani = [
-  ...viitoare
-    .reduce((harta, s) => {
-      const luni = startOfWeek(s.starts_at)
-      harta.set(luni, [...(harta.get(luni) ?? []), s])
-      return harta
-    }, new Map<string, typeof viitoare>())
+const weeks = [
+  ...upcoming
+    .reduce((byWeek, s) => {
+      const monday = startOfWeek(s.starts_at)
+      byWeek.set(monday, [...(byWeek.get(monday) ?? []), s])
+      return byWeek
+    }, new Map<string, typeof upcoming>())
     .entries(),
 ].sort(([a], [b]) => (a < b ? -1 : 1))
 
@@ -53,8 +53,8 @@ const active = sloturi.filter((s) => !s.is_cancelled).length
   active="consultatii"
 >
 <div class="stack" id="consultatii">
-  {/* Programarea cu un student anume vine prima: e acțiunea cerută cel mai
-      des, iar orele deschise sunt fondul pe care se așază. */}
+  {/* Scheduling with one particular student comes first: it is the action asked
+      for most often, and open hours are the background it sits on. */}
   <section class="panel">
     <div class="panel__header">
       <h2 class="section-title">Programează o consultație</h2>
@@ -74,9 +74,10 @@ const active = sloturi.filter((s) => !s.is_cancelled).length
 
         <div class="programare">
           <div class="field programare__cine">
-            {/* O consultație poate fi cu mai mulți studenți deodată — trei care
-                lucrează pe același capitol nu au nevoie de trei ore separate.
-                Selectarea multiplă cere casete, nu o listă derulantă. */}
+            {/* A consultation can be with several students at once — three who
+                are working on the same chapter do not need three separate
+                hours. Multiple selection calls for checkboxes, not a drop-down
+                list. */}
             <span class="label" id="et-cu-cine">Cu cine</span>
             <fieldset class="alege-studenti" aria-labelledby="et-cu-cine" aria-describedby="numar-alesi">
               <label class="alege-studenti__toti">
@@ -90,7 +91,7 @@ const active = sloturi.filter((s) => !s.is_cancelled).length
                       type="checkbox"
                       name="student_id"
                       value={s.student_id}
-                      checked={s.student_id === cuStudent}
+                      checked={s.student_id === withStudentId}
                     />
                     <span class="student-optiune__corp">
                       <strong>{s.student_name}</strong>
@@ -102,17 +103,18 @@ const active = sloturi.filter((s) => !s.is_cancelled).length
               <p class="hint" id="numar-alesi" aria-live="polite" />
             </fieldset>
           </div>
-          {/* Coloana din dreapta este propriul ei teanc, nu celule în aceeași
-              grilă cu lista de studenți: altfel rândurile se întind ca să umple
-              înălțimea listei și apar goluri între „Ziua” și „Durata”. */}
+          {/* The right-hand column is its own stack, not cells in the same grid
+              as the student list: otherwise the rows stretch to fill the height
+              of the list and gaps appear between „Ziua” and „Durata”. */}
           <div class="programare__detalii">
             <div class="programare__pereche">
               <div class="field">
                 <label class="label" for="prog-zi">Ziua</label>
-                <input class="input" id="prog-zi" name="zi" type="date" min={azi} required />
+                <input class="input" id="prog-zi" name="zi" type="date" min={today} required />
               </div>
-              {/* Era un câmp numeric cu ore întregi, iar SQL-ul concatena „hours”:
-                  o consultație la 14:30 pur și simplu nu se putea exprima. */}
+              {/* This was a numeric field with whole hours, and the SQL
+                  concatenated „hours”: a consultation at 14:30 simply could not
+                  be expressed. */}
               <div class="field">
                 <label class="label" for="prog-ora">Ora</label>
                 <input class="input" id="prog-ora" name="ora_start" type="time" value="14:00" step="900" required />
@@ -175,8 +177,8 @@ const active = sloturi.filter((s) => !s.is_cancelled).length
     <div class="panel__header">
       <h2 class="section-title">Program de consultații</h2>
       <span class="muted text-sm">
-        {viitoare.length} {viitoare.length === 1 ? 'interval' : 'intervale'} de acum înainte
-        {trecute.length > 0 && ` · ${trecute.length} încheiate`}
+        {upcoming.length} {upcoming.length === 1 ? 'interval' : 'intervale'} de acum înainte
+        {past.length > 0 && ` · ${past.length} încheiate`}
         {active !== sloturi.length && ` · ${sloturi.length - active} anulate`}
       </span>
     </div>
@@ -201,42 +203,43 @@ const active = sloturi.filter((s) => !s.is_cancelled).length
               <th scope="col"><span class="visually-hidden">Acțiuni</span></th>
             </tr>
           </thead>
-          {saptamani.map(([luni, dinSaptamana]) => {
-            const et = weekLabel(luni, azi)
+          {weeks.map(([monday, weekSlots]) => {
+            const et = weekLabel(monday, today)
             return (
               <tbody>
                 <tr class="rand-grup">
                   <th colspan="5" scope="colgroup">
-                    {et.nume}
+                    {et.name}
                     {et.interval && <span class="muted"> · {et.interval}</span>}
                     <span class="muted">
-                      {' '}· {dinSaptamana.length}{' '}
-                      {dinSaptamana.length === 1 ? 'interval' : 'intervale'}
+                      {' '}· {weekSlots.length}{' '}
+                      {weekSlots.length === 1 ? 'interval' : 'intervale'}
                     </span>
                   </th>
                 </tr>
-                {dinSaptamana.map((s) => (
+                {weekSlots.map((s) => (
                   <RandSlot interval={s} />
                 ))}
               </tbody>
             )
           })}
 
-          {/* Ce s-a încheiat stă la coadă, nu în cap: singurele intervale pe care
-              se mai poate face ceva sunt cele care urmează. Fereastra listei este
-              de o zi — un istoric mai vechi nu există aici deloc, nici acum. */}
-          {trecute.length > 0 && (
+          {/* What has ended sits at the tail, not at the head: the only
+              intervals something can still be done about are the ones coming
+              up. The list's window is one day — an older history does not exist
+              here at all, not even now. */}
+          {past.length > 0 && (
             <tbody>
               <tr class="rand-grup rand-grup--stins">
                 <th colspan="5" scope="colgroup">
                   Încheiate
                   <span class="muted">
-                    {' '}· {trecute.length}{' '}
-                    {trecute.length === 1 ? 'interval' : 'intervale'}, din ultima zi
+                    {' '}· {past.length}{' '}
+                    {past.length === 1 ? 'interval' : 'intervale'}, din ultima zi
                   </span>
                 </th>
               </tr>
-              {trecute.map((s) => (
+              {past.map((s) => (
                 <RandSlot interval={s} incheiat />
               ))}
             </tbody>
@@ -252,7 +255,7 @@ const active = sloturi.filter((s) => !s.is_cancelled).length
         <div class="row row--wrap" style="gap:var(--s-3);align-items:flex-end">
           <div class="field" style="flex:1;min-width:160px">
             <label class="label" for="slot-zi">Ore deschise în ziua</label>
-            <input class="input" id="slot-zi" name="zi" type="date" min={azi} required />
+            <input class="input" id="slot-zi" name="zi" type="date" min={today} required />
           </div>
           <div class="field" style="min-width:96px">
             <label class="label" for="slot-start">De la</label>
@@ -302,11 +305,11 @@ const active = sloturi.filter((s) => !s.is_cancelled).length
 </ProfesorLayout>
 
 <style>
-  /* Capul de săptămână.
+  /* The week header.
    *
-   * Un tabel de treizeci de rânduri în ordine cronologică nu are repere: „ce am
-   * joi” cere numărat. Fiecare `tbody` este o săptămână, iar rândul acesta este
-   * titlul ei — lipicios sub antet, ca să nu se piardă la derulare. */
+   * A table of thirty rows in chronological order has no landmarks: „what have I
+   * got on Thursday” takes counting. Each `tbody` is one week, and this row is
+   * its title — sticky under the header, so it is not lost while scrolling. */
   .rand-grup th {
     position: sticky;
     top: 0;
@@ -325,10 +328,10 @@ const active = sloturi.filter((s) => !s.is_cancelled).length
     font-weight: 500;
   }
 
-  /* Douăsprezece coloane, aliniate sus.
-     Într-un rând flex, caseta cu studenți era înaltă de 330px iar „Ziua / Ora /
-     Durata” se centrau pe verticală față de ea — trei câmpuri plutind la
-     jumătatea unui gol, fără nicio linie comună. */
+  /* Twelve columns, aligned to the top.
+     In a flex row, the student box was 330px tall and „Ziua / Ora / Durata”
+     centred vertically against it — three fields floating in the middle of a
+     gap, with no common line. */
   .programare {
     display: grid;
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
@@ -357,8 +360,8 @@ const active = sloturi.filter((s) => !s.is_cancelled).length
     align-items: start;
   }
 
-  /* Lista de studenți se oprește la înălțimea coloanei din dreapta, ca cele două
-     coloane să se termine pe aceeași linie. */
+  /* The student list stops at the height of the right-hand column, so that the
+     two columns end on the same line. */
   .programare__cine .alege-studenti {
     flex: 1;
     min-height: 0;
@@ -399,9 +402,10 @@ const active = sloturi.filter((s) => !s.is_cancelled).length
     cursor: pointer;
   }
 
-  /* Lista tăia ultimul rând pe jumătate, fără bară de derulare vizibilă și fără
-     niciun semn că mai urmează cineva — arăta ca un defect de randare. Un umbrit
-     în josul cutiei spune că mai e, iar înălțimea se oprește pe un rând întreg. */
+  /* The list cut the last row in half, with no visible scrollbar and no sign at
+     all that somebody else followed — it looked like a rendering defect. A fade
+     at the bottom of the box says there is more, and the height stops on a whole
+     row. */
   .alege-studenti__lista {
     display: flex;
     flex-direction: column;
@@ -442,50 +446,50 @@ const active = sloturi.filter((s) => !s.is_cancelled).length
 </style>
 
 <script>
-  /* --- selecția studenților ---------------------------------------------- */
+  /* --- student selection --------------------------------------------------- */
 
   const toti = document.getElementById('toti-studentii') as HTMLInputElement | null
-  const casete = [...document.querySelectorAll<HTMLInputElement>('input[name="student_id"]')]
-  const contor = document.getElementById('numar-alesi')
-  const buton = document.getElementById('programeaza') as HTMLButtonElement | null
+  const boxes = [...document.querySelectorAll<HTMLInputElement>('input[name="student_id"]')]
+  const counterEl = document.getElementById('numar-alesi')
+  const submitButton = document.getElementById('programeaza') as HTMLButtonElement | null
 
-  function sincronizeaza() {
-    const alesi = casete.filter((c) => c.checked).length
+  function syncSelection() {
+    const alesi = boxes.filter((c) => c.checked).length
     if (toti) {
-      toti.checked = alesi === casete.length && casete.length > 0
-      toti.indeterminate = alesi > 0 && alesi < casete.length
+      toti.checked = alesi === boxes.length && boxes.length > 0
+      toti.indeterminate = alesi > 0 && alesi < boxes.length
     }
-    if (contor) {
-      contor.textContent =
+    if (counterEl) {
+      counterEl.textContent =
         alesi === 0
           ? 'Alege cel puțin un student.'
           : alesi === 1
             ? '1 student ales — primește invitația în calendar.'
             : `${alesi} studenți aleși — fiecare primește invitația în calendar.`
     }
-    if (buton) buton.disabled = alesi === 0
+    if (submitButton) submitButton.disabled = alesi === 0
   }
 
   toti?.addEventListener('change', () => {
-    casete.forEach((c) => (c.checked = toti.checked))
-    sincronizeaza()
+    boxes.forEach((c) => (c.checked = toti.checked))
+    syncSelection()
   })
-  casete.forEach((c) => c.addEventListener('change', sincronizeaza))
-  sincronizeaza()
+  boxes.forEach((c) => c.addEventListener('change', syncSelection))
+  syncSelection()
 
-  // Un interval online are nevoie de link, unul la facultate de adresă. Câmpul
-  // irelevant dispare în loc să rămână gol și obligatoriu.
+  // An online interval needs a link, one at the faculty needs an address. The
+  // irrelevant field disappears instead of staying empty and required.
   document.querySelectorAll<HTMLFormElement>('form').forEach((form) => {
     const mod = form.querySelector<HTMLSelectElement>('[data-mod]')
     if (!mod) return
 
-    const campLocatie = form.querySelector<HTMLElement>('[data-camp-locatie]')
+    const locationField = form.querySelector<HTMLElement>('[data-camp-locatie]')
     const link = form.querySelector<HTMLInputElement>('input[name="link_online"]')
     const optional = form.querySelector<HTMLElement>('[data-link-optional]')
 
     const sync = () => {
       const online = mod.value === 'online'
-      if (campLocatie) campLocatie.hidden = online
+      if (locationField) locationField.hidden = online
       if (link) link.required = online
       if (optional) optional.hidden = online
     }

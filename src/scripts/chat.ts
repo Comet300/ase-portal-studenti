@@ -1,23 +1,24 @@
 /**
- * Firul de discuție, pe client.
+ * The discussion thread, on the client.
  *
- * Restul portalului trimite prin POST clasic și reîncarcă pagina, ceea ce e în
- * regulă pentru un formular completat o dată. Într-o conversație nu este: la
- * fiecare replică se pierdea poziția în fir, iar mesajul tocmai trimis ajungea
- * sub marginea de jos. Aici — și numai aici — trimiterea se face din JavaScript.
+ * The rest of the portal submits through a plain POST and reloads the page,
+ * which is fine for a form filled in once. In a conversation it is not: on
+ * every reply the position in the thread was lost, and the message just sent
+ * ended up below the bottom edge. Here — and only here — sending is done from
+ * JavaScript.
  *
- * Formularul rămâne un formular adevărat: fără JavaScript se trimite normal.
+ * The form stays a real form: without JavaScript it submits normally.
  */
 
-import { prezenta } from '../lib/prezenta'
+import { prezenta } from '../lib/presence'
 
 const MAX = 15 * 1024 * 1024
-const APROAPE_DE_JOS = 200
+const NEAR_BOTTOM_PX = 200
 
-/* Aceeași listă ca pe server (lib/files.ts). E scrisă de două ori pentru că
- * scriptul de pe client nu poate importa din modulele de server, dar verificarea
- * care contează rămâne cea din API. */
-const EXTENSII = new Set([
+/* The same list as on the server (lib/files.ts). It is written down twice
+ * because the client script cannot import from the server modules, but the
+ * check that counts remains the one in the API. */
+const EXTENSIONS = new Set([
   'pdf', 'doc', 'docx', 'odt', 'rtf', 'txt', 'md',
   'xls', 'xlsx', 'csv', 'ods',
   'ppt', 'pptx', 'odp',
@@ -25,12 +26,12 @@ const EXTENSII = new Set([
   'zip',
 ])
 
-function extensiaAcceptata(nume: string): boolean {
+function isAllowedExtension(nume: string): boolean {
   const parte = nume.split('.').pop()
-  return !!parte && parte !== nume && EXTENSII.has(parte.toLowerCase())
+  return !!parte && parte !== nume && EXTENSIONS.has(parte.toLowerCase())
 }
 
-function marime(bytes: number): string {
+function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`
   if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
@@ -40,266 +41,270 @@ function acum(iso: string): string {
   const min = Math.floor((Date.now() - new Date(iso).getTime()) / 60000)
   if (min < 1) return 'acum'
   if (min < 60) return `acum ${min} min`
-  const ore = Math.floor(min / 60)
-  if (ore < 24) return `acum ${ore} ${ore === 1 ? 'oră' : 'ore'}`
-  const zile = Math.floor(ore / 24)
-  return `acum ${zile} ${zile === 1 ? 'zi' : 'zile'}`
+  const hours = Math.floor(min / 60)
+  if (hours < 24) return `acum ${hours} ${hours === 1 ? 'oră' : 'ore'}`
+  const days = Math.floor(hours / 24)
+  return `acum ${days} ${days === 1 ? 'zi' : 'zile'}`
 }
 
-export function porneste() {
+export function start() {
   const form = document.querySelector<HTMLFormElement>('.chat__compose')
   const input = document.querySelector<HTMLTextAreaElement>('.chat__input')
   const fisier = document.querySelector<HTMLInputElement>('.chat__compose input[type="file"]')
   const scroller = document.getElementById('chat-messages')
   const fir = document.querySelector<HTMLElement>('.chat__thread')
 
-  /* --- timpul relativ nu mai îngheață la randare -------------------------- */
-  const improspateaza = () => {
+  /* --- relative time no longer freezes at render -------------------------- */
+  const refreshTimes = () => {
     document.querySelectorAll<HTMLTimeElement>('time[data-relativ]').forEach((t) => {
       const iso = t.getAttribute('datetime')
       if (iso) t.textContent = acum(iso)
     })
   }
-  improspateaza()
-  setInterval(improspateaza, 60_000)
+  refreshTimes()
+  setInterval(refreshTimes, 60_000)
 
   if (!form || !input || !scroller) return
 
-  /* --- poziția în fir ------------------------------------------------------
+  /* --- the position in the thread --------------------------------------------
    *
-   * Saltul inițial este instantaneu — o derulare animată de la începutul unei
-   * conversații lungi este o animație pe care nimeni nu a cerut-o. Abia după el
-   * se activează derularea lină, pentru mesajele care urmează. */
-  const laJos = (lin = false) => {
-    scroller.scrollTo({ top: scroller.scrollHeight, behavior: lin ? 'smooth' : 'auto' })
+   * The initial jump is instant — an animated scroll from the beginning of a
+   * long conversation is an animation nobody asked for. Only after it does
+   * smooth scrolling get turned on, for the messages that follow. */
+  const scrollToBottom = (smooth = false) => {
+    scroller.scrollTo({ top: scroller.scrollHeight, behavior: smooth ? 'smooth' : 'auto' })
   }
 
-  const aproapeDeJos = () =>
-    scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < APROAPE_DE_JOS
+  const isNearBottom = () =>
+    scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < NEAR_BOTTOM_PX
 
-  laJos()
+  scrollToBottom()
   requestAnimationFrame(() => {
     scroller.style.scrollBehavior = 'smooth'
   })
 
-  const pilulaNoi = document.getElementById('mesaje-noi')
-  const arataPilula = () => {
-    if (pilulaNoi) pilulaNoi.hidden = aproapeDeJos()
+  const scrollPill = document.getElementById('mesaje-noi')
+  const toggleScrollPill = () => {
+    if (scrollPill) scrollPill.hidden = isNearBottom()
   }
-  scroller.addEventListener('scroll', arataPilula, { passive: true })
-  pilulaNoi?.addEventListener('click', () => laJos(true))
-  arataPilula()
+  scroller.addEventListener('scroll', toggleScrollPill, { passive: true })
+  scrollPill?.addEventListener('click', () => scrollToBottom(true))
+  toggleScrollPill()
 
-  /* --- atașamentele --------------------------------------------------------
+  /* --- the attachments -------------------------------------------------------
    *
-   * Mai multe, nu unul. Un capitol vine cu chestionarul și cu fișierul de date,
-   * iar înainte însemna trei mesaje pentru un singur gând — și trei emailuri
-   * către celălalt.
+   * Several of them, not one. A chapter comes with the questionnaire and with
+   * the data file, and before this that meant three messages for a single
+   * thought — and three emails to the other person.
    *
-   * Lista se ține aici, nu în `input.files`: un `drop` sau un `paste` trebuie să
-   * *adauge*, iar atribuirea către `files` înlocuiește tot. `input.files` se
-   * rescrie din listă la fiecare schimbare, ca trimiterea fără JavaScript să
-   * rămână corectă. */
-  const strat = document.getElementById('atasamente')
+   * The list is kept here, not in `input.files`: a `drop` or a `paste` has to
+   * *add*, whereas assigning to `files` replaces everything. `input.files` is
+   * rewritten from the list on every change, so that submitting without
+   * JavaScript stays correct. */
+  const attachmentTray = document.getElementById('atasamente')
   const lista = document.getElementById('atasamente-lista')
-  const chipBara = document.getElementById('atasamente-bara')
+  const progressBar = document.getElementById('atasamente-bara')
 
-  const MAX_FISIERE = 10
-  let alese: File[] = []
-  let inZbor: XMLHttpRequest | null = null
+  const MAX_FILES = 10
+  let chosen: File[] = []
+  let inFlight: XMLHttpRequest | null = null
 
-  /** Două fișiere sunt „același” dacă au nume, mărime și dată identice. */
-  const cheia = (f: File) => `${f.name}|${f.size}|${f.lastModified}`
+  /** Two files are “the same one” if name, size and date are identical. */
+  const fileKey = (f: File) => `${f.name}|${f.size}|${f.lastModified}`
 
-  function scrieInCamp() {
+  function syncFileInput() {
     if (!fisier) return
     const dt = new DataTransfer()
-    for (const f of alese) dt.items.add(f)
+    for (const f of chosen) dt.items.add(f)
     fisier.files = dt.files
   }
 
-  function deseneaza() {
-    if (!lista || !strat) return
+  function renderAttachments() {
+    if (!lista || !attachmentTray) return
     lista.textContent = ''
 
-    for (const [i, f] of alese.entries()) {
+    for (const [i, f] of chosen.entries()) {
       const li = document.createElement('li')
       li.className = 'atasament'
 
-      const icoana = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
-      icoana.setAttribute('viewBox', '0 0 24 24')
-      icoana.setAttribute('fill', 'none')
-      icoana.setAttribute('stroke', 'currentColor')
-      icoana.setAttribute('stroke-width', '1.6')
-      icoana.setAttribute('aria-hidden', 'true')
-      const cale = document.createElementNS('http://www.w3.org/2000/svg', 'path')
-      cale.setAttribute('d', 'M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6')
-      icoana.appendChild(cale)
+      const icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
+      icon.setAttribute('viewBox', '0 0 24 24')
+      icon.setAttribute('fill', 'none')
+      icon.setAttribute('stroke', 'currentColor')
+      icon.setAttribute('stroke-width', '1.6')
+      icon.setAttribute('aria-hidden', 'true')
+      const iconPath = document.createElementNS('http://www.w3.org/2000/svg', 'path')
+      iconPath.setAttribute('d', 'M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6')
+      icon.appendChild(iconPath)
 
-      const corp = document.createElement('span')
-      corp.className = 'atasament__corp'
+      const body = document.createElement('span')
+      body.className = 'atasament__corp'
       const nume = document.createElement('strong')
       nume.textContent = f.name
       nume.title = f.name
-      const dim = document.createElement('small')
-      dim.className = 'muted'
-      dim.textContent = marime(f.size)
-      corp.append(nume, dim)
+      const sizeEl = document.createElement('small')
+      sizeEl.className = 'muted'
+      sizeEl.textContent = formatSize(f.size)
+      body.append(nume, sizeEl)
 
-      const scoate = document.createElement('button')
-      scoate.className = 'atasament__scoate'
-      scoate.type = 'button'
-      scoate.setAttribute('aria-label', `Elimină ${f.name}`)
-      scoate.textContent = '✕'
-      scoate.addEventListener('click', () => {
-        // Cât urcă, același buton oprește încărcarea în loc să scoată un fișier.
-        if (inZbor) {
-          inZbor.abort()
+      const removeButton = document.createElement('button')
+      removeButton.className = 'atasament__scoate'
+      removeButton.type = 'button'
+      removeButton.setAttribute('aria-label', `Elimină ${f.name}`)
+      removeButton.textContent = '✕'
+      removeButton.addEventListener('click', () => {
+        // While it is uploading, the same button stops the upload instead
+        // of removing a file.
+        if (inFlight) {
+          inFlight.abort()
           return
         }
-        alese.splice(i, 1)
-        scrieInCamp()
-        deseneaza()
+        chosen.splice(i, 1)
+        syncFileInput()
+        renderAttachments()
         input?.focus()
       })
 
-      li.append(icoana, corp, scoate)
+      li.append(icon, body, removeButton)
       lista.appendChild(li)
     }
 
-    strat.hidden = alese.length === 0
-    if (chipBara) chipBara.style.width = '0%'
+    attachmentTray.hidden = chosen.length === 0
+    if (progressBar) progressBar.style.width = '0%'
   }
 
   /**
-   * Adaugă fișiere la cele deja alese, refuzând ce nu are ce căuta acolo.
+   * Adds files to the ones already chosen, refusing what has no business there.
    *
-   * Refuzul vine înainte de încărcare, nu după ce urcă 15 MB degeaba, iar
-   * duplicatele se opresc aici: același fișier tras de două ori ar ajunge de două
-   * ori în conversație, cu două rânduri în sertar.
+   * The refusal comes before the upload, not after 15 MB have gone up for
+   * nothing, and duplicates are stopped here: the same file dragged twice would
+   * end up twice in the conversation, with two rows in the files drawer.
    */
-  function adauga(fisiereNoi: File[]) {
-    const respinse: string[] = []
-    let plin = false
+  function addFiles(incoming: File[]) {
+    const rejectedNames: string[] = []
+    let hitLimit = false
 
-    for (const f of fisiereNoi) {
-      if (alese.length >= MAX_FISIERE) {
-        plin = true
+    for (const f of incoming) {
+      if (chosen.length >= MAX_FILES) {
+        hitLimit = true
         break
       }
       if (f.size > MAX) {
-        window.notifica?.(`„${f.name}” depășește 15 MB și nu poate fi atașat.`, 'error')
+        window.notify?.(`„${f.name}” depășește 15 MB și nu poate fi atașat.`, 'error')
         continue
       }
-      if (!extensiaAcceptata(f.name)) {
-        respinse.push(f.name)
+      if (!isAllowedExtension(f.name)) {
+        rejectedNames.push(f.name)
         continue
       }
-      if (alese.some((g) => cheia(g) === cheia(f))) continue
-      alese.push(f)
+      if (chosen.some((g) => fileKey(g) === fileKey(f))) continue
+      chosen.push(f)
     }
 
-    if (respinse.length === 1) {
-      window.notifica?.(
-        `„${respinse[0]}” nu este un tip acceptat. Trimite un document, o foaie de calcul, o imagine sau o arhivă.`,
+    if (rejectedNames.length === 1) {
+      window.notify?.(
+        `„${rejectedNames[0]}” nu este un tip acceptat. Trimite un document, o foaie de calcul, o imagine sau o arhivă.`,
         'error',
       )
-    } else if (respinse.length > 1) {
-      window.notifica?.(
-        `${respinse.length} fișiere nu au un tip acceptat: ${respinse.join(', ')}.`,
+    } else if (rejectedNames.length > 1) {
+      window.notify?.(
+        `${rejectedNames.length} fișiere nu au un tip acceptat: ${rejectedNames.join(', ')}.`,
         'error',
       )
     }
-    if (plin) {
-      window.notifica?.(
-        `Cel mult ${MAX_FISIERE} fișiere la un mesaj. Restul se trimit într-un al doilea mesaj.`,
+    if (hitLimit) {
+      window.notify?.(
+        `Cel mult ${MAX_FILES} fișiere la un mesaj. Restul se trimit într-un al doilea mesaj.`,
         'error',
       )
     }
 
-    scrieInCamp()
-    deseneaza()
+    syncFileInput()
+    renderAttachments()
   }
 
-  /** Fișiere venite din altă parte decât selectorul: trase, lipite, oricum. */
-  function preia(...noi: File[]) {
-    adauga(noi)
+  /** Files coming from somewhere other than the picker: dragged, pasted,
+   * however. */
+  function acceptFiles(...noi: File[]) {
+    addFiles(noi)
     input?.focus()
   }
 
-  /* Selectorul înlocuiește, nu adaugă: ce a rămas de la o alegere anterioară e
-   * deja în listă, iar `input.files` este rescris din ea imediat după. */
+  /* The picker replaces, it does not add: whatever is left over from an
+   * earlier choice is already in the list, and `input.files` is rewritten from
+   * it right afterwards. */
   fisier?.addEventListener('change', () => {
-    const dinSelector = [...(fisier.files ?? [])]
-    adauga(dinSelector.filter((f) => !alese.some((g) => cheia(g) === cheia(f))))
+    const fromPicker = [...(fisier.files ?? [])]
+    addFiles(fromPicker.filter((f) => !chosen.some((g) => fileKey(g) === fileKey(f))))
   })
 
   document.getElementById('alege-fisier')?.addEventListener('click', () => fisier?.click())
 
-  /* Unele browsere restaurează câmpurile la Înapoi, inclusiv fișierele: lista se
-   * ia de la ce este deja în câmp, altfel stratul rămâne ascuns peste fișiere pe
-   * care formularul le-ar trimite oricum. */
-  if (fisier?.files?.length) adauga([...fisier.files])
+  /* Some browsers restore the fields on Back, files included: the list is
+   * taken from what is already in the field, otherwise the tray stays hidden
+   * over files the form would submit anyway. */
+  if (fisier?.files?.length) addFiles([...fisier.files])
 
-  /* --- tras și lăsat peste fir ---------------------------------------------
+  /* --- dragged and dropped over the thread -----------------------------------
    *
-   * `dragenter` și `dragleave` se declanșează pentru fiecare copil peste care
-   * trece cursorul, deci starea se ține cu un contor de adâncime, nu cu un
-   * boolean care ar clipi. */
+   * `dragenter` and `dragleave` fire for every child the cursor passes over, so
+   * the state is kept with a depth counter, not with a boolean that would
+   * flicker. */
   if (fir) {
-    let adancime = 0
-    const opreste = (e: DragEvent) => {
+    let dragDepth = 0
+    const stopDrag = (e: DragEvent) => {
       e.preventDefault()
       e.stopPropagation()
     }
 
     fir.addEventListener('dragenter', (e) => {
-      opreste(e)
+      stopDrag(e)
       if (!e.dataTransfer?.types.includes('Files')) return
-      adancime++
+      dragDepth++
       fir.dataset.drop = ''
     })
-    fir.addEventListener('dragover', opreste)
+    fir.addEventListener('dragover', stopDrag)
     fir.addEventListener('dragleave', (e) => {
-      opreste(e)
-      adancime = Math.max(0, adancime - 1)
-      if (adancime === 0) delete fir.dataset.drop
+      stopDrag(e)
+      dragDepth = Math.max(0, dragDepth - 1)
+      if (dragDepth === 0) delete fir.dataset.drop
     })
     fir.addEventListener('drop', (e) => {
-      opreste(e)
-      adancime = 0
+      stopDrag(e)
+      dragDepth = 0
       delete fir.dataset.drop
-      // Toate, nu primul: cine trage trei fișiere le-a ales pe trei.
+      // All of them, not the first: whoever drags three files chose three.
       const noi = [...(e.dataTransfer?.files ?? [])]
-      if (noi.length) preia(...noi)
+      if (noi.length) acceptFiles(...noi)
     })
   }
 
-  // Un fișier scăpat pe lângă fir ar deschide browserul peste portal.
+  // A file dropped beside the thread would have the browser open it over the
+  // portal.
   window.addEventListener('dragover', (e) => e.preventDefault())
   window.addEventListener('drop', (e) => e.preventDefault())
 
-  /* --- lipit din clipboard -------------------------------------------------- */
+  /* --- pasted from the clipboard ------------------------------------------ */
   input.addEventListener('paste', (e) => {
-    const itemi = [...(e.clipboardData?.items ?? [])].filter((i) => i.kind === 'file')
-    if (!itemi.length) return
-    const noi = itemi
+    const items = [...(e.clipboardData?.items ?? [])].filter((i) => i.kind === 'file')
+    if (!items.length) return
+    const noi = items
       .map((i) => i.getAsFile())
       .filter((f): f is File => f !== null)
-      .map((brut, idx) => {
-        const ext = (brut.type.split('/')[1] || 'png').replace('jpeg', 'jpg')
-        // Numele lipsește la o captură de ecran; două lipite deodată nu au voie
-        // să primească același nume inventat.
-        return brut.name
-          ? brut
-          : new File([brut], `captura-${Date.now()}-${idx + 1}.${ext}`, { type: brut.type })
+      .map((pasted, idx) => {
+        const ext = (pasted.type.split('/')[1] || 'png').replace('jpeg', 'jpg')
+        // The name is missing on a screen capture; two pasted at once are not
+        // allowed to receive the same invented name.
+        return pasted.name
+          ? pasted
+          : new File([pasted], `captura-${Date.now()}-${idx + 1}.${ext}`, { type: pasted.type })
       })
     if (!noi.length) return
     e.preventDefault()
-    preia(...noi)
+    acceptFiles(...noi)
   })
 
-  /* --- tastatura ------------------------------------------------------------ */
+  /* --- the keyboard ------------------------------------------------------- */
   input.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
@@ -308,13 +313,15 @@ export function porneste() {
     }
     if (e.key !== 'Escape') return
 
-    // Escape desface pe rând: întâi atașamentul, apoi textul, apoi focusul.
+    // Escape undoes one thing at a time: first the attachment, then the text,
+    // then the focus.
     e.stopPropagation()
-    // Escape scoate ultimul atașament, nu toate: pe rând, ca orice desfacere.
-    if (alese.length) {
-      alese.pop()
-      scrieInCamp()
-      deseneaza()
+    // Escape removes the last attachment, not all of them: one at a time, like
+    // any undoing.
+    if (chosen.length) {
+      chosen.pop()
+      syncFileInput()
+      renderAttachments()
       return
     }
     if (input.value) {
@@ -330,12 +337,12 @@ export function porneste() {
     input.style.height = `${Math.min(input.scrollHeight, 160)}px`
   })
 
-  /* --- trimiterea ----------------------------------------------------------
+  /* --- the sending -----------------------------------------------------------
    *
-   * XMLHttpRequest, nu fetch: numai el raportează progresul unei încărcări, iar
-   * un capitol de 12 MB fără niciun semn este exact momentul în care omul apasă
-   * a doua oară. */
-  function bulaProvizorie(text: string, numeFisiere: string[]): HTMLElement {
+   * XMLHttpRequest, not fetch: only it reports the progress of an upload, and a
+   * chapter of 12 MB with no sign of life is exactly the moment when the person
+   * presses a second time. */
+  function pendingBubble(text: string, fileNames: string[]): HTMLElement {
     const el = document.createElement('article')
     el.className = 'bubble bubble--mine is-pending'
 
@@ -345,7 +352,7 @@ export function porneste() {
       p.textContent = text
       el.appendChild(p)
     }
-    for (const nume of numeFisiere) {
+    for (const nume of fileNames) {
       const f = document.createElement('span')
       f.className = 'bubble__file'
       f.textContent = nume
@@ -363,203 +370,204 @@ export function porneste() {
   form.addEventListener('submit', (e) => {
     const text = input.value.trim()
 
-    if (!text && alese.length === 0) {
+    if (!text && chosen.length === 0) {
       e.preventDefault()
-      window.notifica?.('Scrie un mesaj sau atașează un fișier.', 'error')
+      window.notify?.('Scrie un mesaj sau atașează un fișier.', 'error')
       return
     }
 
     e.preventDefault()
-    if (inZbor) return
+    if (inFlight) return
 
-    const date = new FormData(form)
-    const numeAlese = alese.map((f) => f.name)
-    const octetiTotal = alese.reduce((n, f) => n + f.size, 0)
-    const bula = bulaProvizorie(text, numeAlese)
-    scroller.appendChild(bula)
-    laJos(true)
+    const payload = new FormData(form)
+    const chosenNames = chosen.map((f) => f.name)
+    const totalBytes = chosen.reduce((n, f) => n + f.size, 0)
+    const bubble = pendingBubble(text, chosenNames)
+    scroller.appendChild(bubble)
+    scrollToBottom(true)
 
     input.value = ''
     input.style.height = 'auto'
     input.focus()
 
     const xhr = new XMLHttpRequest()
-    inZbor = xhr
+    inFlight = xhr
     xhr.open('POST', form.action)
     xhr.setRequestHeader('accept', 'application/json')
 
-    /* Progresul este al cererii, deci al tuturor fișierelor împreună — de aceea
-     * bara este una, sub strat, iar mărimea scrisă este suma lor. */
-    if (alese.length > 0 && chipBara) {
-      const primaDimensiune = lista?.querySelector<HTMLElement>('.atasament__corp small')
+    /* The progress belongs to the request, so to all the files together — that
+     * is why there is a single bar, under the tray, and the size written out is
+     * their sum. */
+    if (chosen.length > 0 && progressBar) {
+      const firstSizeEl = lista?.querySelector<HTMLElement>('.atasament__corp small')
       xhr.upload.addEventListener('progress', (ev) => {
         if (!ev.lengthComputable) return
         const pct = Math.round((ev.loaded / ev.total) * 100)
-        chipBara.style.width = `${pct}%`
-        if (primaDimensiune && alese.length === 1) {
-          primaDimensiune.textContent = `${pct}% din ${marime(octetiTotal)}`
+        progressBar.style.width = `${pct}%`
+        if (firstSizeEl && chosen.length === 1) {
+          firstSizeEl.textContent = `${pct}% din ${formatSize(totalBytes)}`
         }
       })
     }
 
-    const gata = () => {
-      inZbor = null
-      alese = []
+    const finish = () => {
+      inFlight = null
+      chosen = []
       if (fisier) fisier.value = ''
-      deseneaza()
+      renderAttachments()
     }
 
     xhr.addEventListener('load', () => {
-      gata()
+      finish()
       if (xhr.status >= 200 && xhr.status < 400) {
-        // Firul se reîncarcă o dată, ca bula provizorie să fie înlocuită de cea
-        // adevărată — cu ora, cu starea de citit și cu fișierul atașat.
-        location.href = String(date.get('redirect') || location.pathname)
+        // The thread reloads once, so that the pending bubble is replaced by
+        // the real one — with the time, the read state and the attached file.
+        location.href = String(payload.get('redirect') || location.pathname)
         return
       }
-      esueaza(bula, date)
+      markFailed(bubble, payload)
     })
 
     xhr.addEventListener('error', () => {
-      gata()
-      esueaza(bula, date)
+      finish()
+      markFailed(bubble, payload)
     })
 
     xhr.addEventListener('abort', () => {
-      gata()
-      bula.remove()
-      window.notifica?.('Trimiterea a fost oprită.')
+      finish()
+      bubble.remove()
+      window.notify?.('Trimiterea a fost oprită.')
     })
 
-    xhr.send(date)
+    xhr.send(payload)
   })
 
-  function esueaza(bula: HTMLElement, date: FormData) {
-    bula.classList.remove('is-pending')
-    bula.classList.add('is-failed')
+  function markFailed(bubble: HTMLElement, payload: FormData) {
+    bubble.classList.remove('is-pending')
+    bubble.classList.add('is-failed')
 
-    const meta = bula.querySelector('.bubble__time')
+    const meta = bubble.querySelector('.bubble__time')
     if (meta) meta.textContent = 'netrimis'
 
-    const reia = document.createElement('button')
-    reia.type = 'button'
-    reia.className = 'bubble__reia'
-    reia.textContent = 'Reîncearcă'
-    reia.addEventListener('click', () => {
+    const retryButton = document.createElement('button')
+    retryButton.type = 'button'
+    retryButton.className = 'bubble__reia'
+    retryButton.textContent = 'Reîncearcă'
+    retryButton.addEventListener('click', () => {
       const x = new XMLHttpRequest()
       x.open('POST', form!.action)
       x.addEventListener('load', () => {
         if (x.status >= 200 && x.status < 400) {
-          location.href = String(date.get('redirect') || location.pathname)
+          location.href = String(payload.get('redirect') || location.pathname)
         }
       })
-      x.send(date)
+      x.send(payload)
     })
-    bula.appendChild(reia)
+    bubble.appendChild(retryButton)
 
-    window.notifica?.('Mesajul nu a plecat. Verifică legătura și reîncearcă.', 'error')
+    window.notify?.('Mesajul nu a plecat. Verifică legătura și reîncearcă.', 'error')
   }
 
-  /* --- sertarul cu fișiere -------------------------------------------------- */
-  const sertar = document.getElementById('fisiere-drawer')
+  /* --- the files drawer --------------------------------------------------- */
+  const filesDrawer = document.getElementById('fisiere-drawer')
   const comuta = document.getElementById('comuta-fisiere')
 
-  const setSertar = (deschis: boolean) => {
-    if (!sertar) return
-    sertar.hidden = !deschis
-    comuta?.setAttribute('aria-expanded', String(deschis))
+  const setFilesDrawer = (open: boolean) => {
+    if (!filesDrawer) return
+    filesDrawer.hidden = !open
+    comuta?.setAttribute('aria-expanded', String(open))
 
-    if (deschis) {
-      sertar.querySelector<HTMLElement>('input, button, a')?.focus()
+    if (open) {
+      filesDrawer.querySelector<HTMLElement>('input, button, a')?.focus()
       return
     }
-    // Focusul se întoarce doar dacă era înăuntru: altfel l-am fura de unde a
-    // ajuns între timp.
-    if (sertar.contains(document.activeElement)) comuta?.focus()
+    // The focus goes back only if it was inside: otherwise we would steal it
+    // from wherever it has landed in the meantime.
+    if (filesDrawer.contains(document.activeElement)) comuta?.focus()
   }
 
-  comuta?.addEventListener('click', () => setSertar(sertar?.hidden ?? true))
-  document.getElementById('inchide-fisiere')?.addEventListener('click', () => setSertar(false))
+  comuta?.addEventListener('click', () => setFilesDrawer(filesDrawer?.hidden ?? true))
+  document.getElementById('inchide-fisiere')?.addEventListener('click', () => setFilesDrawer(false))
 
-  /* --- sertarul cu contextul lucrării -------------------------------------- */
+  /* --- the thesis context drawer ------------------------------------------ */
 
-  /* Sub 1200px coloana din dreapta nu încape, iar până acum pur și simplu
-   * dispărea: titlul lucrării, termenele și coordonatorul nu existau pe tabletă
-   * și pe telefon. Aceeași mecanică ca la fișiere — deschis, se aude ca sertar;
-   * la lățime mare butonul nu se vede, deci `hidden` nu se pune niciodată și
-   * coloana rămâne coloană. */
+  /* Below 1200px the right-hand column does not fit, and until now it simply
+   * disappeared: the thesis title, the deadlines and the supervisor did not
+   * exist on a tablet or on a phone. The same mechanics as for the files —
+   * open, announced as a drawer; at a large width the button is not visible, so
+   * `hidden` is never set and the column stays a column. */
   const context = document.getElementById('chat-context')
-  const comutaContext = document.getElementById('comuta-context')
+  const contextToggle = document.getElementById('comuta-context')
 
-  const setContext = (deschis: boolean) => {
+  const setContext = (open: boolean) => {
     if (!context) return
-    context.hidden = !deschis
-    comutaContext?.setAttribute('aria-expanded', String(deschis))
-    if (deschis) {
+    context.hidden = !open
+    contextToggle?.setAttribute('aria-expanded', String(open))
+    if (open) {
       context.querySelector<HTMLElement>('a, button')?.focus()
       return
     }
-    if (context.contains(document.activeElement)) comutaContext?.focus()
+    if (context.contains(document.activeElement)) contextToggle?.focus()
   }
 
-  // Pornește închis pe ecran îngust, fără să atingă nimic pe ecran lat.
-  if (context && comutaContext && comutaContext.offsetParent !== null) {
+  // Starts closed on a narrow screen, without touching anything on a wide one.
+  if (context && contextToggle && contextToggle.offsetParent !== null) {
     context.hidden = true
   }
 
-  comutaContext?.addEventListener('click', () => setContext(context?.hidden ?? true))
+  contextToggle?.addEventListener('click', () => setContext(context?.hidden ?? true))
   document.getElementById('inchide-context')?.addEventListener('click', () => setContext(false))
 
-  /* Trecerea peste 1200px cu sertarul închis lăsa coloana ascunsă pe un ecran
-   * unde ea trebuie să fie mereu vizibilă. */
-  const lat = window.matchMedia('(min-width: 1201px)')
-  const potrivesteLatimea = () => {
+  /* Crossing above 1200px with the drawer closed left the column hidden on a
+   * screen where it must always be visible. */
+  const wide = window.matchMedia('(min-width: 1201px)')
+  const matchWidth = () => {
     if (!context) return
-    if (lat.matches) context.hidden = false
-    else if (comutaContext?.getAttribute('aria-expanded') !== 'true') context.hidden = true
+    if (wide.matches) context.hidden = false
+    else if (contextToggle?.getAttribute('aria-expanded') !== 'true') context.hidden = true
   }
-  lat.addEventListener('change', potrivesteLatimea)
-  potrivesteLatimea()
+  wide.addEventListener('change', matchWidth)
+  matchWidth()
 
   document.addEventListener('keydown', (e) => {
     if (e.target === input) return
-    if (e.key === 'Escape' && sertar && !sertar.hidden) setSertar(false)
-    if (e.key === 'Escape' && context && !context.hidden && comutaContext?.offsetParent !== null) {
+    if (e.key === 'Escape' && filesDrawer && !filesDrawer.hidden) setFilesDrawer(false)
+    if (e.key === 'Escape' && context && !context.hidden && contextToggle?.offsetParent !== null) {
       setContext(false)
     }
   })
 
   document.addEventListener('click', (e) => {
-    if (!sertar || sertar.hidden) return
+    if (!filesDrawer || filesDrawer.hidden) return
     const t = e.target as Node
-    if (sertar.contains(t) || comuta?.contains(t)) return
-    setSertar(false)
+    if (filesDrawer.contains(t) || comuta?.contains(t)) return
+    setFilesDrawer(false)
   })
 
-  /* --- căutarea în sertar --------------------------------------------------- */
+  /* --- the search inside the drawer --------------------------------------- */
   const cauta = document.getElementById('cauta-fisier') as HTMLInputElement | null
   cauta?.addEventListener('input', () => {
     const q = cauta.value.trim().toLowerCase()
-    let vizibile = 0
-    sertar?.querySelectorAll<HTMLElement>('[data-nume-fisier]').forEach((li) => {
-      const seVede = !q || (li.dataset.numeFisier ?? '').includes(q)
-      li.hidden = !seVede
-      if (seVede) vizibile++
+    let visibleCount = 0
+    filesDrawer?.querySelectorAll<HTMLElement>('[data-nume-fisier]').forEach((li) => {
+      const isVisible = !q || (li.dataset.numeFisier ?? '').includes(q)
+      li.hidden = !isVisible
+      if (isVisible) visibleCount++
     })
 
-    /* Fișierele stau acum pe luni, iar o lună din care nu mai rămâne nimic după
-     * filtrare ar fi un cap de grup fără grup — „august, 3 fișiere”, urmat de
-     * nimic. Grupul dispare împreună cu conținutul lui. */
-    sertar?.querySelectorAll<HTMLElement>('[data-luna]').forEach((grup) => {
-      const cuFisiere = [...grup.querySelectorAll<HTMLElement>('[data-nume-fisier]')]
-      grup.hidden = cuFisiere.length > 0 && cuFisiere.every((li) => li.hidden)
+    /* The files are grouped by month now, and a month with nothing left after
+     * filtering would be a group heading without a group — „august, 3 fișiere”,
+     * followed by nothing. The group disappears together with its content. */
+    filesDrawer?.querySelectorAll<HTMLElement>('[data-luna]').forEach((grup) => {
+      const filesInGroup = [...grup.querySelectorAll<HTMLElement>('[data-nume-fisier]')]
+      grup.hidden = filesInGroup.length > 0 && filesInGroup.every((li) => li.hidden)
     })
 
-    const gol = document.getElementById('fisiere-fara-rezultat')
-    if (gol) gol.hidden = vizibile > 0
+    const emptyMessage = document.getElementById('fisiere-fara-rezultat')
+    if (emptyMessage) emptyMessage.hidden = visibleCount > 0
   })
 
-  /* --- primul mesaj -------------------------------------------------------- */
+  /* --- the first message -------------------------------------------------- */
   document.querySelectorAll<HTMLButtonElement>('[data-inceput]').forEach((b) => {
     b.addEventListener('click', () => {
       input.value = b.dataset.inceput ?? ''
@@ -570,63 +578,65 @@ export function porneste() {
 
   if (!scroller.querySelector('.bubble')) input.focus()
 
-  /* --- mesajele care sosesc între timp -------------------------------------
+  /* --- the messages that arrive in the meantime ------------------------------
    *
-   * Nimic nu ajungea într-o conversație deschisă fără reîncărcare manuală: doi
-   * oameni care își scriau simultan nu vedeau nimic până apăsa unul F5.
+   * Nothing reached an open conversation without a manual reload: two people
+   * writing to each other at the same time saw nothing until one pressed F5.
    *
-   * Interogarea este ieftină — un număr, nu conținut — și se oprește complet
-   * când fila nu e la vedere, ca un portal lăsat deschis peste noapte să nu
-   * ceară nimic. Când apare ceva, pagina nu se schimbă sub mână: apare o pilulă
-   * pe care o apeși dacă vrei. */
-  const idConversatie = new URLSearchParams(location.search).get('conversatie')
-  const pilula = document.getElementById('mesaje-primite')
+   * The query is cheap — a count, not content — and it stops completely when
+   * the tab is out of sight, so that a portal left open overnight asks for
+   * nothing. When something turns up, the page does not change under your hand:
+   * a pill appears, which you press if you want to. */
+  const conversationId = new URLSearchParams(location.search).get('conversatie')
+  const newMessagesPill = document.getElementById('mesaje-primite')
 
-  if (idConversatie && pilula) {
-    /* Reperul este câte mesaje avea firul, nu câte s-au randat: fereastra e de
-     * patruzeci, iar un fir de trei sute ar fi părut brusc plin de mesaje noi. */
-    const dinPagina = Number(
+  if (conversationId && newMessagesPill) {
+    /* The reference point is how many messages the thread had, not how many
+     * were rendered: the window is forty, and a thread of three hundred would
+     * suddenly have looked full of new messages. */
+    const fromPage = Number(
       document.querySelector<HTMLElement>('.chat')?.dataset.total ?? '',
     )
-    const start = Number.isFinite(dinPagina) && dinPagina > 0
-      ? dinPagina
+    const renderedTotal = Number.isFinite(fromPage) && fromPage > 0
+      ? fromPage
       : scroller.querySelectorAll('.bubble, .eveniment').length
-    let cunoscute = start
+    let known = renderedTotal
 
-    const verifica = async () => {
-      if (document.hidden || inZbor) return
+    const poll = async () => {
+      if (document.hidden || inFlight) return
       try {
-        const r = await fetch(`/api/fir?conversatie=${encodeURIComponent(idConversatie)}`, {
+        const r = await fetch(`/api/fir?conversatie=${encodeURIComponent(conversationId)}`, {
           headers: { accept: 'application/json' },
         })
         if (!r.ok) return
         const d = (await r.json()) as { total?: number; vazut?: string | null }
 
-        /* Prezența se împrospătează la fiecare tic, indiferent dacă a apărut vreun
-         * mesaj: „în portal acum” trebuie să înceteze să fie adevărat singur. */
-        const eticheta = document.querySelector<HTMLElement>('[data-prezenta]')
-        if (eticheta) {
+        /* Presence is refreshed on every tick, whether or not a message has
+         * turned up: „în portal acum” has to stop being true on its own. */
+        const presenceLabelEl = document.querySelector<HTMLElement>('[data-prezenta]')
+        if (presenceLabelEl) {
           const text = prezenta(d.vazut ?? null)
-          if (text) eticheta.textContent = text
+          if (text) presenceLabelEl.textContent = text
         }
 
-        if (typeof d.total !== 'number' || d.total <= cunoscute) return
+        if (typeof d.total !== 'number' || d.total <= known) return
 
-        cunoscute = d.total
-        const cate = d.total - start
-        pilula.textContent =
-          cate === 1 ? '1 mesaj nou — arată' : `${cate} mesaje noi — arată`
-        pilula.hidden = false
+        known = d.total
+        const newCount = d.total - renderedTotal
+        newMessagesPill.textContent =
+          newCount === 1 ? '1 mesaj nou — arată' : `${newCount} mesaje noi — arată`
+        newMessagesPill.hidden = false
       } catch {
-        // O rețea căzută nu are voie să umple consola: reîncercăm la următorul tic.
+        // A downed network must not fill up the console: we retry on the
+        // next tick.
       }
     }
 
-    pilula.addEventListener('click', () => location.reload())
+    newMessagesPill.addEventListener('click', () => location.reload())
 
-    setInterval(verifica, 20_000)
+    setInterval(poll, 20_000)
     document.addEventListener('visibilitychange', () => {
-      if (!document.hidden) verifica()
+      if (!document.hidden) poll()
     })
   }
 }

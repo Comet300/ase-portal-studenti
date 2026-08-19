@@ -11,9 +11,9 @@ export function renderDoc(title: string, body: string, reference?: string): stri
   return `<!doctype html>
 <html lang="ro"><head><meta charset="utf-8"><title>${escapeHtml(title)}</title>
 <style>
-  /* Numărul paginii în subsol: o cerere semnată circulă pe hârtie prin
-     secretariat, iar o foaie desprinsă dintr-un teanc trebuie să spună din ce
-     document face parte și a câta este. */
+  /* The page number in the footer: a signed request travels on paper through
+     the secretariat, and a sheet that comes loose from a stack has to say which
+     document it is part of and which page it is. */
   @page {
     size: A4;
     margin: 25mm 20mm;

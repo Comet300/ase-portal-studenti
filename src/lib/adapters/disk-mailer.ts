@@ -4,49 +4,50 @@ import { join } from 'node:path'
 import type { Attachment, Mailer, MailMessage, MailResult } from '../ports'
 
 /**
- * Cutia poștală de pe disc.
+ * The mailbox on disk.
  *
- * Portalul trimite douăsprezece feluri de mail — decizii, invitații, consultații
- * anulate, linkuri de acces — și niciunul nu se putea vedea în afara producției:
- * local nu pleca nimic, iar `console.warn` spunea doar că nu a plecat. Deci
- * fiecare schimbare de conținut sau de atașament se verifica pe oameni adevărați.
+ * The portal sends twelve kinds of mail — decisions, invitations, cancelled
+ * consultations, access links — and none of them could be seen outside
+ * production: locally nothing went out, and `console.warn` only said that it had
+ * not gone out. So every change of content or of attachment was checked on real
+ * people.
  *
- * Aici mailul se scrie ca fișier `.eml`, formatul pe care îl deschide orice client
- * de mail. Se dă dublu clic și se vede exact ce vede destinatarul: antetele,
- * randarea HTML, și dacă invitația din calendar se importă sau nu.
+ * Here the mail is written as an `.eml` file, the format that any mail client
+ * opens. Double-click it and you see exactly what the recipient sees: the
+ * headers, the HTML rendering, and whether the calendar invitation imports.
  *
- * MIME scris de mână, din același motiv ca zip-ul: `multipart/mixed` cu granițe
- * și base64 pe linii de 76 de caractere este o pagină de cod, iar o bibliotecă de
- * mail ar fi a patra dependență a portalului pentru o unealtă de dezvoltare.
+ * MIME written by hand, for the same reason as the zip: `multipart/mixed` with
+ * boundaries and base64 on lines of 76 characters is one page of code, while a
+ * mail library would be the portal's fourth dependency, for a development tool.
  */
 
 export interface DiskMailerOptions {
   from: string
-  /** Unde se scriu fișierele. */
+  /** Where the files are written. */
   dir: string
 }
 
-/** Antet care poate conține diacritice: RFC 2047, cuvânt codat în base64. */
-function antet(valoare: string): string {
+/** A header that may contain diacritics: RFC 2047, word encoded in base64. */
+function encodeHeader(value: string): string {
   // eslint-disable-next-line no-control-regex
-  if (/^[\x20-\x7e]*$/.test(valoare)) return valoare
-  return `=?UTF-8?B?${Buffer.from(valoare, 'utf8').toString('base64')}?=`
+  if (/^[\x20-\x7e]*$/.test(value)) return value
+  return `=?UTF-8?B?${Buffer.from(value, 'utf8').toString('base64')}?=`
 }
 
-/** Base64 pe linii de 76 de caractere, cum cere RFC 2045. */
-function base64Rupt(b: Buffer): string {
+/** Base64 on lines of 76 characters, as RFC 2045 requires. */
+function wrapBase64(b: Buffer): string {
   return (b.toString('base64').match(/.{1,76}/g) ?? []).join('\r\n')
 }
 
-function parteAtasament(a: Attachment, granita: string): string {
-  const octeti = typeof a.content === 'string' ? Buffer.from(a.content, 'utf8') : a.content
+function attachmentPart(a: Attachment, boundary: string): string {
+  const bytes = typeof a.content === 'string' ? Buffer.from(a.content, 'utf8') : a.content
   return [
-    `--${granita}`,
+    `--${boundary}`,
     `Content-Type: ${a.contentType ?? 'application/octet-stream'}; name="${a.filename}"`,
     'Content-Transfer-Encoding: base64',
     `Content-Disposition: attachment; filename="${a.filename}"`,
     '',
-    base64Rupt(octeti),
+    wrapBase64(bytes),
     '',
   ].join('\r\n')
 }
@@ -54,71 +55,71 @@ function parteAtasament(a: Attachment, granita: string): string {
 export function createDiskMailer(options: DiskMailerOptions): Mailer {
   return {
     async send(message: MailMessage): Promise<MailResult> {
-      const granita = `portal-${randomUUID()}`
-      const acum = new Date().toUTCString()
+      const boundary = `portal-${randomUUID()}`
+      const now = new Date().toUTCString()
 
-      const bucati = [
-        `From: ${antet(options.from)}`,
+      const parts = [
+        `From: ${encodeHeader(options.from)}`,
         `To: ${message.to}`,
-        `Subject: ${antet(message.subject)}`,
-        `Date: ${acum}`,
+        `Subject: ${encodeHeader(message.subject)}`,
+        `Date: ${now}`,
         'MIME-Version: 1.0',
-        `Content-Type: multipart/mixed; boundary="${granita}"`,
+        `Content-Type: multipart/mixed; boundary="${boundary}"`,
         '',
-        // Text și HTML în alternativă: clientul alege, ca la un mail adevărat.
-        `--${granita}`,
-        `Content-Type: multipart/alternative; boundary="${granita}-alt"`,
+        // Text and HTML as alternatives: the client picks, as with real mail.
+        `--${boundary}`,
+        `Content-Type: multipart/alternative; boundary="${boundary}-alt"`,
         '',
         ...(message.text
           ? [
-              `--${granita}-alt`,
+              `--${boundary}-alt`,
               'Content-Type: text/plain; charset=UTF-8',
               'Content-Transfer-Encoding: base64',
               '',
-              base64Rupt(Buffer.from(message.text, 'utf8')),
+              wrapBase64(Buffer.from(message.text, 'utf8')),
               '',
             ]
           : []),
-        `--${granita}-alt`,
+        `--${boundary}-alt`,
         'Content-Type: text/html; charset=UTF-8',
         'Content-Transfer-Encoding: base64',
         '',
-        base64Rupt(Buffer.from(message.html, 'utf8')),
+        wrapBase64(Buffer.from(message.html, 'utf8')),
         '',
-        `--${granita}-alt--`,
+        `--${boundary}-alt--`,
         '',
-        ...(message.attachments ?? []).map((a) => parteAtasament(a, granita)),
-        `--${granita}--`,
+        ...(message.attachments ?? []).map((a) => attachmentPart(a, boundary)),
+        `--${boundary}--`,
         '',
       ]
 
-      /* Numele fișierului începe cu ora, ca `ls` să le dea în ordinea trimiterii,
-       * și conține destinatarul și subiectul, ca să se poată găsi fără să fie
-       * deschise unul câte unul. */
-      const ceas = new Date().toISOString().replace(/[:.]/g, '-')
-      const scurt = message.subject
+      /* The file name starts with the time, so that `ls` gives them in the
+       * order they were sent, and it holds the recipient and the subject, so
+       * they can be found without being opened one by one. */
+      const stamp = new Date().toISOString().replace(/[:.]/g, '-')
+      const slug = message.subject
         .normalize('NFD')
         .replace(/[\u0300-\u036f]/g, '')
         .replace(/[^A-Za-z0-9]+/g, '-')
         .replace(/^-|-$/g, '')
         .slice(0, 60)
         .toLowerCase()
-      const nume = `${ceas}__${message.to.replace(/[^A-Za-z0-9@._-]/g, '_')}__${scurt || 'mail'}.eml`
+      const filename = `${stamp}__${message.to.replace(/[^A-Za-z0-9@._-]/g, '_')}__${slug || 'mail'}.eml`
 
       try {
         await mkdir(options.dir, { recursive: true })
-        await writeFile(join(options.dir, nume), bucati.join('\r\n'), 'utf8')
+        await writeFile(join(options.dir, filename), parts.join('\r\n'), 'utf8')
       } catch (err) {
-        // Aceeași promisiune ca la Resend: nu aruncă niciodată.
+        // The same promise as with Resend: it never throws.
         console.error('[mail] nu s-a putut scrie în cutia de pe disc', err)
         return { ok: false, error: String(err) }
       }
 
-      const cate = message.attachments?.length ?? 0
+      const attachmentCount = message.attachments?.length ?? 0
       console.log(
-        `[mail] scris ${nume}${cate > 0 ? ` (${cate} ${cate === 1 ? 'atașament' : 'atașamente'})` : ''}`,
+        `[mail] scris ${filename}${attachmentCount > 0 ? ` (${attachmentCount} ${attachmentCount === 1 ? 'atașament' : 'atașamente'})` : ''}`,
       )
-      return { ok: true, id: nume }
+      return { ok: true, id: filename }
     },
   }
 }

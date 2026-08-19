@@ -3,39 +3,39 @@ import assert from 'node:assert/strict'
 import { formAction } from '../src/lib/forms.ts'
 import { id } from '../src/lib/ids.ts'
 import { internalPath } from '../src/lib/http.ts'
-import { prezenta } from '../src/lib/prezenta.ts'
-import { numeleEcranului } from '../src/lib/navigare.ts'
+import { prezenta } from '../src/lib/presence.ts'
+import { screenName } from '../src/lib/navigation.ts'
 
 /**
- * Cele patru funcții mici de care atârnă lucruri mari.
+ * The four small functions that big things hang off.
  *
- * `formAction` a fost bug-ul care a făcut două butoane de ștergere să nu facă
- * nimic. `id` este singurul filtru dintre un parametru din adresă și o
- * interogare. `internalPath` este singurul lucru care oprește un redirect către
- * altă gazdă. Niciuna nu are mai de zece linii, și exact de aceea nimeni nu se
- * uită la ele din nou.
+ * `formAction` was the bug that made two delete buttons do nothing. `id` is the
+ * only filter between a parameter out of the address and a query.
+ * `internalPath` is the only thing that stops a redirect to another host. None
+ * of them is more than ten lines long, and that is exactly why nobody looks at
+ * them again.
  */
 
-/** Un `FormData` construit ca de un browser: ordinea din document se păstrează. */
-function formular(perechi: [string, string][]): FormData {
+/** A `FormData` built the way a browser builds one: document order is kept. */
+function formData(pairs: [string, string][]): FormData {
   const f = new FormData()
-  for (const [k, v] of perechi) f.append(k, v)
+  for (const [k, v] of pairs) f.append(k, v)
   return f
 }
 
 describe('formAction', () => {
   it('ia valoarea butonului apăsat', () => {
-    assert.equal(formAction(formular([['actiune', 'sterge']])), 'sterge')
+    assert.equal(formAction(formData([['actiune', 'sterge']])), 'sterge')
   })
 
-  /* Bug-ul care a ascuns două ștergeri.
+  /* The bug that hid two deletions.
    *
-   * Un formular cu două verbe avea două câmpuri numite `actiune` — unul ascuns cu
-   * valoarea implicită și unul pe buton. `FormData.get` întoarce *prima* intrare,
-   * adică mereu pe cea implicită, deci ștergerea nu se întâmpla niciodată și nu
-   * apărea nicio eroare. Fallbackul are alt nume acum. */
+   * A form with two verbs had two fields named `actiune` — one hidden, carrying
+   * the default value, and one on the button. `FormData.get` returns the *first*
+   * entry, that is always the default one, so the deletion never happened and no
+   * error showed up. The fallback has a different name now. */
   it('nu confundă valoarea implicită cu cea a butonului', () => {
-    const f = formular([
+    const f = formData([
       ['actiune_implicita', 'actualizeaza'],
       ['actiune', 'sterge'],
     ])
@@ -43,11 +43,11 @@ describe('formAction', () => {
   })
 
   it('cade pe valoarea implicită când niciun buton nu a trimis una', () => {
-    assert.equal(formAction(formular([['actiune_implicita', 'actualizeaza']])), 'actualizeaza')
+    assert.equal(formAction(formData([['actiune_implicita', 'actualizeaza']])), 'actualizeaza')
   })
 
   it('un buton cu valoare goală nu ascunde valoarea implicită', () => {
-    const f = formular([
+    const f = formData([
       ['actiune_implicita', 'actualizeaza'],
       ['actiune', ''],
     ])
@@ -117,8 +117,8 @@ describe('prezenta', () => {
     assert.equal(prezenta(new Date(Date.now() + 60_000).toISOString()), null)
   })
 
-  /* Nu trebuie să se poată deduce minutajul: asta este diferența dintre a ajuta
-   * și a supraveghea. */
+  /* The exact minute count must not be deducible: that is the difference
+   * between helping and keeping watch. */
   it('nu scurge un minutaj exact', () => {
     for (const m of [4, 17, 43]) {
       assert.equal(prezenta(acum(m)), 'a fost în portal acum câteva minute', `${m} min dau același text`)
@@ -128,15 +128,15 @@ describe('prezenta', () => {
 
 describe('numeleEcranului', () => {
   it('numește ecranele portalului', () => {
-    assert.equal(numeleEcranului('/profesor/studenti'), 'Studenți & Cereri')
-    assert.equal(numeleEcranului('/coordonatori'), 'Coordonatori & Teme')
+    assert.equal(screenName('/profesor/studenti'), 'Studenți & Cereri')
+    assert.equal(screenName('/coordonatori'), 'Coordonatori & Teme')
   })
 
   it('ignoră întrebarea și fragmentul: nu schimbă ecranul', () => {
-    assert.equal(numeleEcranului('/profesor/studenti?sectiune=cereri#cerere-1'), 'Studenți & Cereri')
+    assert.equal(screenName('/profesor/studenti?sectiune=cereri#cerere-1'), 'Studenți & Cereri')
   })
 
   it('nu inventează un nume pentru o cale necunoscută', () => {
-    assert.equal(numeleEcranului('/ceva/inexistent'), null)
+    assert.equal(screenName('/ceva/inexistent'), null)
   })
 })

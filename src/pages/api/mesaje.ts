@@ -2,11 +2,11 @@ import type { APIRoute } from 'astro'
 import { myConversation } from '../../lib/chat'
 import { queryOne, transaction } from '../../lib/db'
 import { template, sendEmail, html, quote } from '../../lib/mail'
-import { MAX_BYTES, extensiePermisa, saveFile, tipDupaExtensie } from '../../lib/files'
+import { MAX_BYTES, isAllowedExtension, saveFile, mimeForExtension } from '../../lib/files'
 import { deadEnd, redirect, redirectWithNotice, sessionExpired } from '../../lib/http'
 import { id as formId } from '../../lib/ids'
 
-/** Trimite un mesaj, cu atașament opțional. */
+/** Sends a message, with an optional attachment. */
 export const POST: APIRoute = async ({ request, locals, url }) => {
   const u = locals.user
   if (!u) return sessionExpired()
@@ -16,28 +16,28 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
   const body = String(form.get('body') ?? '').trim()
   const redirectTo = String(form.get('redirect') ?? '/mesaje')
 
-  /* Mai multe fișiere, nu unul.
+  /* Several files, not one.
    *
-   * Un capitol vine cu chestionarul și cu fișierul de date; erau trei mesaje
-   * pentru un singur gând, fiecare cu propriul email către celălalt. `getAll`
-   * pentru că `get` întoarce doar prima intrare — exact greșeala care a ascuns
-   * două butoane de ștergere mai devreme în auditul acesta. */
-  const alese = form
+   * A chapter arrives with the questionnaire and with the data file; that was
+   * three messages for a single thought, each with its own email to the other
+   * side. `getAll` because `get` returns only the first entry — exactly the
+   * mistake that hid two delete buttons earlier in this audit. */
+  const attachments = form
     .getAll('file')
     .filter((f): f is File => f instanceof File && f.size > 0)
 
   if (!conversationId) return deadEnd(400, 'Conversație neidentificată', 'Deschide conversația din lista de mesaje și încearcă din nou.')
 
-  // Apartenența la conversație este verificată în interogare.
+  // Membership of the conversation is checked in the query.
   const conversation = await myConversation(u.id, conversationId)
   if (!conversation) return deadEnd(404, 'Conversația nu a fost găsită', 'Fie nu există, fie nu face parte din conversațiile tale.')
 
-  /* Apartenența nu este de ajuns.
+  /* Membership is not enough.
    *
-   * Un fir deschis la aprobarea unei cereri rămânea funcțional și după ce cererea
-   * era retrasă sau respinsă, iar POST-ul îl accepta pentru că verifica doar dacă
-   * ești una dintre cele două părți. Firul rămâne de citit; scrisul cere o
-   * legătură vie. */
+   * A thread opened when a request was approved stayed usable even after the
+   * request was withdrawn or rejected, and the POST accepted it because it only
+   * checked whether you are one of the two parties. The thread stays readable;
+   * writing requires a live link. */
   if (!conversation.is_active) {
     return redirectWithNotice(
       redirectTo,
@@ -46,77 +46,78 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
     )
   }
 
-  if (!body && alese.length === 0) {
+  if (!body && attachments.length === 0) {
     return redirect(redirectTo)
   }
 
-  /* Câte fișiere pot însoți un mesaj.
+  /* How many files may accompany a message.
    *
-   * Nu o limită tehnică, ci una a memoriei: octeții tuturor se citesc înainte de
-   * tranzacție, ca o eroare de scriere să nu lase mesajul fără ele. Zece × 15 MB
-   * este plafonul, și el se spune. */
-  const MAX_FISIERE = 10
-  if (alese.length > MAX_FISIERE) {
+   * Not a technical limit, but a memory one: the bytes of all of them are read
+   * before the transaction, so that a write error does not leave the message
+   * without them. Ten × 15 MB is the ceiling, and it is stated. */
+  const MAX_FILES = 10
+  if (attachments.length > MAX_FILES) {
     return redirectWithNotice(
       redirectTo,
-      `Poți atașa cel mult ${MAX_FISIERE} fișiere la un mesaj. Trimite restul într-un al doilea mesaj.`,
+      `Poți atașa cel mult ${MAX_FILES} fișiere la un mesaj. Trimite restul într-un al doilea mesaj.`,
       true,
     )
   }
 
-  // Verificat înainte de a citi octeții în memorie: altfel un fișier de 200 MB
-  // este încărcat integral doar ca să fie refuzat la scriere.
-  const preaMare = alese.find((f) => f.size > MAX_BYTES)
-  if (preaMare) {
+  // Checked before the bytes are read into memory: otherwise a 200 MB file is
+  // loaded in full only to be refused at write time.
+  const tooLarge = attachments.find((f) => f.size > MAX_BYTES)
+  if (tooLarge) {
     return redirectWithNotice(
       redirectTo,
-      `„${preaMare.name}” depășește ${Math.round(MAX_BYTES / (1024 * 1024))} MB. Mesajul nu a fost trimis.`,
+      `„${tooLarge.name}” depășește ${Math.round(MAX_BYTES / (1024 * 1024))} MB. Mesajul nu a fost trimis.`,
       true,
     )
   }
 
-  // Verificarea de pe client poate fi ocolită; aceasta nu.
-  const nepermis = alese.find((f) => !extensiePermisa(f.name))
-  if (nepermis) {
+  // The check on the client can be bypassed; this one cannot.
+  const disallowed = attachments.find((f) => !isAllowedExtension(f.name))
+  if (disallowed) {
     return redirectWithNotice(
       redirectTo,
-      `Tipul fișierului „${nepermis.name}” nu este acceptat. Trimite un document, o foaie de calcul, o imagine sau o arhivă.`,
+      `Tipul fișierului „${disallowed.name}” nu este acceptat. Trimite un document, o foaie de calcul, o imagine sau o arhivă.`,
       true,
     )
   }
 
-  /* Mesajul și fișierul lui intră împreună sau deloc.
+  /* The message and its file go in together or not at all.
    *
-   * Înainte, mesajul se scria primul, iar o eroare la salvarea fișierului era
-   * doar un `console.error`: expeditorul vedea mesajul trimis fără agrafă,
-   * destinatarul primea „(fișier atașat)” fără fișier, iar emailul anunța că a
-   * sosit ceva. Nimeni nu afla că încărcarea a eșuat. */
+   * Before, the message was written first, and an error while saving the file
+   * was only a `console.error`: the sender saw the message sent without a paper
+   * clip, the recipient got „(fișier atașat)” with no file, and the email
+   * announced that something had arrived. Nobody found out the upload failed. */
   let messageId: string
   try {
     const cuOcteti = await Promise.all(
-      alese.map(async (f) => ({ fisier: f, octeti: Buffer.from(await f.arrayBuffer()) })),
+      attachments.map(async (f) => ({ fisier: f, bytes: Buffer.from(await f.arrayBuffer()) })),
     )
 
     messageId = await transaction(async (client) => {
       const { rows } = await client.query<{ id: string }>(
         `INSERT INTO messages (conversation_id, sender_id, body)
          VALUES ($1, $2, $3) RETURNING id`,
-        // Corp gol, nu un text de umplutură: fișierul este mesajul, iar
-        // previzualizarea din lista de conversații îl numește (lib/chat.ts).
+        // An empty body, not filler text: the file is the message, and the
+        // preview in the conversation list names it (lib/chat.ts).
         [conversationId, u.id, body],
       )
       const id = rows[0].id
       await client.query(`UPDATE conversations SET last_message_at = now() WHERE id = $1`, [conversationId])
 
-      // Poziția se scrie explicit: `now()` este fix într-o tranzacție, deci
-      // toate rândurile ar avea același `created_at` și ordinea ar cădea pe uuid.
-      for (const [pozitie, { fisier, octeti }] of cuOcteti.entries()) {
-        const stored = await saveFile(conversationId, fisier.name, octeti)
+      // The position is written explicitly: `now()` is fixed inside a
+      // transaction, so all the rows would have the same `created_at` and the
+      // ordering would fall back on the uuid.
+      for (const [pozitie, { fisier, bytes }] of cuOcteti.entries()) {
+        const stored = await saveFile(conversationId, fisier.name, bytes)
         await client.query(
           `INSERT INTO files (uploaded_by, conversation_id, message_id, original_name,
                               stored_name, mime, size_bytes, position)
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-          [u.id, conversationId, id, fisier.name, stored, tipDupaExtensie(fisier.name), fisier.size, pozitie],
+          [u.id, conversationId, id, fisier.name, stored, mimeForExtension(fisier.name), fisier.size, pozitie],
         )
       }
       return id
@@ -125,8 +126,8 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
     console.error('[messages] mesajul nu a putut fi salvat', err)
     return redirectWithNotice(
       redirectTo,
-      alese.length > 0
-        ? alese.length === 1
+      attachments.length > 0
+        ? attachments.length === 1
           ? 'Fișierul nu a putut fi salvat, așa că mesajul nu a fost trimis. Încearcă din nou.'
           : 'Fișierele nu au putut fi salvate, așa că mesajul nu a fost trimis. Încearcă din nou.'
         : 'Mesajul nu a putut fi trimis. Încearcă din nou.',
@@ -134,12 +135,12 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
     )
   }
 
-  /* Emailul pleacă doar dacă are pe cine anunța.
+  /* The email goes out only if it has someone to notify.
    *
-   * Comentariul de aici promitea de la început că notificarea se trimite „doar
-   * dacă interlocutorul nu a fost activ recent”, dar codul o trimitea de
-   * fiecare dată: un schimb de douăzeci de replici însemna douăzeci de emailuri
-   * pentru un om care avea firul deschis în fața lui. */
+   * The comment here promised from the start that the notification is sent
+   * "only if the other party has not been active recently", but the code sent it
+   * every time: an exchange of twenty replies meant twenty emails for a person
+   * who had the thread open in front of them. */
   const contact = await queryOne<{ email: string; name: string; taci: boolean }>(
     `SELECT p.email,
             p.name,
@@ -157,8 +158,8 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
 
   if (contact && !contact.taci) {
     const base = process.env.APP_BASE_URL ?? url.origin
-    // Trimiterea nu ține răspunsul în loc: expeditorul aștepta drumul până la
-    // Resend înainte să vadă propriul mesaj în fir.
+    // Sending does not hold the response back: the sender used to wait for the
+    // round trip to Resend before seeing their own message in the thread.
     void sendEmail({
       to: contact.email,
       subject: `Mesaj nou de la ${u.name}`,
@@ -167,9 +168,9 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
         html`<p><strong>${u.name}</strong> ți-a scris în portal:</p>
          ${quote(
            body.slice(0, 500) ||
-             (alese.length > 1
-               ? `A trimis ${alese.length} fișiere: ${alese.map((f) => f.name).join(', ')}`
-               : `A trimis un fișier: ${alese[0]?.name ?? 'document'}`),
+             (attachments.length > 1
+               ? `A trimis ${attachments.length} fișiere: ${attachments.map((f) => f.name).join(', ')}`
+               : `A trimis un fișier: ${attachments[0]?.name ?? 'document'}`),
          )}`,
         { text: 'Răspunde în portal', url: `${base}${redirectTo}` },
       ),

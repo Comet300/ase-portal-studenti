@@ -1,5 +1,5 @@
 import { query, queryOne, transaction } from './db'
-import { curataJurnalul } from './audit'
+import { purgeAccessLog } from './audit'
 import { postEvent } from './chat'
 import { html, sendEmail, template } from './mail'
 
@@ -149,33 +149,33 @@ export async function grantSeats(
 /**
  * Turns undecided requests and unanswered invitations into decisions.
  *
- * Chemată de un planificator prin `/api/sweep`, și — ca plasă de siguranță — de
- * middleware, limitată la o dată la câteva minute. Legată doar de trafic, o
- * cerere care trebuia închisă vineri seara rămânea deschisă până luni, iar
- * studentul aștepta un termen care trecuse deja.
+ * Called by a scheduler through `/api/sweep`, and — as a safety net — by the
+ * middleware, throttled to once every few minutes. Tied to traffic alone, a
+ * request that had to be closed on Friday evening stayed open until Monday, and
+ * the student waited on a deadline that had already passed.
  *
- * Un lock consultativ în Postgres ține locul unei singure rulări: două apeluri
- * simultane nu au voie să trimită de două ori aceleași emailuri.
+ * An advisory lock in Postgres holds the place of a single run: two simultaneous
+ * calls are not allowed to send the same emails twice.
  *
- * Eșecurile se scriu în jurnal și se înghit — o măturare care nu poate rula nu
- * are voie să doboare o pagină.
+ * Failures are written to the log and swallowed — a sweep that cannot run is not
+ * allowed to bring a page down.
  */
 let lastSweep = 0
 const SWEEP_INTERVAL_MS = 5 * 60 * 1000
 
-/** Când a rulat ultima oară cu succes; `/api/sanatate` o poate raporta. */
+/** When it last ran successfully; `/api/sanatate` can report it. */
 export function lastSweepAt(): string | null {
   return lastSweep ? new Date(lastSweep).toISOString() : null
 }
 
 export async function sweepDeadlines(
   baseUrl: string,
-  { fortat = false }: { fortat?: boolean } = {},
+  { force = false }: { force?: boolean } = {},
 ): Promise<void> {
   const now = Date.now()
-  if (!fortat && now - lastSweep < SWEEP_INTERVAL_MS) return
+  if (!force && now - lastSweep < SWEEP_INTERVAL_MS) return
 
-  // Cheia este arbitrară, dar constantă: identifică *această* sarcină.
+  // The key is arbitrary but constant: it identifies *this* task.
   const lock = await queryOne<{ luat: boolean }>(
     `SELECT pg_try_advisory_lock(hashtext('sweep_deadlines')) AS luat`,
   )
@@ -231,11 +231,12 @@ export async function sweepDeadlines(
       })
     }
 
-    /* Invitațiile expirate se anunțau nimănui.
+    /* Expired invitations were announced to nobody.
      *
-     * Un cadru didactic ținea un loc ocupat pentru un student care nu mai
-     * răspundea, iar studentul nu afla niciodată că propunerea a căzut — starea
-     * se schimba în tăcere, în baza de date. Aceeași buclă ca la cereri. */
+     * A member of the teaching staff kept a seat held for a student who no
+     * longer answered, and the student never found out that the proposal had
+     * lapsed — the status changed silently, in the database. The same loop as
+     * for requests. */
     const lapsed = await query<{
       id: string
       student_id: string
@@ -291,36 +292,37 @@ export async function sweepDeadlines(
       })
     }
 
-    await curataJurnalul()
-    const amintite = await trimiteMementouri(baseUrl)
+    await purgeAccessLog()
+    const remindersSent = await sendReminders(baseUrl)
 
-    if (expired.length || lapsed.length || amintite) {
+    if (expired.length || lapsed.length || remindersSent) {
       console.log(
-        `[sweep] ${expired.length} cereri expirate, ${lapsed.length} invitații expirate, ${amintite} mementouri`,
+        `[sweep] ${expired.length} cereri expirate, ${lapsed.length} invitații expirate, ${remindersSent} mementouri`,
       )
     }
   } catch (err) {
     console.error('[sweep] eșec', err)
   } finally {
-    // Lockul se eliberează chiar dacă măturarea a picat la jumătate; altfel
-    // rularea următoare l-ar găsi ocupat pentru totdeauna.
+    // The lock is released even if the sweep failed halfway through; otherwise
+    // the next run would find it taken forever.
     await queryOne(`SELECT pg_advisory_unlock(hashtext('sweep_deadlines'))`).catch(() => {})
   }
 }
 
-/* --- mementouri înainte de termen ------------------------------------------
+/* --- reminders before the deadline -----------------------------------------
  *
- * Portalul anunța termenele doar după ce treceau: cererea a expirat, invitația
- * a expirat. Anunțul de după constată o pierdere; cel dinainte o poate evita.
+ * The portal announced deadlines only after they had passed: the request has
+ * expired, the invitation has expired. The announcement afterwards records a
+ * loss; the one beforehand can avoid it.
  *
- * Fiecare memento trece printr-o inserare în `notifications_sent` cu
- * `ON CONFLICT DO NOTHING`: dacă rândul exista deja, nu se trimite. Măturarea
- * rulează des și din două locuri, deci fără poarta asta același om ar primi
- * același memento de zece ori pe zi.
+ * Every reminder goes through an insert into `notifications_sent` with
+ * `ON CONFLICT DO NOTHING`: if the row already existed, nothing is sent. The
+ * sweep runs often and from two places, so without this gate the same person
+ * would get the same reminder ten times a day.
  */
 
-/** Poarta: `true` dacă acum îi revine acestui apel să trimită. */
-async function revendica(userId: string, kind: string, refId: string): Promise<boolean> {
+/** The gate: `true` if it now falls to this call to send. */
+async function claimReminder(userId: string, kind: string, refId: string): Promise<boolean> {
   const row = await queryOne<{ ok: boolean }>(
     `INSERT INTO notifications_sent (user_id, kind, ref_id)
      VALUES ($1, $2, $3)
@@ -331,12 +333,12 @@ async function revendica(userId: string, kind: string, refId: string): Promise<b
   return Boolean(row?.ok)
 }
 
-async function trimiteMementouri(baseUrl: string): Promise<number> {
-  let trimise = 0
+async function sendReminders(baseUrl: string): Promise<number> {
+  let sent = 0
 
-  /* Coordonatorul, în ziua a cincea din șapte.
+  /* The coordinator, on the fifth day out of seven.
    *
-   * Momentul în care mai poate răspunde fără ca portalul să decidă în locul lui.
+   * The moment when they can still answer without the portal deciding for them.
    */
   const cereri = await query<{
     id: string
@@ -361,7 +363,7 @@ async function trimiteMementouri(baseUrl: string): Promise<number> {
   )
 
   for (const c of cereri) {
-    if (!(await revendica(c.teacher_id, 'cerere_expira', c.id))) continue
+    if (!(await claimReminder(c.teacher_id, 'cerere_expira', c.id))) continue
     const zile = Math.max(1, Math.ceil((new Date(c.expires_at).getTime() - Date.now()) / 86_400_000))
     await sendEmail({
       to: c.teacher_email,
@@ -375,10 +377,10 @@ async function trimiteMementouri(baseUrl: string): Promise<number> {
         { text: 'Deschide cererea', url: `${baseUrl}/profesor/studenti?sectiune=cereri#cerere-${c.id}` },
       ),
     })
-    trimise++
+    sent++
   }
 
-  /* Studentul, cu două zile înainte ca propunerea primită să expire. */
+  /* The student, two days before the proposal received expires. */
   const invitatii = await query<{
     id: string
     expires_at: string
@@ -399,7 +401,7 @@ async function trimiteMementouri(baseUrl: string): Promise<number> {
   )
 
   for (const i of invitatii) {
-    if (!(await revendica(i.student_id, 'invitatie_expira', i.id))) continue
+    if (!(await claimReminder(i.student_id, 'invitatie_expira', i.id))) continue
     await sendEmail({
       to: i.student_email,
       subject: 'Propunerea de coordonare expiră în curând',
@@ -412,11 +414,11 @@ async function trimiteMementouri(baseUrl: string): Promise<number> {
         { text: 'Vezi propunerea', url: `${baseUrl}/cererile-mele` },
       ),
     })
-    trimise++
+    sent++
   }
 
-  /* Studentul, cu trei zile înainte de un termen al lucrării, și în ziua lui. */
-  const termene = await query<{
+  /* The student, three days before a thesis deadline, and on the day itself. */
+  const dueMilestones = await query<{
     id: string
     title: string
     due_on: string
@@ -436,9 +438,9 @@ async function trimiteMementouri(baseUrl: string): Promise<number> {
         AND m.due_on IN (current_date + 3, current_date)`,
   )
 
-  for (const t of termene) {
-    const cheie = t.zile === 0 ? 'termen_azi' : 'termen_3zile'
-    if (!(await revendica(t.student_id, cheie, t.id))) continue
+  for (const t of dueMilestones) {
+    const reminderKind = t.zile === 0 ? 'termen_azi' : 'termen_3zile'
+    if (!(await claimReminder(t.student_id, reminderKind, t.id))) continue
     await sendEmail({
       to: t.student_email,
       subject: t.zile === 0 ? `Astăzi este termenul: ${t.title}` : `Peste 3 zile: ${t.title}`,
@@ -450,8 +452,8 @@ async function trimiteMementouri(baseUrl: string): Promise<number> {
         { text: 'Vezi termenele', url: `${baseUrl}/cererile-mele` },
       ),
     })
-    trimise++
+    sent++
   }
 
-  return trimise
+  return sent
 }

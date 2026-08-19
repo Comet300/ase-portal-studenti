@@ -1,8 +1,9 @@
 import { execute, query, queryOne } from './db'
 
-/* Formatarea datelor a plecat în `lib/date.ts` — nu are nimic de-a face cu baza
- * de date, iar acolo se poate testa și importa în browser. Se reexportă de aici,
- * ca cele treizeci de pagini care o importau să nu trebuiască schimbate toate. */
+/* Date formatting moved to `lib/date.ts` — it has nothing to do with the
+ * database, and there it can be tested and imported in the browser. It is
+ * re-exported from here so the thirty pages that imported it need not all
+ * change. */
 export {
   formatDate,
   formatTime,
@@ -101,7 +102,7 @@ export const STATUS_CLASS: Record<string, string> = {
   pending: 'badge--asteptare',
   approved: 'badge--aprobata',
   rejected: 'badge--respinsa',
-  // Expirarea nu este un refuz: nimeni nu a spus nu, doar a trecut termenul.
+  // Expiry is not a refusal: nobody said no, the deadline simply passed.
   expired: 'badge--ciorna',
   withdrawn: 'badge--ciorna',
   defended: 'badge--aprobata',
@@ -121,38 +122,38 @@ export const MILESTONE_LABELS: Record<string, string> = {
 }
 
 /**
- * Starea reală a unui termen, nu doar cea salvată.
+ * The real state of a milestone, not just the stored one.
  *
- * În bază există trei stări, niciuna dintre ele „întârziat”, așa că un termen
- * ratat arăta identic cu unul viitor: pe 29 iulie, „Predarea formei finale ·
- * 14 iulie” scria în continuare „Planificat”, iar pagina de start anunța drept
- * „următorul termen” unul trecut de cinci luni.
+ * The database has three states, none of them „overdue”, so a missed milestone
+ * looked identical to a future one: on 29 July, „Predarea formei finale ·
+ * 14 iulie” still read „Planificat”, and the start page announced as the „next
+ * milestone” one five months past.
  *
- * Întârzierea nu se scrie în bază — se citește din calendar de fiecare dată,
- * pentru că altfel ar trebui ținută la zi de cineva.
+ * Being overdue is not written to the database — it is read off the calendar
+ * every time, because otherwise somebody would have to keep it up to date.
  */
-export type StareTermen = 'planned' | 'in_progress' | 'done' | 'overdue'
+export type MilestoneState = 'planned' | 'in_progress' | 'done' | 'overdue'
 
 export function milestoneState(
   status: string,
   dueOn: string | null | undefined,
-): StareTermen {
+): MilestoneState {
   if (status === 'done') return 'done'
   if (!dueOn) return status === 'in_progress' ? 'in_progress' : 'planned'
 
-  const azi = new Date()
-  azi.setHours(0, 0, 0, 0)
-  return new Date(dueOn) < azi ? 'overdue' : status === 'in_progress' ? 'in_progress' : 'planned'
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  return new Date(dueOn) < today ? 'overdue' : status === 'in_progress' ? 'in_progress' : 'planned'
 }
 
-export const MILESTONE_STATE_LABELS: Record<StareTermen, string> = {
+export const MILESTONE_STATE_LABELS: Record<MilestoneState, string> = {
   planned: 'Planificat',
   in_progress: 'În lucru',
   done: 'Finalizat',
   overdue: 'Termen depășit',
 }
 
-export const MILESTONE_STATE_CLASS: Record<StareTermen, string> = {
+export const MILESTONE_STATE_CLASS: Record<MilestoneState, string> = {
   planned: 'badge--ciorna',
   in_progress: 'badge--in-lucru',
   done: 'badge--aprobata',
@@ -389,10 +390,10 @@ export interface Slot {
 }
 
 /**
- * Intervalele coordonatorului, de la ieri înainte.
+ * The coordinator's intervals, from yesterday onwards.
  *
- * Fereastra scurtă este intenționată pentru ecranul de program: acolo se lucrează
- * cu ce urmează. Istoricul se cere separat, prin `teacherSlotHistory`.
+ * The short window is intended for the schedule screen: there the work is with
+ * what comes next. History is asked for separately, via `teacherSlotHistory`.
  */
 export function teacherSlots(teacherId: string) {
   return query<Slot>(
@@ -410,16 +411,17 @@ export function teacherSlots(teacherId: string) {
 }
 
 /**
- * Consultațiile care au avut loc.
+ * The consultations that took place.
  *
- * Nu existau nicăieri. `teacherSlots` aduce o zi înapoi, iar arhiva nu știe
- * despre consultații deloc — deci „când ne-am văzut ultima dată cu studentul
- * acesta” și „câte consultații am ținut semestrul acesta” nu se puteau afla din
- * portal, deși portalul le programase pe toate.
+ * They existed nowhere. `teacherSlots` reaches one day back, and the archive
+ * knows nothing about consultations at all — so „when did I last see this
+ * student” and „how many consultations did I hold this semester” could not be
+ * answered from the portal, even though the portal had scheduled every one of
+ * them.
  *
- * Se numără doar cele ținute: un interval anulat nu este o întâlnire, iar unul pe
- * care nu l-a rezervat nimeni nu s-a întâmplat. Anul universitar este cel în care
- * cade intervalul, ca istoricul să urmeze selectorul de an al arhivei.
+ * Only the ones held are counted: a cancelled interval is not a meeting, and one
+ * nobody booked did not happen. The academic year is the one the interval falls
+ * in, so that history follows the archive's year selector.
  */
 export function teacherSlotHistory(teacherId: string, yearId?: string) {
   return query<{
@@ -681,13 +683,13 @@ export interface ArchiveRow {
  */
 export function archiveRows(yearId: string): Promise<ArchiveRow[]> {
   return query<ArchiveRow>(
-    /* Data susținerii, nu data aprobării.
+    /* The defence date, not the approval date.
      *
-     * Aici se scria `decided_at`, adică ziua în care coordonatorul a acceptat
-     * cererea — o lucrare aprobată în martie și susținută în iulie apărea în
-     * arhivă cu martie. Sunt două evenimente la câteva luni distanță, iar arhiva
-     * unei facultăți este exact locul unde diferența contează. Când susținerea nu
-     * e încă înregistrată, coloana rămâne goală în loc să mintă. */
+     * This used to read `decided_at`, that is the day the coordinator accepted
+     * the request — a thesis approved in March and defended in July showed up in
+     * the archive with March. They are two events months apart, and a faculty's
+     * archive is exactly the place where the difference matters. When the defence
+     * is not yet recorded, the column stays empty instead of lying. */
     `SELECT 'portal'::text AS source, s.name AS student_name, s.student_number,
             s.specialization AS programme, s.program AS level, s.study_language AS language,
             t.name AS teacher_name, r.title_ro, r.defended_on::text AS defended_on
@@ -707,18 +709,18 @@ export function archiveRows(yearId: string): Promise<ArchiveRow[]> {
 }
 
 /**
- * Are studentul o cerere aprobată în sesiunea curentă?
+ * Does the student have an approved request in the current session?
  *
- * Bara de navigație o folosește ca să spună „Lucrarea mea” în loc de „Cererile
- * mele”: după ce coordonarea e confirmată, ecranul nu mai este despre cereri.
+ * The navigation bar uses it to say „Lucrarea mea” instead of „Cererile mele”:
+ * once the coordination is confirmed, the screen is no longer about requests.
  */
 export async function hasApprovedRequest(studentId: string): Promise<boolean> {
   const row = await queryOne<{ exista: boolean }>(
     `SELECT EXISTS (
        SELECT 1 FROM requests
         WHERE student_id = $1
-          -- O lucrare susținută rămâne lucrarea studentului: nu a pierdut-o
-          -- terminând-o, deci bara spune în continuare „Lucrarea mea”.
+          -- A defended thesis stays the student's thesis: they did not lose it
+          -- by finishing it, so the bar still says „Lucrarea mea”.
           AND status IN ('approved', 'defended')
           AND academic_year_id = (SELECT id FROM academic_years WHERE is_current)
      ) AS exista`,

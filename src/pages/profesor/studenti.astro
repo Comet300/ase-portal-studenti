@@ -20,13 +20,13 @@ import {
 import { allYears, groupLabel } from '../../lib/years'
 
 const u = Astro.locals.user!
-// Vezi departament.astro: o valoare necunoscută nu are voie să golească pagina.
-const SECTIUNI = ['cereri', 'studenti', 'progres', 'invitatii'] as const
-const cerut = Astro.url.searchParams.get('sectiune') ?? ''
-const sectiune = (SECTIUNI as readonly string[]).includes(cerut) ? cerut : 'cereri'
-const studentDeschis = Astro.url.searchParams.get('student')
+// See departament.astro: an unknown value is not allowed to empty the page.
+const SECTIONS = ['cereri', 'studenti', 'progres', 'invitatii'] as const
+const requestedSection = Astro.url.searchParams.get('sectiune') ?? ''
+const sectiune = (SECTIONS as readonly string[]).includes(requestedSection) ? requestedSection : 'cereri'
+const openStudentId = Astro.url.searchParams.get('student')
 
-const [toateCererile, studenti, teme, locuri, invitatii, directorStudenti, ani] =
+const [allRequests, studenti, teme, seats, invitatii, studentDirectoryRows, years] =
   await Promise.all([
     teacherRequests(u.id),
     supervisedStudents(u.id),
@@ -37,29 +37,30 @@ const [toateCererile, studenti, teme, locuri, invitatii, directorStudenti, ani] 
     allYears(),
   ])
 
-const inAsteptare = toateCererile.filter((c) => c.status === 'pending')
-const decise = toateCererile.filter((c) => c.status !== 'pending')
+const pendingRequests = allRequests.filter((c) => c.status === 'pending')
+const decidedRequests = allRequests.filter((c) => c.status !== 'pending')
 
-// Doar studenții care nu au încă un coordonator pot primi o propunere; ceilalți
-// nici nu apar în selector, ca invitația să nu poată fi trimisă degeaba.
-const invitabili = directorStudenti.filter((s) => s.request_status !== 'approved')
-const invitatiiDeschise = invitatii.filter((i) => i.status === 'pending')
+// Only students who do not have a coordinator yet can receive a proposal; the
+// others do not even show up in the picker, so that the invitation cannot be
+// sent for nothing.
+const invitabili = studentDirectoryRows.filter((s) => s.request_status !== 'approved')
+const openInvitations = invitatii.filter((i) => i.status === 'pending')
 
-// Cronologia se încarcă pentru studentul deschis; implicit, primul coordonat.
-const timelineRequest = studentDeschis
-  ? studenti.find((s) => s.id === studentDeschis)
+// The timeline is loaded for the open student; by default, the first supervised one.
+const timelineRequest = openStudentId
+  ? studenti.find((s) => s.id === openStudentId)
   : studenti[0]
 const milestones = timelineRequest ? await requestMilestones(u.id, timelineRequest.id) : []
 
-const sectiuni = [
-  { cheie: 'cereri', text: 'Cereri', contor: inAsteptare.length },
-  { cheie: 'studenti', text: 'Studenți coordonați', contor: studenti.length },
-  { cheie: 'progres', text: 'Progresul lucrărilor', contor: null },
-  { cheie: 'invitatii', text: 'Propuneri trimise', contor: invitatiiDeschise.length },
+const sections = [
+  { key: 'cereri', text: 'Cereri', count: pendingRequests.length },
+  { key: 'studenti', text: 'Studenți coordonați', count: studenti.length },
+  { key: 'progres', text: 'Progresul lucrărilor', count: null },
+  { key: 'invitatii', text: 'Propuneri trimise', count: openInvitations.length },
 ]
 
-const caleCurenta = `/profesor/studenti?sectiune=${sectiune}`
-const azi = new Date().toISOString().slice(0, 10)
+const currentPath = `/profesor/studenti?sectiune=${sectiune}`
+const today = new Date().toISOString().slice(0, 10)
 
 /**
  * How long is left to answer a request.
@@ -73,7 +74,7 @@ function deadline(expiresAt: string | null | undefined) {
   const days = Math.ceil((new Date(expiresAt).getTime() - Date.now()) / 86_400_000)
   const text =
     days <= 0 ? 'expiră astăzi' : days === 1 ? '1 zi rămasă' : `${days} zile rămase`
-  return { days, text, clasa: days <= 2 ? 'badge--urgent' : 'badge--asteptare' }
+  return { days, text, badgeClass: days <= 2 ? 'badge--urgent' : 'badge--asteptare' }
 }
 ---
 
@@ -83,7 +84,7 @@ function deadline(expiresAt: string | null | undefined) {
   active="studenti"
 >
   <Taburi
-    taburi={sectiuni.map((s) => ({ ...s, href: `/profesor/studenti?sectiune=${s.cheie}` }))}
+    taburi={sections.map((s) => ({ ...s, href: `/profesor/studenti?sectiune=${s.key}` }))}
     activ={sectiune}
     eticheta="Secțiuni"
   />
@@ -96,19 +97,19 @@ function deadline(expiresAt: string | null | undefined) {
           <div class="panel__header">
             <h2 class="section-title">În așteptare</h2>
             <span class="muted text-sm">
-              {inAsteptare.length} {inAsteptare.length === 1 ? 'cerere' : 'cereri'}
+              {pendingRequests.length} {pendingRequests.length === 1 ? 'cerere' : 'cereri'}
             </span>
           </div>
 
-          {locuri.free === 0 && inAsteptare.length > 0 && (
+          {seats.free === 0 && pendingRequests.length > 0 && (
             <p class="fara-locuri">
-              <strong>Toate locurile sunt ocupate</strong> ({locuri.total_taken}/{locuri.total_seats}).
+              <strong>Toate locurile sunt ocupate</strong> ({seats.total_taken}/{seats.total_seats}).
               Nu poți accepta o cerere nouă până nu primești locuri suplimentare.
               <a class="link" href="/profesor/arhiva#locuri">Cere locuri directorului</a>
             </p>
           )}
 
-          {inAsteptare.length === 0 ? (
+          {pendingRequests.length === 0 ? (
             <div class="empty">
               <p class="empty__title">Nicio cerere în așteptare</p>
               <p class="empty__text">
@@ -117,7 +118,7 @@ function deadline(expiresAt: string | null | undefined) {
             </div>
           ) : (
             <ul class="cereri">
-              {inAsteptare.map((c) => {
+              {pendingRequests.map((c) => {
                 const termen = deadline(c.expires_at)
                 return (
                   <li class="cerere" id={`cerere-${c.id}`}>
@@ -132,7 +133,7 @@ function deadline(expiresAt: string | null | undefined) {
                       <span class="cerere__termen">
                         <span class="muted">depusă {timeAgo(c.submitted_at)}</span>
                         {termen && (
-                          <span class:list={['badge', termen.clasa]}>{termen.text}</span>
+                          <span class:list={['badge', termen.badgeClass]}>{termen.text}</span>
                         )}
                       </span>
                     </div>
@@ -149,19 +150,19 @@ function deadline(expiresAt: string | null | undefined) {
                     )}
 
                     <div class="cerere__actiuni">
-                      {/* Fără locuri libere, serverul refuză acceptarea — dar abia
-                          după ce coordonatorul a scris mesajul. Refuzul se mută
-                          înaintea muncii, nu după. */}
+                      {/* With no free seats the server refuses the acceptance —
+                          but only after the coordinator has written the message.
+                          The refusal moves ahead of the work, not after it. */}
                       <button
                         class="btn btn--primary btn--sm"
                         type="button"
                         data-decizie="approved"
                         data-cerere={c.id}
                         data-nume={c.student_name}
-                        disabled={locuri.free === 0}
+                        disabled={seats.free === 0}
                         title={
-                          locuri.free === 0
-                            ? `Toate cele ${locuri.total_seats} locuri sunt ocupate. Cere locuri suplimentare directorului.`
+                          seats.free === 0
+                            ? `Toate cele ${seats.total_seats} locuri sunt ocupate. Cere locuri suplimentare directorului.`
                             : undefined
                         }
                       >
@@ -176,7 +177,7 @@ function deadline(expiresAt: string | null | undefined) {
                       >
                         Respinge
                       </button>
-                      <a class="btn btn--ghost btn--sm" href={`/profil/${c.student_id}?de_la=${encodeURIComponent(caleCurenta)}`}>
+                      <a class="btn btn--ghost btn--sm" href={`/profil/${c.student_id}?de_la=${encodeURIComponent(currentPath)}`}>
                         Vezi profilul
                       </a>
                     </div>
@@ -187,7 +188,7 @@ function deadline(expiresAt: string | null | undefined) {
           )}
         </section>
 
-        {decise.length > 0 && (
+        {decidedRequests.length > 0 && (
           <section class="panel">
             <div class="panel__header">
               <h2 class="section-title">Cereri decise</h2>
@@ -205,7 +206,7 @@ function deadline(expiresAt: string | null | undefined) {
                   </tr>
                 </thead>
                 <tbody>
-                  {decise.map((c) => (
+                  {decidedRequests.map((c) => (
                     <tr>
                       <td class="numeric muted">{c.number}</td>
                       <td>{c.student_name}</td>
@@ -241,14 +242,15 @@ function deadline(expiresAt: string | null | undefined) {
         <div class="panel__header">
           <h2 class="section-title">Studenți coordonați</h2>
           <span class="muted text-sm">
-            {locuri.total_taken} din {locuri.total_seats} locuri · licență{' '}
-            {locuri.bachelor_taken}/{locuri.bachelor_seats} · master{' '}
-            {locuri.master_taken}/{locuri.master_seats}
+            {seats.total_taken} din {seats.total_seats} locuri · licență{' '}
+            {seats.bachelor_taken}/{seats.bachelor_seats} · master{' '}
+            {seats.master_taken}/{seats.master_seats}
           </span>
-          {/* Exportul propriu exista de la început în endpoint și nu era legat de
-              nicăieri: singurele butoane duceau la el din ecranele directorului,
-              deci un coordonator care avea nevoie de lista lui pe hârtie — pentru
-              procesul-verbal, care încă circulă tipărit — o copia din tabel. */}
+          {/* The coordinator's own export had been in the endpoint from the
+              start and was linked from nowhere: the only buttons reached it from
+              the head of department's screens, so a coordinator who needed his own
+              list on paper — for the minutes, which still circulate printed — was
+              copying it out of the table. */}
           {studenti.length > 0 && (
             <a
               class="btn btn--secondary btn--sm"
@@ -282,14 +284,14 @@ function deadline(expiresAt: string | null | undefined) {
               </thead>
               <tbody>
                 {studenti.map((s) => {
-                  const procent = s.milestones_total
+                  const percent = s.milestones_total
                     ? Math.round((s.milestones_done / s.milestones_total) * 100)
                     : 0
                   return (
                     <tr>
                       <td>
                         <div class="row" style="gap:var(--s-3)">
-                          <Avatar name={s.student_name} href={`/profil/${s.student_id}?de_la=${encodeURIComponent(caleCurenta)}`} />
+                          <Avatar name={s.student_name} href={`/profil/${s.student_id}?de_la=${encodeURIComponent(currentPath)}`} />
                           <div class="celula-student">
                             <strong>{s.student_name}</strong>
                             <span class="muted" title={`${s.student_number} · ${groupLabel(s)}`}>
@@ -301,19 +303,21 @@ function deadline(expiresAt: string | null | undefined) {
                       <td class="celula-title" title={s.title_ro}>{s.title_ro}</td>
                       <td>
                         <div class="progres">
-                          <div class="bara" role="img" aria-label={`Progres ${procent}%`}>
-                            <span class="bara__fill" style={`--procent:${procent / 100}`} />
+                          <div class="bara" role="img" aria-label={`Progres ${percent}%`}>
+                            <span class="bara__fill" style={`--procent:${percent / 100}`} />
                           </div>
                           <span class="muted numeric text-xs">
                             {s.milestones_done}/{s.milestones_total}
                           </span>
                         </div>
                       </td>
-                      {/* Sesiunea susținerii nu este neapărat cea în care a
-                          început coordonarea, iar arhiva o folosește pe prima. */}
+                      {/* The defence session is not necessarily the one in which
+                          the coordination started, and the archive uses the
+                          former. */}
                       <td>
-                        {/* Valoarea se tipărește separat, mai jos: selectorul ar
-                            lăți tabelul dincolo de foaie fără să adauge nimic. */}
+                        {/* The value is printed separately, below: the select
+                            would widen the table past the edge of the sheet
+                            without adding anything. */}
                         <form method="POST" action="/api/sustinere" class="row" style="gap:var(--s-2)" data-tipar="fără">
                           <input type="hidden" name="cerere_id" value={s.id} />
                           <label class="visually-hidden" for={`sus-${s.id}`}>
@@ -325,7 +329,7 @@ function deadline(expiresAt: string | null | undefined) {
                             name="an_id"
                             onchange="this.form.requestSubmit()"
                           >
-                            {ani.map((a) => (
+                            {years.map((a) => (
                               <option
                                 value={a.id}
                                 selected={(s.graduation_year_id ?? '') === a.id ||
@@ -339,9 +343,9 @@ function deadline(expiresAt: string | null | undefined) {
                             <button class="btn btn--ghost btn--sm" type="submit">Salvează</button>
                           </noscript>
                         </form>
-                        {/* Pe hârtie formularul dispare; sesiunea rămâne. */}
+                        {/* On paper the form disappears; the session stays. */}
                         <span class="doar-tipar numeric">
-                          {ani.find((a) =>
+                          {years.find((a) =>
                             (s.graduation_year_id ?? '') === a.id ||
                             (!s.graduation_year_id && a.is_current),
                           )?.label ?? ''}
@@ -371,10 +375,10 @@ function deadline(expiresAt: string | null | undefined) {
                           >
                             Programează consultație
                           </a>
-                          {/* Terminarea lucrării nu avea nicio stare: coordonarea
-                              rămânea „aprobată” pentru totdeauna, locul rămânea
-                              ocupat, iar arhiva trecea data aprobării drept dată
-                              a susținerii. */}
+                          {/* Finishing the thesis had no state of its own: the
+                              coordination stayed „aprobată” for ever, the seat
+                              stayed taken, and the archive recorded the approval
+                              date as the date of the defence. */}
                           <button
                             class="btn btn--secondary btn--sm"
                             type="button"
@@ -437,7 +441,7 @@ function deadline(expiresAt: string | null | undefined) {
               </div>
             </section>
 
-            {/* Aceleași termene pe care le vede studentul, dar editabile. */}
+            {/* The same deadlines the student sees, but editable. */}
             <section class="panel">
               <div class="panel__header">
                 <h2 class="section-title">Termenele lucrării</h2>
@@ -471,9 +475,10 @@ function deadline(expiresAt: string | null | undefined) {
                       </summary>
 
                       <form method="POST" action="/api/termene" class="jalon__editor">
-                        {/* Vezi comentariul din lib/forms.ts: butonul „Șterge” poartă
-                            propriul „actiune”, iar două câmpuri cu același nume s-ar
-                            fi anulat — ștergerea raporta succes fără să șteargă. */}
+                        {/* See the comment in lib/forms.ts: the „Șterge” button
+                            carries its own „actiune”, and two fields with the same
+                            name would have cancelled each other out — the delete
+                            reported success without deleting. */}
                         <input type="hidden" name="actiune_implicita" value="actualizeaza" />
                         <input type="hidden" name="termen_id" value={j.id} />
                         <input
@@ -577,11 +582,11 @@ function deadline(expiresAt: string | null | undefined) {
           <div class="panel__header">
             <h2 class="section-title">Propune coordonarea unui student</h2>
             <span class="muted text-sm">
-              {locuri.free} {locuri.free === 1 ? 'loc liber' : 'locuri libere'}
+              {seats.free} {seats.free === 1 ? 'loc liber' : 'locuri libere'}
             </span>
           </div>
 
-          {locuri.free === 0 ? (
+          {seats.free === 0 ? (
             <div class="empty">
               <p class="empty__title">Nu mai ai locuri libere</p>
               <p class="empty__text">
@@ -594,15 +599,16 @@ function deadline(expiresAt: string | null | undefined) {
             <form method="POST" action="/api/invitatii" class="panel__body stack">
               <input type="hidden" name="actiune" value="trimite" />
 
-              {/* Două coloane egale, aliniate sus. Într-un rând flex, textul
-                  ajutător de sub un câmp împingea doar coloana lui, iar cele două
-                  controale nu mai stăteau pe aceeași linie. */}
+              {/* Two equal columns, aligned at the top. In a flex row, the hint
+                  text under one field pushed only its own column, and the two
+                  controls no longer sat on the same line. */}
               <div class="invitatie__rand">
                 <div class="field">
                   <label class="label" for="student_nume">Student</label>
-                  {/* Un `<datalist>` face lista căutabilă fără să înceteze să fie
-                      o listă: se poate scrie ca să filtrezi, sau se poate răsfoi.
-                      Cu douăzeci și cinci de nume, derularea era singura opțiune. */}
+                  {/* A `<datalist>` makes the list searchable without it ceasing
+                      to be a list: you can type in order to filter, or you can
+                      browse. With twenty-five names, scrolling was the only
+                      option. */}
                   <input
                     class="input"
                     id="student_nume"
@@ -724,11 +730,12 @@ function deadline(expiresAt: string | null | undefined) {
     )
   }
 
-  {/* Ambele decizii trec prin aceeași fereastră, pentru că ambele merită un
-      mesaj: o respingere fără motiv lasă studentul să ghicească, iar o acceptare
-      fără un cuvânt e o schimbare de stare acolo unde se aștepta o propoziție. */}
-  {/* Susținerea, ca fapt: data reală și, opțional, nota. Coordonarea se închide,
-      locul se eliberează, iar lucrarea intră în arhivă sub data corectă. */}
+  {/* Both decisions go through the same dialog, because both deserve a message:
+      a rejection with no reason leaves the student guessing, and an acceptance
+      without a word is a state change where a sentence was expected. */}
+  {/* The defence, as a fact: the real date and, optionally, the mark. The
+      coordination closes, the seat is freed, and the thesis enters the archive
+      under the correct date. */}
   <dialog id="dialog-sustinere" aria-labelledby="titlu-sustinere">
     <form method="POST" action="/api/sustinere" class="dialog">
       <h2 id="titlu-sustinere" class="section-title">Înregistrează susținerea</h2>
@@ -745,7 +752,7 @@ function deadline(expiresAt: string | null | undefined) {
           <label class="label" for="sustinere-data">
             Data susținerii <span class="label__req" aria-hidden="true">*</span>
           </label>
-          <input class="input" id="sustinere-data" name="data" type="date" max={azi} required />
+          <input class="input" id="sustinere-data" name="data" type="date" max={today} required />
         </div>
         <div class="field" style="flex:1;min-width:130px">
           <label class="label" for="sustinere-nota">Nota <span class="muted">(opțional)</span></label>
@@ -769,7 +776,7 @@ function deadline(expiresAt: string | null | undefined) {
 
       <input type="hidden" name="cerere_id" id="dialog-cerere" />
       <input type="hidden" name="decizie" id="dialog-decizie-camp" />
-      <input type="hidden" name="redirect" value={caleCurenta} />
+      <input type="hidden" name="redirect" value={currentPath} />
 
       <div class="field">
         <label class="label" for="motiv" id="dialog-eticheta">Mesaj pentru student</label>
@@ -788,25 +795,25 @@ function deadline(expiresAt: string | null | undefined) {
 <script>
   const dialog = document.getElementById('dialog-decizie') as HTMLDialogElement | null
   const camp = document.getElementById('dialog-cerere') as HTMLInputElement | null
-  const decizieCamp = document.getElementById('dialog-decizie-camp') as HTMLInputElement | null
+  const decisionField = document.getElementById('dialog-decizie-camp') as HTMLInputElement | null
   const textarea = document.getElementById('motiv') as HTMLTextAreaElement | null
 
   const COPY = {
     approved: {
       titlu: 'Acceptă coordonarea',
-      buton: 'Acceptă și trimite',
+      button: 'Acceptă și trimite',
       eticheta: 'Mesaj pentru student (opțional)',
       hint: 'Apare în emailul de confirmare și în conversație. Un rând despre ce urmează ajută mai mult decât o notificare goală.',
       placeholder: 'Ex: Ne vedem la prima consultație de marți ca să stabilim bibliografia.',
-      obligatoriu: false,
+      required: false,
     },
     rejected: {
       titlu: 'Respinge cererea',
-      buton: 'Trimite respingerea',
+      button: 'Trimite respingerea',
       eticheta: 'Motivul respingerii',
       hint: 'Minimum 10 caractere. Studentul trebuie să știe ce ar trebui schimbat.',
       placeholder: 'Ex: Tema se suprapune cu o lucrare deja alocată. Te rog reformulează direcția de cercetare.',
-      obligatoriu: true,
+      required: true,
     },
   }
 
@@ -816,14 +823,14 @@ function deadline(expiresAt: string | null | undefined) {
       const copy = COPY[decizie]
 
       if (camp) camp.value = b.dataset.cerere ?? ''
-      if (decizieCamp) decizieCamp.value = decizie
+      if (decisionField) decisionField.value = decizie
 
       const set = (id: string, text: string) => {
         const el = document.getElementById(id)
         if (el) el.textContent = text
       }
       set('dialog-titlu', copy.titlu)
-      set('dialog-trimite', copy.buton)
+      set('dialog-trimite', copy.button)
       set('dialog-eticheta', copy.eticheta)
       set('dialog-hint', copy.hint)
       set(
@@ -834,8 +841,8 @@ function deadline(expiresAt: string | null | undefined) {
       if (textarea) {
         textarea.value = ''
         textarea.placeholder = copy.placeholder
-        textarea.required = copy.obligatoriu
-        textarea.minLength = copy.obligatoriu ? 10 : 0
+        textarea.required = copy.required
+        textarea.minLength = copy.required ? 10 : 0
       }
 
       dialog?.showModal()
@@ -844,19 +851,19 @@ function deadline(expiresAt: string | null | undefined) {
 
   dialog?.querySelector('[data-inchide]')?.addEventListener('click', () => dialog.close())
 
-  // Un interval online are nevoie de link, unul la facultate de adresă. Câmpul
-  // irelevant dispare în loc să rămână gol și obligatoriu.
+  // An online slot needs a link, one held at the faculty needs an address. The
+  // irrelevant field disappears instead of staying empty and required.
   document.querySelectorAll<HTMLFormElement>('form').forEach((form) => {
     const mod = form.querySelector<HTMLSelectElement>('[data-mod]')
     if (!mod) return
 
-    const campLocatie = form.querySelector<HTMLElement>('[data-camp-locatie]')
+    const locationField = form.querySelector<HTMLElement>('[data-camp-locatie]')
     const link = form.querySelector<HTMLInputElement>('input[name="link_online"]')
     const optional = form.querySelector<HTMLElement>('[data-link-optional]')
 
     const sync = () => {
       const online = mod.value === 'online'
-      if (campLocatie) campLocatie.hidden = online
+      if (locationField) locationField.hidden = online
       if (link) link.required = online
       if (optional) optional.hidden = online
     }
@@ -865,8 +872,8 @@ function deadline(expiresAt: string | null | undefined) {
     sync()
   })
 
-  /* --- susținerea ---------------------------------------------------------- */
-  const dSustinere = document.getElementById('dialog-sustinere') as HTMLDialogElement | null
+  /* --- the defence --------------------------------------------------------- */
+  const defenceDialog = document.getElementById('dialog-sustinere') as HTMLDialogElement | null
 
   document.querySelectorAll<HTMLButtonElement>('[data-sustinuta]').forEach((b) => {
     b.addEventListener('click', () => {
@@ -874,44 +881,44 @@ function deadline(expiresAt: string | null | undefined) {
       const nume = document.getElementById('sustinere-nume')
       if (camp) camp.value = b.dataset.sustinuta ?? ''
       if (nume) nume.textContent = b.dataset.nume ?? 'studentul'
-      dSustinere?.showModal()
+      defenceDialog?.showModal()
       document.getElementById('sustinere-data')?.focus()
     })
   })
 
-  dSustinere
+  defenceDialog
     ?.querySelectorAll('[data-inchide-sustinere]')
-    .forEach((b) => b.addEventListener('click', () => dSustinere.close()))
+    .forEach((b) => b.addEventListener('click', () => defenceDialog.close()))
 
-  /* --- alegerea studentului de invitat ------------------------------------
+  /* --- choosing the student to invite -------------------------------------
    *
-   * Câmpul vizibil poartă numele, ca să poată fi căutat; formularul are nevoie
-   * de id, deci se traduce dintr-unul în altul. Dacă textul nu corespunde
-   * niciunei opțiuni, id-ul rămâne gol și `required` de pe el oprește
-   * trimiterea — deci un nume scris pe jumătate nu poate ajunge la server. */
-  const campNume = document.getElementById('student_nume') as HTMLInputElement | null
-  const campId = document.getElementById('student_id') as HTMLInputElement | null
+   * The visible field carries the name, so that it can be searched; the form
+   * needs the id, so one is translated into the other. If the text matches no
+   * option, the id stays empty and the `required` on it stops the submission —
+   * so a half-written name cannot reach the server. */
+  const nameField = document.getElementById('student_nume') as HTMLInputElement | null
+  const idField = document.getElementById('student_id') as HTMLInputElement | null
   const lista = document.getElementById('lista-invitabili')
 
-  if (campNume && campId && lista) {
-    const potrivire = () => {
+  if (nameField && idField && lista) {
+    const matchStudent = () => {
       const opt = [...lista.querySelectorAll<HTMLOptionElement>('option')].find(
-        (o) => o.value === campNume.value,
+        (o) => o.value === nameField.value,
       )
-      campId.value = opt?.dataset.id ?? ''
-      campNume.setAttribute('aria-invalid', campNume.value && !opt ? 'true' : 'false')
+      idField.value = opt?.dataset.id ?? ''
+      nameField.setAttribute('aria-invalid', nameField.value && !opt ? 'true' : 'false')
     }
 
-    campNume.addEventListener('input', potrivire)
-    campNume.addEventListener('change', potrivire)
-    campNume.form?.addEventListener('reluat', potrivire)
-    potrivire()
+    nameField.addEventListener('input', matchStudent)
+    nameField.addEventListener('change', matchStudent)
+    nameField.form?.addEventListener('reluat', matchStudent)
+    matchStudent()
   }
 </script>
 
 <style>
-  /* Câmpurile își încep eticheta pe aceeași linie și își încheie controlul pe
-     aceeași linie; textul ajutător crește în jos, nu împinge vecinul. */
+  /* The fields start their label on the same line and end their control on the
+     same line; the hint text grows downwards, it does not push the neighbour. */
   .invitatie__rand {
     display: grid;
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
@@ -1040,8 +1047,9 @@ function deadline(expiresAt: string | null | undefined) {
     min-width: 116px;
   }
 
-  /* Coloana de student nu are voie să se rupă în șase rânduri fiindcă tabelul a
-     mai primit o coloană: numele pe un rând, restul trunchiat cu titlu la hover. */
+  /* The student column is not allowed to break into six lines just because the
+     table has gained another column: the name on one line, the rest truncated
+     with a title on hover. */
   .celula-student {
     display: flex;
     flex-direction: column;
@@ -1089,8 +1097,9 @@ function deadline(expiresAt: string | null | undefined) {
     transform: scaleX(var(--procent, 0));
   }
 
-  /* Cronologia repetă forma din portalul studentului, ca profesorul să vadă
-     exact ce vede studentul — doar că fiecare termen se deschide pentru editare. */
+  /* The timeline repeats the shape from the student's portal, so the teacher
+     sees exactly what the student sees — except that every deadline opens for
+     editing. */
   .termene {
     list-style: none;
     margin: 0;
@@ -1228,8 +1237,8 @@ function deadline(expiresAt: string | null | undefined) {
     flex: none;
   }
 
-  /* Motivația e text scris de student despre student: stă separat de obiective,
-     care descriu lucrarea. */
+  /* The motivation is text written by the student about the student: it sits
+     apart from the objectives, which describe the thesis. */
   .cerere__motivatie {
     display: flex;
     flex-direction: column;

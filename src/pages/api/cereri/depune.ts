@@ -47,27 +47,27 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
   )
   if (!teacher) return back('Coordonatorul selectat nu există.', true)
 
-  /* Tema trebuie să fie a coordonatorului ales.
+  /* The topic must belong to the chosen coordinator.
    *
-   * Legătura era ținută doar de un script care ascundea opțiunile nepotrivite cu
-   * `option.hidden` — un atribut pe care nu toate motoarele îl respectă, deci pe
-   * unele browsere se putea alege prin interfața obișnuită tema altui cadru
-   * didactic. Nivelul trebuie să se potrivească și el: o temă de master nu are
-   * ce căuta pe o cerere de licență. */
+   * The link was held only by a script that hid the unsuitable options with
+   * `option.hidden` — an attribute that not every engine honours, so on some
+   * browsers another teacher's topic could be chosen through the ordinary
+   * interface. The level has to match as well: a master's topic has no business
+   * on a bachelor's request. */
   if (topicId) {
-    const tema = await queryOne<{ id: string; level: string; title: string }>(
+    const topic = await queryOne<{ id: string; level: string; title: string }>(
       `SELECT id, level, title
          FROM topics
         WHERE id = $1 AND teacher_id = $2 AND is_active
           AND academic_year_id = (SELECT id FROM academic_years WHERE is_current)`,
       [topicId, teacherId],
     )
-    if (!tema) {
+    if (!topic) {
       return back('Tema aleasă nu este propusă de acest coordonator în sesiunea curentă.', true)
     }
-    if (u.program && tema.level !== u.program) {
+    if (u.program && topic.level !== u.program) {
       return back(
-        `„${tema.title}” este o temă de ${tema.level === 'master' ? 'master' : 'licență'}, iar tu ești la ${u.program === 'master' ? 'master' : 'licență'}.`,
+        `„${topic.title}” este o temă de ${topic.level === 'master' ? 'master' : 'licență'}, iar tu ești la ${u.program === 'master' ? 'master' : 'licență'}.`,
         true,
       )
     }

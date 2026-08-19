@@ -5,8 +5,8 @@ import { demoAccounts, DEMO_MODE, initials, ROLE_LABELS } from '../lib/auth'
 const redirect = Astro.url.searchParams.get('redirect') ?? ''
 const trimis = Astro.url.searchParams.get('trimis') === '1'
 const eroare = Astro.url.searchParams.get('eroare')
-const emailScris = Astro.url.searchParams.get('email') ?? ''
-const conturi = await demoAccounts()
+const typedEmail = Astro.url.searchParams.get('email') ?? ''
+const demoAccountList = await demoAccounts()
 
 if (Astro.locals.user && !trimis) {
   const u = Astro.locals.user
@@ -16,7 +16,7 @@ if (Astro.locals.user && !trimis) {
 ---
 
 <BaseLayout title="Autentificare" description="Acces cu contul instituțional ASE">
-  <div class="ecran">
+  <div class="screen">
     <main class="card" id="continut">
       <a href="/" class="brand">
         <span class="brand__mark" aria-hidden="true">A</span>
@@ -30,11 +30,11 @@ if (Astro.locals.user && !trimis) {
         trimis ? (
           <div class="stack">
             <h1 class="title">Verifică-ți emailul</h1>
-            {/* „Verifică-ți emailul” fără să spună care lăsa pe cineva care a
-                greșit domeniul să aștepte un mesaj care nu pleca nicăieri. */}
+            {/* „Verifică-ți emailul” without saying which one left somebody who
+                got the domain wrong waiting for a message that went nowhere. */}
             <p class="muted">
               Am trimis linkul de autentificare la{' '}
-              {emailScris ? <strong>{emailScris}</strong> : 'adresa introdusă'}. Este valabil 20 de
+              {typedEmail ? <strong>{typedEmail}</strong> : 'adresa introdusă'}. Este valabil 20 de
               minute și poate fi folosit o singură dată.
             </p>
 
@@ -55,7 +55,7 @@ if (Astro.locals.user && !trimis) {
             </details>
 
             <div class="row row--wrap" style="gap:var(--s-2)">
-              <a href={`/autentificare${emailScris ? `?email=${encodeURIComponent(emailScris)}` : ''}`}
+              <a href={`/autentificare${typedEmail ? `?email=${encodeURIComponent(typedEmail)}` : ''}`}
                 class="btn btn--secondary">
                 Trimite din nou
               </a>
@@ -75,9 +75,10 @@ if (Astro.locals.user && !trimis) {
               <input type="hidden" name="redirect" value={redirect} />
               <div class="field">
                 <label class="label" for="email">Adresă de email</label>
-                {/* Adresa scrisă se păstrează: greșeala e aproape întotdeauna o
-                    literă, iar retastarea întregii adrese pentru o literă este
-                    exact felul de mărunțiș care face un portal obositor. */}
+                {/* The typed address is kept: the mistake is almost always one
+                    letter, and retyping the whole address for one letter is
+                    exactly the kind of small change that makes a portal
+                    tiring. */}
                 <input
                   class="input"
                   id="email"
@@ -86,7 +87,7 @@ if (Astro.locals.user && !trimis) {
                   required
                   autocomplete="email"
                   placeholder="prenume.nume@stud.ase.ro"
-                  value={emailScris}
+                  value={typedEmail}
                   aria-invalid={eroare ? 'true' : undefined}
                   aria-describedby={eroare ? 'eroare-email ajutor-email' : 'ajutor-email'}
                   autofocus
@@ -99,11 +100,12 @@ if (Astro.locals.user && !trimis) {
                 <span class="hint" id="ajutor-email">
                   Conturi @stud.ase.ro pentru studenți, @ase.ro pentru cadre didactice.
                 </span>
-                {/* Un domeniu greșit nu producea nicio reacție: portalul răspundea
-                    „ți-am trimis linkul” și nu trimitea nimic, fiindcă adresa nu
-                    exista. Corectura se propune înainte de trimitere. */}
+                {/* A wrong domain produced no reaction at all: the portal
+                    answered „ți-am trimis linkul” and sent nothing, because the
+                    address did not exist. The correction is offered before
+                    sending. */}
                 <p class="hint corectura" id="corectura" hidden>
-                  Ai vrut să scrii <button class="corectura__buton" type="button" id="corectura-text"></button>?
+                  Ai vrut să scrii <button class="correction__button" type="button" id="corectura-text"></button>?
                 </p>
               </div>
               <button class="btn btn--primary" type="submit">Trimite linkul de acces</button>
@@ -113,19 +115,19 @@ if (Astro.locals.user && !trimis) {
       }
 
       {
-        DEMO_MODE && conturi.length > 0 && (
+        DEMO_MODE && demoAccountList.length > 0 && (
           <section class="demo">
-            <h2 class="demo__titlu">Conturi demonstrative</h2>
+            <h2 class="demo__title">Conturi demonstrative</h2>
             <p class="demo__text">
               Modul demonstrativ este activ: poți intra direct, fără email. Datele sunt fictive.
             </p>
-            <ul class="demo__lista">
-              {conturi.map((c) => (
+            <ul class="demo__list">
+              {demoAccountList.map((c) => (
                 <li>
                   <form method="POST" action="/api/demo-login">
                     <input type="hidden" name="utilizator_id" value={c.id} />
                     <input type="hidden" name="redirect" value={redirect} />
-                    <button class="demo__cont" type="submit">
+                    <button class="demo__account" type="submit">
                       <span class="demo__avatar">{initials(c.name)}</span>
                       <span class="demo__meta">
                         <strong>{c.name}</strong>
@@ -151,16 +153,17 @@ if (Astro.locals.user && !trimis) {
 </BaseLayout>
 
 <script>
-  /* Domeniile instituționale, și greșelile care duc la ele.
+  /* The institutional domains, and the typos that lead to them.
    *
-   * O adresă cu domeniul greșit nu producea nicio reacție: portalul răspundea
-   * „ți-am trimis linkul” — răspuns identic indiferent dacă adresa există, ca să
-   * nu devină o unealtă de aflat cine are cont — și nu trimitea nimic. Corectura
-   * se propune înainte, unde încă se poate face ceva.
+   * An address with the wrong domain produced no reaction at all: the portal
+   * answered „ți-am trimis linkul” — the same answer whether or not the address
+   * exists, so that it does not become a tool for finding out who has an
+   * account — and sent nothing. The correction is offered beforehand, where
+   * something can still be done about it.
    */
-  const DOMENII = ['stud.ase.ro', 'ase.ro']
+  const DOMAINS = ['stud.ase.ro', 'ase.ro']
 
-  const APROPIATE: Record<string, string> = {
+  const DOMAIN_TYPOS: Record<string, string> = {
     'stud.ase.com': 'stud.ase.ro',
     'stud.ase.r': 'stud.ase.ro',
     'stud.ase.roo': 'stud.ase.ro',
@@ -172,43 +175,43 @@ if (Astro.locals.user && !trimis) {
     'asero': 'ase.ro',
   }
 
-  const camp = document.getElementById('email') as HTMLInputElement | null
-  const rand = document.getElementById('corectura')
-  const buton = document.getElementById('corectura-text')
+  const emailField = document.getElementById('email') as HTMLInputElement | null
+  const hintRow = document.getElementById('corectura')
+  const suggestionButton = document.getElementById('corectura-text')
 
-  if (camp && rand && buton) {
-    const propune = () => {
-      const [local, domeniu] = camp.value.trim().toLowerCase().split('@')
-      if (!local || !domeniu || DOMENII.includes(domeniu)) {
-        rand.hidden = true
+  if (emailField && hintRow && suggestionButton) {
+    const suggest = () => {
+      const [local, domain] = emailField.value.trim().toLowerCase().split('@')
+      if (!local || !domain || DOMAINS.includes(domain)) {
+        hintRow.hidden = true
         return
       }
 
-      const corect = APROPIATE[domeniu]
-      if (!corect) {
-        rand.hidden = true
+      const corrected = DOMAIN_TYPOS[domain]
+      if (!corrected) {
+        hintRow.hidden = true
         return
       }
 
-      buton.textContent = `${local}@${corect}`
-      rand.hidden = false
+      suggestionButton.textContent = `${local}@${corrected}`
+      hintRow.hidden = false
     }
 
-    camp.addEventListener('input', propune)
-    camp.addEventListener('blur', propune)
+    emailField.addEventListener('input', suggest)
+    emailField.addEventListener('blur', suggest)
 
-    buton.addEventListener('click', () => {
-      camp.value = buton.textContent ?? camp.value
-      rand.hidden = true
-      camp.focus()
+    suggestionButton.addEventListener('click', () => {
+      emailField.value = suggestionButton.textContent ?? emailField.value
+      hintRow.hidden = true
+      emailField.focus()
     })
 
-    propune()
+    suggest()
   }
 </script>
 
 <style>
-  .ecran {
+  .screen {
     min-height: 100svh;
     display: grid;
     place-items: center;
@@ -268,7 +271,7 @@ if (Astro.locals.user && !trimis) {
     font-size: var(--t-2xl);
   }
 
-  .corectura__buton {
+  .correction__button {
     border: 0;
     background: none;
     padding: 0;
@@ -305,7 +308,7 @@ if (Astro.locals.user && !trimis) {
     gap: var(--s-3);
   }
 
-  .demo__titlu {
+  .demo__title {
     font-size: var(--t-sm);
     font-weight: 600;
     color: var(--ink-soft);
@@ -316,7 +319,7 @@ if (Astro.locals.user && !trimis) {
     color: var(--ink-muted);
   }
 
-  .demo__lista {
+  .demo__list {
     list-style: none;
     padding: 0;
     display: flex;
@@ -324,7 +327,7 @@ if (Astro.locals.user && !trimis) {
     gap: var(--s-2);
   }
 
-  .demo__cont {
+  .demo__account {
     width: 100%;
     display: flex;
     align-items: center;
@@ -338,12 +341,12 @@ if (Astro.locals.user && !trimis) {
     transition: border-color var(--fast) var(--ease), background var(--fast) var(--ease);
   }
 
-  .demo__cont:hover {
+  .demo__account:hover {
     border-color: var(--border-strong);
     background: var(--surface-sunken);
   }
 
-  .demo__cont svg {
+  .demo__account svg {
     width: 16px;
     height: 16px;
     margin-left: auto;

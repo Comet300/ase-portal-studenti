@@ -76,7 +76,7 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
           [c.id, title, description, String(days), index],
         )
       }
-      // Firul de discuție se deschide odată cu acceptarea.
+      // The discussion thread opens at the moment of acceptance.
       await client.query(
         `INSERT INTO conversations (student_id, teacher_id) VALUES ($1, $2)
          ON CONFLICT (student_id, teacher_id) DO NOTHING`,
@@ -115,7 +115,7 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
   )
 
   if (student) {
-    const baza = process.env.APP_BASE_URL ?? url.origin
+    const baseUrl = process.env.APP_BASE_URL ?? url.origin
     const noteBlock = note ? quote(note) : ''
 
     await sendEmail({
@@ -131,12 +131,12 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
              ${note ? html`<p><strong>Mesaj de la coordonator:</strong></p>${noteBlock}` : ''}
              <p>În portal găsești acum termenele lucrării și poți programa consultații.</p>
              <p>Cererea de coordonare, completată cu datele tale, se descarcă și se tipărește de aici:
-             <a href="${baza}/documente/cerere/${cerere.id}">cerere-coordonare-${cerere.number}</a>.</p>`
+             <a href="${baseUrl}/documente/cerere/${cerere.id}">cerere-coordonare-${cerere.number}</a>.</p>`
           : html`<p>Bună, ${student.name.split(' ')[0]}. Cererea <strong>${cerere.number}</strong> pentru lucrarea
              „${cerere.title_ro}” a fost respinsă de ${u!.name}.</p>
              <p><strong>Motiv:</strong></p>${noteBlock}
              <p>Poți depune o cerere nouă, către același coordonator sau către altul.</p>`,
-        { text: 'Deschide portalul', url: `${baza}/cererile-mele` },
+        { text: 'Deschide portalul', url: `${baseUrl}/cererile-mele` },
       ),
     })
   }

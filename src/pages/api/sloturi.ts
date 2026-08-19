@@ -25,12 +25,12 @@ import { id as formId } from '../../lib/ids'
 const PAGE = '/profesor/consultatii'
 
 /**
- * „14:30” în ore de la miezul nopții.
+ * „14:30” as hours since midnight.
  *
- * Ora era un câmp numeric cu ore întregi, iar intervalul se construia
- * concatenând `' hours'` — deci o consultație la și jumătate nu se putea
- * exprima deloc. Se acceptă și un număr simplu, pentru formularele mai vechi
- * și pentru cererile care nu vin din browser.
+ * The hour was a numeric field holding whole hours, and the interval was built
+ * by concatenating `' hours'` — so a consultation on the half hour could not be
+ * expressed at all. A plain number is accepted as well, for the older forms and
+ * for the requests that do not come from a browser.
  */
 function parseClock(value: FormDataEntryValue | null): number | null {
   const raw = String(value ?? '').trim()
@@ -92,8 +92,8 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
       return back('Scrie unde are loc consultația — clădirea, etajul și sala.', true)
     }
 
-    // Blocul deschis se împarte în ore întregi, deci un capăt la și jumătate nu
-    // are voie să producă un interval care trece de ora de final.
+    // The open block is split into whole hours, so an endpoint on the half hour
+    // must not be allowed to produce an interval that runs past the end time.
     const hours = Math.min(Math.floor(endHour - startHour), 8)
     if (hours < 1) return back('Intervalul trebuie să acopere cel puțin o oră.', true)
 
@@ -212,7 +212,7 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
     )
     if (students.length === 0) return back('Alege studenți pe care îi coordonezi.', true)
 
-    // Sfert de oră este cea mai mică unitate pe care o oferă formularul.
+    // A quarter of an hour is the smallest unit the form offers.
     const hours = Math.min(Math.max(0.25, Math.round(durationHours * 4) / 4 || 1), 4)
 
     /* `student_id` on the slot names a single invitee, so it is only set when
@@ -324,13 +324,14 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
   if (action === 'anuleaza') {
     const slotId = formId(form.get('slot_id'))
 
-    /* Anularea marchează și rezervările — dar mai ales le spune celor care
-     * așteptau.
+    /* Cancelling marks the bookings as well — but above all it tells the people
+     * who were waiting.
      *
-     * Rezervările erau retrase în tăcere: studentul rămânea cu o oră în calendar
-     * și cu convingerea că se întâlnește cu coordonatorul, și afla că nu, când
-     * ajungea la ușă. Fiecare primește email, anulare în calendar și un eveniment
-     * în fir — aceleași trei canale ca la anularea dinspre student. */
+     * The bookings used to be withdrawn in silence: the student was left with an
+     * hour in their calendar and with the belief that they were meeting the
+     * coordinator, and found out that they were not when they got to the door.
+     * Each one gets an email, a cancellation in the calendar and an event in the
+     * thread — the same three channels as for a cancellation from the student. */
     const cancelledBookings = await query<{
       student_id: string
       student_name: string

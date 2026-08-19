@@ -1,31 +1,33 @@
 /**
- * Acordul cu numeralul, în românește.
+ * Agreement with the numeral, in Romanian.
  *
- * Portalul numără constant: cereri, intervale, fișiere, ore. Regula românească nu
- * este cea englezească — după 19, substantivul cere „de”: „19 ore”, dar „20 de
- * ore”. Scrisă de mână la fiecare afișare, se scrie greșit exact acolo unde
- * numărul e mare, adică unde se citește mai des.
+ * The portal counts all the time: requests, slots, files, hours. The Romanian
+ * rule is not the English one — past 19, the noun requires „de”: „19 ore”, but
+ * „20 de ore”. Written out by hand at every place that displays a number, it
+ * comes out wrong exactly where the number is large, which is where it is read
+ * most often.
  *
- * Fără nicio dependență, ca `prezenta` și `date`: se folosește și pe server, și
- * în paginile care numără din JavaScript.
+ * Without any dependency, like `presence` and `date`: it is used both on the
+ * server and in the pages that count from JavaScript.
  */
 
 /**
  * `numar(3, 'consultație', 'consultații')` → „3 consultații”.
  * `numar(21, 'oră', 'ore')` → „21 de ore”.
  *
- * Zecimalele merg la plural și se scriu cu virgulă, cum se scriu în românește:
+ * Decimals take the plural and are written with a comma, the way they are
+ * written in Romanian:
  * `numar(1.5, 'oră', 'ore')` → „1,5 ore”.
  */
 export function numar(n: number, singular: string, plural: string): string {
-  const scris = Number.isInteger(n) ? String(n) : n.toFixed(1).replace('.', ',')
+  const written = Number.isInteger(n) ? String(n) : n.toFixed(1).replace('.', ',')
 
-  if (n === 1) return `${scris} ${singular}`
+  if (n === 1) return `${written} ${singular}`
 
-  /* „de” intră de la 20 în sus, și se repetă la fiecare sută: 119 ore, dar 120 de
-   * ore; 101 ore, dar 120 de ore. Regula se uită la ultimele două cifre. */
-  const ultimeleDoua = Math.floor(Math.abs(n)) % 100
-  const cereDe = Number.isInteger(n) && ultimeleDoua >= 20 || ultimeleDoua === 0 && Math.abs(n) >= 20
+  /* „de” comes in from 20 upwards, and comes back at every hundred: 119 ore, but
+   * 120 de ore; 101 ore, but 120 de ore. The rule looks at the last two digits. */
+  const lastTwoDigits = Math.floor(Math.abs(n)) % 100
+  const needsDe = Number.isInteger(n) && lastTwoDigits >= 20 || lastTwoDigits === 0 && Math.abs(n) >= 20
 
-  return cereDe ? `${scris} de ${plural}` : `${scris} ${plural}`
+  return needsDe ? `${written} de ${plural}` : `${written} ${plural}`
 }

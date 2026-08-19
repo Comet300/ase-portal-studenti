@@ -1,5 +1,5 @@
 import type { APIRoute } from 'astro'
-import { noteazaAcces } from '../../lib/audit'
+import { recordAccess } from '../../lib/audit'
 import { isDepartmentHead, isTeacher } from '../../lib/auth'
 import { query, queryOne } from '../../lib/db'
 import { id } from '../../lib/ids'
@@ -50,12 +50,12 @@ export const GET: APIRoute = async ({ locals, url, request }) => {
 
   const all = isDepartmentHead(u) && url.searchParams.get('doar_ale_mele') !== '1'
 
-  /* Anul, când ecranul care cere exportul are un an ales.
+  /* The year, when the screen asking for the export has one selected.
    *
-   * Arhiva se răsfoiește pe ani universitari, dar exportul răspundea numai cu
-   * sesiunea curentă: butonul de pe o promoție din 2023 descărca 2026. Un `an`
-   * care nu e uuid cade pe sesiunea curentă, nu pe „tot”. */
-  const anul = id(url.searchParams.get('an'))
+   * The archive is browsed by academic year, but the export answered only with
+   * the current session: the button on a 2023 cohort downloaded 2026. An `an`
+   * that is not a uuid falls back to the current session, not to „tot”. */
+  const yearId = id(url.searchParams.get('an'))
 
   const rows = await query<Record<string, unknown>>(
     `SELECT r.number, s.name AS student_name, s.student_number, s.program, s.specialization,
@@ -71,7 +71,7 @@ export const GET: APIRoute = async ({ locals, url, request }) => {
         AND r.academic_year_id = COALESCE($3::uuid, (SELECT id FROM academic_years WHERE is_current))
         AND ($1 OR r.teacher_id = $2)
       ORDER BY t.name, s.name`,
-    [all, u!.id, anul],
+    [all, u!.id, yearId],
   )
 
   const lines = [
@@ -100,19 +100,19 @@ export const GET: APIRoute = async ({ locals, url, request }) => {
     ),
   ]
 
-  /* Numele fișierului spune care promoție e în el: doi exporturi din doi ani
-     ajungeau amândoi „coordonarile-mele.csv” în folderul Descărcări. */
-  const eticheta = (
+  /* The file name says which cohort is inside it: two exports from two years
+     both landed as „coordonarile-mele.csv” in the Downloads folder. */
+  const yearLabel = (
     await queryOne<{ label: string }>(
       `SELECT label FROM academic_years
         WHERE id = COALESCE($1::uuid, (SELECT id FROM academic_years WHERE is_current))`,
-      [anul],
+      [yearId],
     )
   )?.label
-  const sufix = eticheta ? '-' + eticheta.replace(/[^\x20-\x7e]+/g, '-') : ''
-  const filename = `${all ? 'coordonari-departament' : 'coordonarile-mele'}${sufix}.csv`
+  const suffix = yearLabel ? '-' + yearLabel.replace(/[^\x20-\x7e]+/g, '-') : ''
+  const filename = `${all ? 'coordonari-departament' : 'coordonarile-mele'}${suffix}.csv`
 
-  await noteazaAcces({ userId: u!.id, action: 'export_coordonari', subject: url.pathname + url.search, rowCount: rows.length, request })
+  await recordAccess({ userId: u!.id, action: 'export_coordonari', subject: url.pathname + url.search, rowCount: rows.length, request })
 
   return new Response('﻿' + lines.join('\r\n') + '\r\n', {
     headers: {

@@ -76,7 +76,7 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
       )
     }
 
-    // Notificarea are nevoie de rândul creat, ca să poată duce exact la el.
+    // The notification needs the row it creates, so it can lead exactly to it.
     let created: { id: string } | null = null
     try {
       created = await queryOne<{ id: string }>(

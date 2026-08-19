@@ -1,17 +1,18 @@
 /**
- * Conexiunea pierdută.
+ * The lost connection.
  *
- * Publicul acestui portal îl deschide din amfiteatru și din metrou. Fără nimic
- * aici, un submit pe semnal slab dă pagina de eroare a browserului și tot ce
- * s-a scris dispare — mai des decât o respingere de la server, care măcar
- * păstrează câmpurile (vezi scripts/formulare.ts).
+ * The audience of this portal opens it from the lecture hall and from the
+ * underground. With nothing here, a submit on a weak signal gives the browser's
+ * error page and everything that was written disappears — more often than a
+ * rejection from the server, which at least keeps the fields (see
+ * scripts/forms.ts).
  */
 
-export function porneste() {
+export function start() {
   const banner = document.getElementById('banner-offline')
   if (!banner) return
 
-  const arata = () => {
+  const render = () => {
     const offline = !navigator.onLine
     document.documentElement.dataset.offline = offline ? '' : undefined!
     if (!offline) delete document.documentElement.dataset.offline
@@ -28,7 +29,7 @@ export function porneste() {
     })
   }
 
-  window.addEventListener('online', arata)
-  window.addEventListener('offline', arata)
-  arata()
+  window.addEventListener('online', render)
+  window.addEventListener('offline', render)
+  render()
 }

@@ -1,18 +1,19 @@
 import type { APIRoute } from 'astro'
-import { noteazaAcces } from '../../lib/audit'
+import { recordAccess } from '../../lib/audit'
 import { query, queryOne } from '../../lib/db'
 import { sessionExpired } from '../../lib/http'
 
 /**
- * Copia datelor proprii, la cerere și fără cerere.
+ * A copy of one's own data, on demand and without an application.
  *
- * Dreptul de acces (art. 15) nu are nevoie de un formular și de un răspuns în
- * treizeci de zile dacă portalul poate răspunde singur: toate datele sunt aici,
- * legate de un id pe care sesiunea îl cunoaște deja.
+ * The right of access (art. 15) needs neither a form nor an answer within
+ * thirty days if the portal can answer on its own: all the data is here, tied
+ * to an id the session already knows.
  *
- * Fiecare interogare pornește de la `u.id`, deci nu există parametru cu care
- * cineva să ceară datele altcuiva. Conținutul fișierelor nu intră — se listează
- * numele și mărimea, iar fișierele se descarcă din conversație.
+ * Every query starts from `u.id`, so there is no parameter with which someone
+ * could ask for somebody else's data. The contents of the files are not
+ * included — the name and the size are listed, and the files themselves are
+ * downloaded from the conversation.
  */
 export const GET: APIRoute = async ({ locals, request }) => {
   const u = locals.user
@@ -77,7 +78,7 @@ export const GET: APIRoute = async ({ locals, request }) => {
     ),
   ])
 
-  await noteazaAcces({ userId: u.id, action: 'export_date_proprii', request })
+  await recordAccess({ userId: u.id, action: 'export_date_proprii', request })
 
   const date = {
     generat_la: new Date().toISOString(),

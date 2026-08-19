@@ -5,7 +5,7 @@ import { deadEnd, redirectWithNotice, sessionExpired } from '../../lib/http'
 import { formAction } from '../../lib/forms'
 import { id as formId } from '../../lib/ids'
 
-/** Temele propuse de un cadru didactic. Proprietarul este verificat în fiecare instrucțiune. */
+/** The topics proposed by a teacher. Ownership is checked in every statement. */
 export const POST: APIRoute = async ({ request, locals }) => {
   const u = locals.user
   if (!isTeacher(u)) return sessionExpired()
@@ -31,8 +31,8 @@ export const POST: APIRoute = async ({ request, locals }) => {
     }
     if (!['ro', 'en', 'fr', 'de'].includes(language)) return back('Limbă invalidă.', true)
 
-    // Temele aparțin anului curent: un an nou pornește cu un catalog gol, dacă
-    // directorul nu alege explicit să îl preia.
+    // Topics belong to the current year: a new year starts with an empty
+    // catalogue, unless the director explicitly chooses to carry it over.
     await execute(
       `INSERT INTO topics (academic_year_id, teacher_id, title, description, level, language,
                            methods, prerequisites, seats)

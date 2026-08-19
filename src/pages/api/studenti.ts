@@ -23,28 +23,29 @@ export const POST: APIRoute = async ({ request, locals }) => {
 
   const form = await request.formData()
   const programmeId = formId(form.get('program_id'))
-  const anBrut = form.get('an_studiu')
+  const rawYear = form.get('an_studiu')
   const studyGroup = String(form.get('grupa') ?? '').trim()
 
-  /* Unul sau mai mulți.
+  /* One or many.
    *
-   * Un an întreg se corectează după listele de la secretariat: treizeci de
-   * studenți din aceeași grupă, aceeași mutare de treizeci de ori. `getAll`, nu
-   * `get`: cu bifele din tabel vin mai multe câmpuri cu același nume, iar `get`
-   * ar întoarce doar primul. */
+   * A whole year gets corrected against the lists from the registrar: thirty
+   * students from the same group, the same move thirty times over. `getAll`,
+   * not `get`: the checkboxes in the table send several fields with the same
+   * name, and `get` would return only the first. */
   const studentIds = [...form.getAll('student_id'), ...form.getAll('studenti')]
     .map((v) => formId(v))
     .filter((v): v is string => v !== null)
 
-  /* Filtrele și locul din pagină se păstrează.
+  /* The filters and the place in the page are kept.
    *
-   * Se întorcea la `/profesor/facultate` curat: după fiecare salvare, directorul
-   * care lucra pe „master, fără cerere depusă” primea din nou toată facultatea și
-   * capul listei. Adresa vine din pagină și trece prin `internalPath`, ca un
-   * parametru scris de mână să nu poată trimite pe nimeni în altă parte. */
-  const inapoi = internalPath(String(form.get('redirect') ?? ''), PAGE)
+   * It used to go back to a bare `/profesor/facultate`: after every save, the
+   * head of department working on „master, fără cerere depusă” got the whole
+   * faculty again and the top of the list. The address comes from the page and
+   * goes through `internalPath`, so that a hand-written parameter cannot send
+   * anyone somewhere else. */
+  const backUrl = internalPath(String(form.get('redirect') ?? ''), PAGE)
 
-  const back = (message: string, isError = false) => redirectWithNotice(inapoi, message, isError)
+  const back = (message: string, isError = false) => redirectWithNotice(backUrl, message, isError)
 
   if (studentIds.length === 0) return back('Niciun student selectat.', true)
 
@@ -64,29 +65,30 @@ export const POST: APIRoute = async ({ request, locals }) => {
   )
   if (!programme) return back('Alege un program de studiu din anul curent.', true)
 
-  /* Câmp gol înseamnă „nu schimba”, nu „anul 1”.
+  /* An empty field means „nu schimba”, not „anul 1”.
    *
-   * `Number('')` este 0, `Number.isFinite(0)` este adevărat, iar limitarea la
-   * 1–6 îl ridica la 1 — deci `COALESCE` nu vedea niciodată NULL. Câmpul se
-   * randează gol pentru orice student fără an înregistrat, așa că un director
-   * care corecta doar grupa îi ștergea anul, fără ca mesajul de confirmare să
-   * pomenească nimic. */
-  const anText = anBrut === null ? '' : String(anBrut).trim()
+   * `Number('')` is 0, `Number.isFinite(0)` is true, and the clamp to 1–6
+   * raised it to 1 — so `COALESCE` never saw NULL. The field renders empty for
+   * any student with no year on record, so a head of department who was
+   * correcting only the group wiped their year, without the confirmation
+   * message mentioning anything. */
+  const yearText = rawYear === null ? '' : String(rawYear).trim()
   let year: number | null = null
 
-  if (anText !== '') {
-    const n = Number(anText)
+  if (yearText !== '') {
+    const n = Number(yearText)
     if (!Number.isFinite(n) || n < 1 || n > 6) {
       return back('Anul de studiu trebuie să fie un număr între 1 și 6.', true)
     }
     year = Math.trunc(n)
   }
 
-  // Ce s-a schimbat de fapt, ca mesajul să nu anunțe o mutare care nu a avut loc.
-  const mutati = studenti.filter((s) => s.programme_id !== programme.id).length
+  // What actually changed, so that the message does not announce a move that
+  // never took place.
+  const moved = studenti.filter((s) => s.programme_id !== programme.id).length
 
-  /* O singură instrucțiune pentru toți: treizeci de UPDATE-uri într-o buclă ar
-   * lăsa jumătatea dintâi mutată și restul nu, dacă a doua jumătate eșuează. */
+  /* A single statement for all of them: thirty UPDATEs in a loop would leave
+   * the first half moved and the rest not, if the second half fails. */
   await execute(
     `UPDATE users
         SET programme_id   = $2,
@@ -99,20 +101,21 @@ export const POST: APIRoute = async ({ request, locals }) => {
     [studenti.map((s) => s.id), programme.id, programme.level, programme.name, programme.language, year, studyGroup],
   )
 
-  /* Mesajul spunea „a fost mutat la X” la fiecare salvare, chiar când programul
-   * nu se schimbase și se corectase doar grupa — și punea participiul la
-   * masculin pentru oricine. Formularea neutră evită și una, și alta. */
+  /* The message said „a fost mutat la X” on every save, even when the
+   * programme had not changed and only the group had been corrected — and it
+   * put the participle in the masculine for everyone. The neutral wording
+   * avoids both. */
   if (studenti.length === 1) {
     return back(
-      mutati === 1
+      moved === 1
         ? `${studenti[0].name}: program schimbat în ${programme.name}.`
         : `Datele lui ${studenti[0].name} au fost salvate.`,
     )
   }
 
   return back(
-    mutati > 0
-      ? `${studenti.length} studenți salvați, dintre care ${mutati} mutați la ${programme.name}.`
+    moved > 0
+      ? `${studenti.length} studenți salvați, dintre care ${moved} mutați la ${programme.name}.`
       : `${studenti.length} studenți salvați.`,
   )
 }

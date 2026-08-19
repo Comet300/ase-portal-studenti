@@ -28,16 +28,16 @@ import {
 const nivel = Astro.url.searchParams.get('nivel') ?? ''
 const limba = Astro.url.searchParams.get('limba') ?? ''
 const stare = Astro.url.searchParams.get('stare') ?? ''
-const cauta = (Astro.url.searchParams.get('q') ?? '').trim().toLowerCase()
+const searchQuery = (Astro.url.searchParams.get('q') ?? '').trim().toLowerCase()
 
 const all = await studentDirectory()
 
-/* Mutarea unui student între programe este o sarcină administrativă: apare doar
- * pentru directorul de departament, pe același ecran pe care oricum se uită la
- * cine în ce grupă e. */
-const poateAtribui = isDepartmentHead(Astro.locals.user)
-const an = poateAtribui ? await currentYear() : null
-const programeleAnului = an ? (await programmes(an.id)).filter((p) => p.is_active) : []
+/* Moving a student between programmes is an administrative task: it appears only
+ * for the head of department, on the same screen where they are already looking
+ * at who is in which group. */
+const canAssign = isDepartmentHead(Astro.locals.user)
+const an = canAssign ? await currentYear() : null
+const yearProgrammes = an ? (await programmes(an.id)).filter((p) => p.is_active) : []
 
 const filtered = all.filter((s) => {
   if (nivel && s.program !== nivel) return false
@@ -45,14 +45,14 @@ const filtered = all.filter((s) => {
   if (stare === 'coordonat' && s.request_status !== 'approved') return false
   if (stare === 'asteptare' && s.request_status !== 'pending') return false
   if (stare === 'neinceput' && s.request_status) return false
-  if (cauta) {
+  if (searchQuery) {
     const haystack = `${s.name} ${s.student_number ?? ''} ${s.specialization ?? ''} ${s.teacher_name ?? ''}`
-    if (!haystack.toLowerCase().includes(cauta)) return false
+    if (!haystack.toLowerCase().includes(searchQuery)) return false
   }
   return true
 })
 
-/** Grupele: nivel · specializare · limbă — exact cheia după care se face orarul. */
+/** The groups: level · specialization · language — exactly the key the timetable uses. */
 const groups = new Map<string, typeof filtered>()
 for (const s of filtered) {
   const key = `${s.program ?? 'bachelor'}|${s.specialization ?? '—'}|${s.study_language}`
@@ -70,7 +70,7 @@ const grouped = [...groups.entries()]
       specialization,
       language,
       students,
-      coordonati: students.filter((s) => s.request_status === 'approved').length,
+      supervised: students.filter((s) => s.request_status === 'approved').length,
     }
   })
   .sort(
@@ -84,25 +84,26 @@ const languages = [...new Set(all.map((s) => s.study_language))]
 
 const totals = {
   toti: all.length,
-  coordonati: all.filter((s) => s.request_status === 'approved').length,
+  supervised: all.filter((s) => s.request_status === 'approved').length,
   asteptare: all.filter((s) => s.request_status === 'pending').length,
 }
-const neinceput = totals.toti - totals.coordonati - totals.asteptare
+const neinceput = totals.toti - totals.supervised - totals.asteptare
 
-const STARI = [
+const STATUS_OPTIONS = [
   { value: '', text: 'Toate stările' },
   { value: 'coordonat', text: 'Cu coordonator' },
   { value: 'asteptare', text: 'Cerere în așteptare' },
   { value: 'neinceput', text: 'Nu a depus cerere' },
 ]
 
-/* Unde se întoarce o salvare.
+/* Where a save comes back to.
  *
- * Filtrele trăiau doar în adresă, iar `/api/studenti` redirecta la pagina curată:
- * după fiecare corectură, directorul care lucra pe „master, fără cerere depusă”
- * primea din nou toată facultatea, de la cap. Adresa curentă merge cu formularul.
+ * The filters lived only in the address, and `/api/studenti` redirected to the
+ * bare page: after every correction, the head of department who was working on
+ * „master, fără cerere depusă” got the whole faculty back, from the top. The
+ * current address travels with the form.
  */
-const inapoi = Astro.url.pathname + Astro.url.search
+const backUrl = Astro.url.pathname + Astro.url.search
 ---
 
 <ProfesorLayout
@@ -116,17 +117,17 @@ const inapoi = Astro.url.pathname + Astro.url.search
 
   <div class="stack stack--loose">
     <div class="grid-auto">
-      <Metrica valoare={totals.toti} eticheta="studenți în sesiune" />
-      <Metrica valoare={totals.coordonati} eticheta="cu coordonator confirmat" />
-      <Metrica valoare={totals.asteptare} eticheta="cu cerere în așteptare" />
-      <Metrica valoare={neinceput} eticheta="fără cerere depusă" alerta={neinceput > 0} />
+      <Metrica value={totals.toti} label="studenți în sesiune" />
+      <Metrica value={totals.supervised} label="cu coordonator confirmat" />
+      <Metrica value={totals.asteptare} label="cu cerere în așteptare" />
+      <Metrica value={neinceput} label="fără cerere depusă" alerta={neinceput > 0} />
     </div>
 
     <form method="GET" class="panel">
       <div class="panel__body row row--wrap" style="gap:var(--s-3);align-items:flex-end">
         <div class="field" style="flex:2;min-width:220px">
           <label class="label" for="q">Caută</label>
-          <input class="input" id="q" name="q" type="search" value={cauta}
+          <input class="input" id="q" name="q" type="search" value={searchQuery}
             placeholder="Nume, număr matricol sau coordonator…" />
         </div>
         <div class="field" style="min-width:150px">
@@ -154,7 +155,7 @@ const inapoi = Astro.url.pathname + Astro.url.search
         <div class="field" style="min-width:190px">
           <label class="label" for="stare">Stare</label>
           <select class="select" id="stare" name="stare">
-            {STARI.map((s) => <option value={s.value} selected={stare === s.value}>{s.text}</option>)}
+            {STATUS_OPTIONS.map((s) => <option value={s.value} selected={stare === s.value}>{s.text}</option>)}
           </select>
         </div>
         <button class="btn btn--secondary" type="submit">Filtrează</button>
@@ -164,9 +165,9 @@ const inapoi = Astro.url.pathname + Astro.url.search
     {
       grouped.length === 0 ? (
         <section class="panel">
-          {/* „Niciun student pentru filtrele alese” era afișat și când facultatea
-              chiar nu are încă niciun student — două situații cu pași următori
-              complet diferiți. */}
+          {/* „Niciun student pentru filtrele alese” was shown even when the
+              faculty really has no students yet — two situations whose next
+              steps are completely different. */}
           {all.length === 0 ? (
             <div class="empty">
               <p class="empty__title">Niciun student în sesiune</p>
@@ -198,18 +199,18 @@ const inapoi = Astro.url.pathname + Astro.url.search
                 {g.language !== 'ro' ? ` · ${languageLabel(g.language).toLowerCase()}` : ''}
               </h2>
               <span class="muted text-sm">
-                {g.coordonati} din {g.students.length} au coordonator
+                {g.supervised} din {g.students.length} au coordonator
               </span>
             </div>
 
-            {/* Un an întreg se corectează după listele de la secretariat:
-                treizeci de studenți din aceeași grupă, aceeași mutare de treizeci
-                de ori, cu o reîncărcare între fiecare două. Bara aplică o
-                schimbare tuturor celor bifați dintr-o instrucțiune.
+            {/* A whole year gets corrected against the lists from the registry:
+                thirty students from the same group, the same move thirty times
+                over, with a page reload between every two. The bar applies one
+                change to everyone ticked, in a single instruction.
 
-                Formularul stă în afara tabelului, iar bifele îl referă prin
-                `form=`: un `<form>` nu se poate întinde peste rânduri de tabel. */}
-            {poateAtribui && (
+                The form sits outside the table and the checkboxes refer to it
+                through `form=`: a `<form>` cannot stretch across table rows. */}
+            {canAssign && (
               <form
                 method="POST"
                 action="/api/studenti"
@@ -217,13 +218,13 @@ const inapoi = Astro.url.pathname + Astro.url.search
                 class="selectie"
                 hidden
               >
-                <input type="hidden" name="redirect" value={inapoi} />
+                <input type="hidden" name="redirect" value={backUrl} />
                 <p class="selectie__contor" aria-live="polite">
                   <strong data-contor-selectie>0</strong> selectați
                 </p>
                 <label class="label" for={`prog-grup-${g.key}`}>Mută în programul</label>
                 <select class="select select--sm" id={`prog-grup-${g.key}`} name="program_id">
-                  {programeleAnului.map((p) => (
+                  {yearProgrammes.map((p) => (
                     <option value={p.id} selected={p.level === g.level && p.name === g.specialization && p.language === g.language}>
                       {LEVEL_LABELS[p.level]} · {p.name} · {LANGUAGE_LABELS[p.language]}
                     </option>
@@ -233,7 +234,7 @@ const inapoi = Astro.url.pathname + Astro.url.search
                 <input class="input input--num" id={`an-grup-${g.key}`} name="an_studiu" type="number" min="1" max="6" placeholder="—" />
                 <label class="label" for={`gr-grup-${g.key}`}>Grupa</label>
                 <input class="input input--num" id={`gr-grup-${g.key}`} name="grupa" placeholder="Ex: RO-1503" />
-                {/* Câmp gol înseamnă „nu schimba”, la fel ca pe rândul singular. */}
+                {/* An empty field means „nu schimba”, as on the single row. */}
                 <button class="btn btn--primary btn--sm" type="submit">Aplică selecției</button>
                 <button class="btn btn--ghost btn--sm" type="button" data-goleste-selectie>
                   Deselectează
@@ -245,13 +246,13 @@ const inapoi = Astro.url.pathname + Astro.url.search
               <table class="table">
                 <thead>
                   <tr>
-                    {/* Bifa „toți” stă în capul coloanei de studenți, nu într-o
-                        coloană proprie: o coloană în plus ar fi cerut și un
-                        `colspan` mai mare pe rândul de editare, iar cele două se
-                        despart tăcut la prima schimbare. */}
+                    {/* The „toți” checkbox sits in the head of the student
+                        column, not in a column of its own: an extra column would
+                        also have required a larger `colspan` on the editing row,
+                        and those two drift apart silently at the first change. */}
                     <th scope="col">
                       <span class="cap-student">
-                        {poateAtribui && (
+                        {canAssign && (
                           <input
                             class="bifa-toti"
                             type="checkbox"
@@ -265,7 +266,7 @@ const inapoi = Astro.url.pathname + Astro.url.search
                     <th scope="col">An</th>
                     <th scope="col">Coordonator</th>
                     <th scope="col">Stare</th>
-                    {poateAtribui && <th scope="col">Grupare</th>}
+                    {canAssign && <th scope="col">Grupare</th>}
                   </tr>
                 </thead>
                 <tbody>
@@ -274,10 +275,10 @@ const inapoi = Astro.url.pathname + Astro.url.search
                     <tr id={`student-${s.id}`}>
                       <td>
                         <div class="row" style="gap:var(--s-3)">
-                          {/* Bifa este în afara formularului de rând, în cel de
-                              grup: un `<form>` nu se poate întinde peste rânduri
-                              de tabel, iar bifele trebuie să plece împreună. */}
-                          {poateAtribui && (
+                          {/* The checkbox is outside the row form, inside the
+                              group one: a `<form>` cannot stretch across table
+                              rows, and the checkboxes have to leave together. */}
+                          {canAssign && (
                             <input
                               class="bifa-student"
                               type="checkbox"
@@ -312,7 +313,7 @@ const inapoi = Astro.url.pathname + Astro.url.search
                           <span class="badge badge--ciorna">Nu a depus cerere</span>
                         )}
                       </td>
-                      {poateAtribui && (
+                      {canAssign && (
                         <td style="text-align:right">
                           <button
                             class="btn btn--secondary btn--sm"
@@ -326,20 +327,21 @@ const inapoi = Astro.url.pathname + Astro.url.search
                         </td>
                       )}
                     </tr>
-                    {/* Editorul stătea în celulă: un select de 210px plus două
-                        câmpuri plus un buton forțau tabelul la peste 1000px, iar
-                        „Salvează” rămânea tăiat la 1280px și tot documentul —
-                        nu doar tabelul — derula lateral pe telefon. Aici are un
-                        rând întreg, deschis doar când e nevoie. */}
-                    {poateAtribui && (
+                    {/* The editor used to sit in the cell: a 210px select plus
+                        two fields plus a button forced the table past 1000px,
+                        „Salvează” stayed cut off at 1280px, and the whole
+                        document — not only the table — scrolled sideways on a
+                        phone. Here it has a row of its own, opened only when
+                        needed. */}
+                    {canAssign && (
                       <tr class="editor-rand" id={`editor-${s.id}`} hidden>
                         <td colspan="6">
                           <form method="POST" action="/api/studenti" class="atribuire">
                             <input type="hidden" name="student_id" value={s.id} />
-                            <input type="hidden" name="redirect" value={`${inapoi}#student-${s.id}`} />
+                            <input type="hidden" name="redirect" value={`${backUrl}#student-${s.id}`} />
                             <label class="label" for={`prog-${s.id}`}>Program de studiu</label>
                             <select class="select select--sm" id={`prog-${s.id}`} name="program_id">
-                              {programeleAnului.map((p) => (
+                              {yearProgrammes.map((p) => (
                                 <option
                                   value={p.id}
                                   selected={
@@ -362,9 +364,9 @@ const inapoi = Astro.url.pathname + Astro.url.search
                               max="6"
                               value={s.study_year ?? ''}
                             />
-                            {/* Pe un rând deschis pe toată lățimea încape o
-                                etichetă adevărată; placeholderul ținea locul unei
-                                etichete și dispărea la prima tastă. */}
+                            {/* A row opened across the full width has space for
+                                a real label; the placeholder stood in for a label
+                                and vanished at the first keystroke. */}
                             <label class="label" for={`gr-${s.id}`}>Grupa</label>
                             <input
                               class="input input--num"
@@ -391,19 +393,19 @@ const inapoi = Astro.url.pathname + Astro.url.search
 </ProfesorLayout>
 
 <script>
-  // Editorul de grupare se deschide pe rândul de sub student, unul singur odată.
+  // The grouping editor opens on the row below the student, one at a time.
   document.querySelectorAll<HTMLButtonElement>('[data-editeaza]').forEach((b) => {
     b.addEventListener('click', () => {
       const rand = document.getElementById(`editor-${b.dataset.editeaza}`)
       if (!rand) return
 
-      const deschis = !rand.hidden
+      const wasOpen = !rand.hidden
       document.querySelectorAll<HTMLElement>('.editor-rand').forEach((r) => (r.hidden = true))
       document
         .querySelectorAll<HTMLButtonElement>('[data-editeaza]')
         .forEach((x) => x.setAttribute('aria-expanded', 'false'))
 
-      if (deschis) return
+      if (wasOpen) return
 
       rand.hidden = false
       b.setAttribute('aria-expanded', 'true')
@@ -411,59 +413,60 @@ const inapoi = Astro.url.pathname + Astro.url.search
     })
   })
 
-  /* --- selecția pentru mai mulți studenți ----------------------------------
+  /* --- selecting several students at once -----------------------------------
    *
-   * Bara stă ascunsă cât nu e nimeni bifat: un rând de controale permanent
-   * deasupra fiecărui grup ar fi mobilier pentru o acțiune rară. Fiecare grup are
-   * propria selecție, pentru că mutarea se face în programul unui grup — o
-   * selecție care traversa două tabele ar sugera altceva decât face. */
-  document.querySelectorAll<HTMLFormElement>('form.selectie').forEach((bara) => {
-    const bifele = [...document.querySelectorAll<HTMLInputElement>(`input[form="${bara.id}"]`)]
-    if (bifele.length === 0) return
+   * The bar stays hidden while nobody is ticked: a row of controls permanently
+   * above every group would be furniture for a rare action. Each group has its
+   * own selection, because the move goes into one group's programme — a selection
+   * that crossed two tables would suggest something other than what it does. */
+  document.querySelectorAll<HTMLFormElement>('form.selectie').forEach((bar) => {
+    const boxes = [...document.querySelectorAll<HTMLInputElement>(`input[form="${bar.id}"]`)]
+    if (boxes.length === 0) return
 
-    const tabel = bifele[0].closest('table')
-    const toti = tabel?.querySelector<HTMLInputElement>('.bifa-toti') ?? null
-    const contor = bara.querySelector<HTMLElement>('[data-contor-selectie]')
+    const table = boxes[0].closest('table')
+    const toti = table?.querySelector<HTMLInputElement>('.bifa-toti') ?? null
+    const contor = bar.querySelector<HTMLElement>('[data-contor-selectie]')
 
-    const reimprospateaza = () => {
-      const alese = bifele.filter((b) => b.checked)
-      bara.hidden = alese.length === 0
-      if (contor) contor.textContent = String(alese.length)
+    const refresh = () => {
+      const checked = boxes.filter((b) => b.checked)
+      bar.hidden = checked.length === 0
+      if (contor) contor.textContent = String(checked.length)
       if (toti) {
-        toti.checked = alese.length === bifele.length && bifele.length > 0
-        // Starea a treia: unele bifate. Fără ea, „toți” arată gol cu jumătate alese.
-        toti.indeterminate = alese.length > 0 && alese.length < bifele.length
+        toti.checked = checked.length === boxes.length && boxes.length > 0
+        // The third state: some ticked. Without it, „toți” looks empty with half
+        // of them selected.
+        toti.indeterminate = checked.length > 0 && checked.length < boxes.length
       }
     }
 
-    bifele.forEach((b) => b.addEventListener('change', reimprospateaza))
+    boxes.forEach((b) => b.addEventListener('change', refresh))
 
     toti?.addEventListener('change', () => {
-      bifele.forEach((b) => (b.checked = toti.checked))
-      reimprospateaza()
+      boxes.forEach((b) => (b.checked = toti.checked))
+      refresh()
     })
 
-    bara.querySelector<HTMLButtonElement>('[data-goleste-selectie]')?.addEventListener('click', () => {
-      bifele.forEach((b) => (b.checked = false))
-      reimprospateaza()
+    bar.querySelector<HTMLButtonElement>('[data-goleste-selectie]')?.addEventListener('click', () => {
+      boxes.forEach((b) => (b.checked = false))
+      refresh()
       toti?.focus()
     })
 
-    /* Shift-clic bifează tot intervalul, cum se așteaptă oricine a folosit o
-     * listă de fișiere: treizeci de studenți dintr-o grupă sunt consecutivi. */
-    let ultimul = -1
-    bifele.forEach((b, i) => {
+    /* Shift-click ticks the whole range, the way anyone who has used a file
+     * list expects: thirty students from one group are consecutive. */
+    let lastIndex = -1
+    boxes.forEach((b, i) => {
       b.addEventListener('click', (e) => {
-        if ((e as MouseEvent).shiftKey && ultimul >= 0) {
-          const [de, la] = i < ultimul ? [i, ultimul] : [ultimul, i]
-          for (let k = de; k <= la; k++) bifele[k].checked = b.checked
-          reimprospateaza()
+        if ((e as MouseEvent).shiftKey && lastIndex >= 0) {
+          const [de, la] = i < lastIndex ? [i, lastIndex] : [lastIndex, i]
+          for (let k = de; k <= la; k++) boxes[k].checked = b.checked
+          refresh()
         }
-        ultimul = i
+        lastIndex = i
       })
     })
 
-    reimprospateaza()
+    refresh()
   })
 </script>
 
@@ -482,8 +485,8 @@ const inapoi = Astro.url.pathname + Astro.url.search
     accent-color: var(--red);
   }
 
-  /* Bara apare doar când există o selecție: un rând de controale permanent
-     deasupra fiecărui grup ar fi mobilier pentru o acțiune rară. */
+  /* The bar appears only when there is a selection: a row of controls
+     permanently above every group would be furniture for a rare action. */
   .selectie {
     display: flex;
     flex-wrap: wrap;
@@ -511,8 +514,8 @@ const inapoi = Astro.url.pathname + Astro.url.search
     gap: var(--s-3);
   }
   .atribuire .select--sm {
-    /* Fără lățime minimă: în celulă împingea tabelul la peste 1000px. Pe un rând
-       întreg are loc oricum. */
+    /* No minimum width: inside a cell it pushed the table past 1000px. On a
+       whole row there is room for it anyway. */
     flex: 1 1 260px;
     font-size: var(--t-sm);
   }

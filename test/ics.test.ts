@@ -3,16 +3,17 @@ import assert from 'node:assert/strict'
 import { buildIcs, consultationUid } from '../src/lib/ics.ts'
 
 /**
- * Fișierul de calendar.
+ * The calendar file.
  *
- * Testat pe reguli de format, nu pe aspect: un `.ics` greșit nu arată prost, pur
- * și simplu nu se importă — sau, mai rău, se importă ca un al doilea eveniment în
- * loc să anuleze primul. Anularea funcționează numai dacă UID-ul este identic cu
- * al invitației și `SEQUENCE` este mai mare; portalul a avut trei scheme de UID
- * diferite, deci o anulare nu putea găsi niciodată rezervarea ei.
+ * Tested against format rules, not against looks: a wrong `.ics` does not look
+ * bad, it simply does not import — or, worse, it imports as a second event
+ * instead of cancelling the first one. A cancellation works only if the UID is
+ * identical to the invitation's and `SEQUENCE` is higher; the portal has had
+ * three different UID schemes, so a cancellation could never find its own
+ * booking.
  */
 
-const EVENIMENT = {
+const EVENT = {
   uid: 'consultatie-1-2',
   title: 'Consultație cu Prof. univ. dr. Mihaela Ionescu',
   location: 'Cabinet 2314',
@@ -24,12 +25,12 @@ const EVENIMENT = {
   attendeeEmail: 'andrei.vasilescu@stud.ase.ro',
 }
 
-const linia = (ics: string, cheie: string) =>
-  ics.split('\r\n').find((l) => l.startsWith(cheie + ':') || l.startsWith(cheie + ';'))
+const lineOf = (ics: string, key: string) =>
+  ics.split('\r\n').find((l) => l.startsWith(key + ':') || l.startsWith(key + ';'))
 
 describe('buildIcs', () => {
   it('scrie un calendar întreg, cu CRLF cum cere RFC 5545', () => {
-    const ics = buildIcs(EVENIMENT)
+    const ics = buildIcs(EVENT)
     assert.ok(ics.startsWith('BEGIN:VCALENDAR\r\n'))
     assert.ok(ics.trimEnd().endsWith('END:VCALENDAR'))
     assert.ok(ics.includes('\r\n'), 'terminatorul este CRLF, nu LF')
@@ -37,55 +38,55 @@ describe('buildIcs', () => {
   })
 
   it('scrie orele în UTC, ca fusul cititorului să nu le mute', () => {
-    const ics = buildIcs(EVENIMENT)
-    assert.equal(linia(ics, 'DTSTART'), 'DTSTART:20260915T113000Z')
-    assert.equal(linia(ics, 'DTEND'), 'DTEND:20260915T130000Z')
+    const ics = buildIcs(EVENT)
+    assert.equal(lineOf(ics, 'DTSTART'), 'DTSTART:20260915T113000Z')
+    assert.equal(lineOf(ics, 'DTEND'), 'DTEND:20260915T130000Z')
   })
 
   it('o invitație este REQUEST, confirmată, secvența zero', () => {
-    const ics = buildIcs(EVENIMENT)
-    assert.equal(linia(ics, 'METHOD'), 'METHOD:REQUEST')
-    assert.equal(linia(ics, 'STATUS'), 'STATUS:CONFIRMED')
-    assert.equal(linia(ics, 'SEQUENCE'), 'SEQUENCE:0')
+    const ics = buildIcs(EVENT)
+    assert.equal(lineOf(ics, 'METHOD'), 'METHOD:REQUEST')
+    assert.equal(lineOf(ics, 'STATUS'), 'STATUS:CONFIRMED')
+    assert.equal(lineOf(ics, 'SEQUENCE'), 'SEQUENCE:0')
   })
 
-  /* Perechea care contează: anularea trebuie să înlocuiască invitația, nu să
-   * adauge un al doilea eveniment în calendar. */
+  /* The pair that matters: the cancellation has to replace the invitation, not
+   * add a second event to the calendar. */
   it('o anulare păstrează UID-ul și urcă secvența', () => {
-    const invitatie = buildIcs(EVENIMENT)
-    const anulare = buildIcs({ ...EVENIMENT, cancelled: true })
+    const invitation = buildIcs(EVENT)
+    const anulare = buildIcs({ ...EVENT, cancelled: true })
 
-    assert.equal(linia(anulare, 'UID'), linia(invitatie, 'UID'), 'același UID')
-    assert.equal(linia(anulare, 'METHOD'), 'METHOD:CANCEL')
-    assert.equal(linia(anulare, 'STATUS'), 'STATUS:CANCELLED')
+    assert.equal(lineOf(anulare, 'UID'), lineOf(invitation, 'UID'), 'același UID')
+    assert.equal(lineOf(anulare, 'METHOD'), 'METHOD:CANCEL')
+    assert.equal(lineOf(anulare, 'STATUS'), 'STATUS:CANCELLED')
 
-    const seq = (ics: string) => Number(linia(ics, 'SEQUENCE')!.split(':')[1])
-    assert.ok(seq(anulare) > seq(invitatie), 'secvența crește, altfel clientul o ignoră')
+    const seq = (ics: string) => Number(lineOf(ics, 'SEQUENCE')!.split(':')[1])
+    assert.ok(seq(anulare) > seq(invitation), 'secvența crește, altfel clientul o ignoră')
   })
 
   it('rupe liniile lungi la 75 de octeți, cu continuare prin spațiu', () => {
     const ics = buildIcs({
-      ...EVENIMENT,
+      ...EVENT,
       title: 'Consultație despre metodologia cercetării cantitative și validarea instrumentului de măsurare a satisfacției',
     })
     for (const l of ics.split('\r\n')) {
       assert.ok(Buffer.byteLength(l, 'utf8') <= 75, `linie de ${Buffer.byteLength(l, 'utf8')} octeți: ${l.slice(0, 40)}…`)
     }
-    // Continuările încep cu un spațiu, altfel textul se pierde la citire.
-    const continuari = ics.split('\r\n').filter((l) => l.startsWith(' '))
-    assert.ok(continuari.length > 0, 'titlul lung a fost rupt')
+    // Continuations start with a space, otherwise the text is lost on reading.
+    const continuations = ics.split('\r\n').filter((l) => l.startsWith(' '))
+    assert.ok(continuations.length > 0, 'titlul lung a fost rupt')
   })
 
   it('protejează caracterele cu înțeles în format', () => {
-    const ics = buildIcs({ ...EVENIMENT, location: 'Cabinet 2314, etaj 3; intrarea B' })
+    const ics = buildIcs({ ...EVENT, location: 'Cabinet 2314, etaj 3; intrarea B' })
     const l = ics.split('\r\n').filter((x) => x.startsWith('LOCATION') || x.startsWith(' ')).join('')
     assert.ok(l.includes('\\,'), 'virgula este escapată')
     assert.ok(l.includes('\\;'), 'punctul și virgula sunt escapate')
   })
 
   it('numește organizatorul și invitatul, ca invitația să fie o invitație', () => {
-    const ics = buildIcs(EVENIMENT)
-    assert.match(linia(ics, 'ORGANIZER')!, /mailto:mihaela\.ionescu@ase\.ro/)
+    const ics = buildIcs(EVENT)
+    assert.match(lineOf(ics, 'ORGANIZER')!, /mailto:mihaela\.ionescu@ase\.ro/)
     assert.match(ics.replace(/\r\n /g, ''), /ATTENDEE.*mailto:andrei\.vasilescu@stud\.ase\.ro/)
   })
 })

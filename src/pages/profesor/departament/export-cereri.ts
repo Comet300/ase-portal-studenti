@@ -1,5 +1,5 @@
 import type { APIRoute } from 'astro'
-import { noteazaAcces } from '../../../lib/audit'
+import { recordAccess } from '../../../lib/audit'
 import { isDepartmentHead } from '../../../lib/auth'
 import { query } from '../../../lib/db'
 import { STATUS_LABELS, programLabel } from '../../../lib/repo'
@@ -61,15 +61,15 @@ export const GET: APIRoute = async ({ locals, url, request }) => {
     ].map(cell).join(';'),
   )
 
-  /* Punct și virgulă, ca la celălalt export.
+  /* Semicolon, the same as in the other export.
    *
-   * Cele două exporturi ale portalului foloseau separatoare diferite. Într-un
-   * Excel cu setări românești separatorul de listă este „;”, deci fișierul cu
-   * virgulă se deschidea într-o singură coloană — exact fișierul pe care îl
-   * descarcă directorul de departament. BOM-ul rămâne, pentru diacritice. */
+   * The portal's two exports used different separators. In an Excel with
+   * Romanian settings the list separator is „;”, so the comma-separated file
+   * opened in a single column — which is exactly the file the head of
+   * department downloads. The BOM stays, for the diacritics. */
   const csv = '﻿' + [header.map(cell).join(';'), ...body].join('\r\n') + '\r\n'
 
-  await noteazaAcces({ userId: locals.user!.id, action: 'export_cereri', subject: url.pathname + url.search, rowCount: rows.length, request })
+  await recordAccess({ userId: locals.user!.id, action: 'export_cereri', subject: url.pathname + url.search, rowCount: rows.length, request })
 
   return new Response(csv, {
     headers: {
