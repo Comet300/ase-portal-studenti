@@ -25,6 +25,17 @@ export type AccessAction =
   | 'dezactiveaza_cont'
   | 'reactiveaza_cont'
   | 'schimba_email'
+  /* Decisions the head makes over somebody else's work, and the ones a
+     coordinator makes that a student cannot undo. Each of these moves a
+     student between people or changes what a coordinator is allowed to take
+     on, so "who did this, and when" has to survive the screen that did it. */
+  | 'importa_studenti'
+  | 'muta_student'
+  | 'acorda_locuri'
+  | 'retrage_locuri'
+  | 'schimba_norma_locuri'
+  | 'anuleaza_consultatie'
+  | 'schimba_titlu'
 
 export async function recordAccess(e: {
   userId: string
