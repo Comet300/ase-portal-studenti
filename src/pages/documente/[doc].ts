@@ -4,6 +4,7 @@ import { renderDoc } from '../../lib/doc'
 import { stagesIcs } from '../../lib/ics'
 import { currentYearLabel } from '../../lib/years'
 import { escapeHtml } from '../../lib/mail'
+import { officialName } from '../../lib/text'
 
 /**
  * Downloadable documents are generated here rather than served as static files.
@@ -41,11 +42,16 @@ export const GET: APIRoute = async ({ params, locals }) => {
     })
   }
 
-  // Templates pre-fill for a signed-in user; a visitor gets blanks to complete.
-  const name = u ? escapeHtml(u.name) : ''
+  /* Templates pre-fill for a signed-in user; a visitor gets blanks to complete.
+   * The name is the register's form, initial included — the blank model and the
+   * filed request have to read alike, otherwise a student copies one name off
+   * the model and the secretariat reads another off the request. */
+  const name = u ? escapeHtml(officialName(u)) : ''
   const studentNumber = u?.student_number ? escapeHtml(u.student_number) : ''
   const program = u?.program === 'master' ? 'master' : 'licență'
   const specialization = u?.specialization ? escapeHtml(u.specialization) : ''
+  const series = u?.study_series ? escapeHtml(u.study_series) : ''
+  const group = u?.study_group ? escapeHtml(u.study_group) : ''
   const fill = (v: string) => (v ? `<strong>${v}</strong>` : '<span class="blank">&nbsp;</span>')
 
   if (doc === 'model-cerere-coordonare.html') {
@@ -56,7 +62,8 @@ export const GET: APIRoute = async ({ params, locals }) => {
          <p style="text-align:center;font-size:10pt;color:#40464e">Se depune electronic, prin Portalul Studenți</p>
          <p style="margin-top:24pt">Domnule/Doamnă Decan,</p>
          <p>Subsemnatul(a) ${fill(name)}, student(ă) în anul ${fill('')} la programul de studii
-         ${fill(program)}, specializarea ${fill(specialization)}, număr matricol ${fill(studentNumber)},
+         ${fill(program)}, specializarea ${fill(specialization)}, seria ${fill(series)},
+         grupa ${fill(group)}, număr matricol ${fill(studentNumber)},
          vă rog să aprobați coordonarea lucrării mele de finalizare a studiilor de către ${fill('')}.</p>
          <h2>Titlul propus al lucrării</h2>
          <p>În limba română: ${fill('')}</p>

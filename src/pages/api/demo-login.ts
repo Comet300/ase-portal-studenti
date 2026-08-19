@@ -1,7 +1,7 @@
 import type { APIRoute } from 'astro'
-import { SESSION_COOKIE, createSession, DEMO_MODE } from '../../lib/auth'
+import { SESSION_COOKIE, createSession, DEMO_MODE, type Role } from '../../lib/auth'
 import { queryOne } from '../../lib/db'
-import { deadEnd, redirect } from '../../lib/http'
+import { deadEnd, homeFor, redirect } from '../../lib/http'
 
 /**
  * Sign-in without email, for the demonstration accounts.
@@ -20,7 +20,7 @@ export const POST: APIRoute = async ({ request, cookies, url }) => {
   const userId = String(form.get('utilizator_id') ?? '')
   const redirectTo = String(form.get('redirect') ?? '')
 
-  const user = await queryOne<{ id: string; role: string }>(
+  const user = await queryOne<{ id: string; role: Role }>(
     `SELECT id, role FROM users WHERE id = $1 AND is_demo = true`,
     [userId],
   )
@@ -39,6 +39,5 @@ export const POST: APIRoute = async ({ request, cookies, url }) => {
     maxAge: 60 * 60 * 24 * 30,
   })
 
-  const fallbackPath = user.role === 'student' ? '/cererile-mele' : '/profesor'
-  return redirect(redirectTo || fallbackPath)
+  return redirect(redirectTo || homeFor(user))
 }

@@ -31,3 +31,50 @@ export function numar(n: number, singular: string, plural: string): string {
 
   return needsDe ? `${written} de ${plural}` : `${written} ${plural}`
 }
+
+/**
+ * The name as the register writes it: „Popescu I. Maria”.
+ *
+ * The father's initial is part of a Romanian student's official name, not a
+ * decoration — the secretariat matches the printed request against the register
+ * by exactly this form, and a request that reads „Popescu Maria” comes back.
+ * It is composed here, once, because it is printed on three documents and shown
+ * on six screens, and a second copy of the rule would drift from this one.
+ *
+ * The initial goes after the first word: the list comes from the registrar's
+ * spreadsheet, which is written in the register's order — family name first.
+ * A family name of two words („Popa Bălan Maria”) therefore comes out wrong;
+ * nothing in a single free-text `name` column can tell where it ends, so the
+ * registrar corrects it in the name itself rather than the portal guessing.
+ *
+ * With no initial on record the name is returned untouched — most teachers have
+ * none, and a student whose row the registrar has not completed yet must keep
+ * reading as they always did.
+ */
+export function officialName(person: {
+  name: string
+  father_initial?: string | null
+}): string {
+  const initial = formatInitial(person.father_initial)
+  if (!initial) return person.name
+
+  const name = person.name.trim()
+  const cut = name.indexOf(' ')
+  if (cut === -1) return `${name} ${initial}`
+
+  return `${name.slice(0, cut)} ${initial}${name.slice(cut)}`
+}
+
+/**
+ * „i” and „I” and „Gh” all come back as „I.” / „Gh.”.
+ *
+ * The registrar pastes the letter both with and without the point, and Romanian
+ * abbreviates some given names with two letters — Gheorghe is „Gh.”, not „G.”.
+ * Anything else returns empty, so a stray cell cannot end up printed inside
+ * somebody's name on a document that gets signed.
+ */
+export function formatInitial(raw: string | null | undefined): string {
+  const text = (raw ?? '').trim().replace(/\.+$/, '')
+  if (!/^[A-Za-zĂÂÎȘȚăâîșț]{1,2}$/.test(text)) return ''
+  return text.charAt(0).toLocaleUpperCase('ro-RO') + text.slice(1).toLocaleLowerCase('ro-RO') + '.'
+}

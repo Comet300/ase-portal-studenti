@@ -3,6 +3,7 @@ import { recordAccess } from '../../lib/audit'
 import { isDepartmentHead, isTeacher } from '../../lib/auth'
 import { query, queryOne } from '../../lib/db'
 import { id } from '../../lib/ids'
+import { formatInitial, officialName } from '../../lib/text'
 import { languageLabel, levelLabel } from '../../lib/years'
 
 /**
@@ -18,14 +19,20 @@ import { languageLabel, levelLabel } from '../../lib/years'
  * with a BOM so the diacritics survive the double-click.
  */
 
+/* „Student” carries the name as it is written in the register, initial
+ * included, and the initial also travels in a column of its own: the
+ * secretariat matches this file against lists where the two are separate
+ * fields. */
 const COLUMNS = [
   'Nr. cerere',
   'Student',
+  'Inițiala tatălui',
   'Număr matricol',
   'Nivel',
   'Specializare',
   'Limbă',
   'An',
+  'Seria',
   'Grupa',
   'Email student',
   'Coordonator',
@@ -58,8 +65,9 @@ export const GET: APIRoute = async ({ locals, url, request }) => {
   const yearId = id(url.searchParams.get('an'))
 
   const rows = await query<Record<string, unknown>>(
-    `SELECT r.number, s.name AS student_name, s.student_number, s.program, s.specialization,
-            s.study_language, s.study_year, s.study_group, s.email AS student_email,
+    `SELECT r.number, s.name AS student_name, s.student_number, s.father_initial,
+            s.program, s.specialization,
+            s.study_language, s.study_year, s.study_series, s.study_group, s.email AS student_email,
             t.name AS teacher_name, t.academic_title,
             r.title_ro, r.title_en, r.decided_at,
             (SELECT count(*)::int FROM milestones m WHERE m.request_id = r.id AND m.status = 'done') AS done,
@@ -79,12 +87,17 @@ export const GET: APIRoute = async ({ locals, url, request }) => {
     ...rows.map((r) =>
       [
         r.number,
-        r.student_name,
+        officialName({
+          name: r.student_name as string,
+          father_initial: r.father_initial as string | null,
+        }),
+        formatInitial(r.father_initial as string | null),
         r.student_number,
         levelLabel(r.program as string | null),
         r.specialization,
         languageLabel(r.study_language as string | null),
         r.study_year,
+        r.study_series,
         r.study_group,
         r.student_email,
         r.teacher_name,

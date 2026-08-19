@@ -14,6 +14,7 @@ import {
   studentMilestones,
   publicTopics,
 } from '../lib/repo'
+import { officialName } from '../lib/text'
 import { LEVEL_LABELS, groupLabel, languageLabel } from '../lib/years'
 
 const u = Astro.locals.user!
@@ -496,7 +497,10 @@ const shouldOpenForm = Boolean(openWith.teacher) && !hasActiveRequest
 
         <dl class="previzualizare">
           <dt>Student</dt>
-          <dd>{u.name} · {u.student_number} · {groupLabel(u)}</dd>
+          {/* The same name the printed cerere will carry, initial included:
+              this is the last screen before the request is filed, and the two
+              must not disagree. */}
+          <dd>{officialName(u)} · {u.student_number} · {groupLabel(u)}</dd>
           <dt>Coordonator</dt>
           <dd id="pv-profesor">—</dd>
           <dt>Titlul lucrării</dt>

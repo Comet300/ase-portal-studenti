@@ -2,21 +2,13 @@ import { defineMiddleware } from 'astro:middleware'
 import { SESSION_COOKIE, getUserFromSession } from './lib/auth'
 import { touchPresence } from './lib/chat'
 import { sweepDeadlines } from './lib/lifecycle'
+import { isPublicPath } from './lib/routes'
 
 /**
- * Student routes are open to every role; the teacher area requires `teacher` or
- * `head`, and the department view requires `head`. A signed-in user without the
- * right role gets 404 rather than 403: we do not confirm an area they cannot use.
+ * The teacher area requires `teacher` or `head`, and the department view
+ * requires `head`. A signed-in user without the right role gets 404 rather than
+ * 403: we do not confirm an area they cannot use.
  */
-
-const REQUIRES_SESSION = [
-  '/cererile-mele',
-  '/mesaje',
-  '/consultatii',
-  '/contul-meu',
-  '/arhiva',
-  '/profil',
-]
 const TEACHER_AREA = '/profesor'
 const HEAD_ONLY = ['/profesor/departament', '/profesor/calendar', '/profesor/an-universitar', '/profesor/conturi']
 
@@ -57,7 +49,10 @@ export const onRequest = defineMiddleware(async (context, next) => {
    * configured — it rate-limits itself and does not hold up the response. */
   void sweepDeadlines(process.env.APP_BASE_URL ?? context.url.origin)
 
-  const path = context.url.pathname
+  /* A trailing slash is the same page to Astro's router, so it has to be the
+   * same path here too: `/coordonatori/` misses the exact-match list in
+   * `lib/routes.ts` and would be served ungated. */
+  const path = context.url.pathname.replace(/\/+$/, '') || '/'
 
   /* Presence.
    *
@@ -78,12 +73,20 @@ export const onRequest = defineMiddleware(async (context, next) => {
     void touchPresence(user.id)
   }
 
-  const needsLogin =
-    REQUIRES_SESSION.some((p) => path === p || path.startsWith(p + '/')) ||
-    path.startsWith(TEACHER_AREA)
-
-  if (needsLogin && !user) {
-    return context.redirect(`/autentificare?redirect=${encodeURIComponent(path)}`, 302)
+  /* The gate.
+   *
+   * `search` travels with the path. The catalogue hands out links of the form
+   * `/cererile-mele?coordonator=<id>&tema=<id>`; without the query a student
+   * who signed in on the way arrived at a generic page with the topic they had
+   * clicked silently gone.
+   *
+   * Only navigations are redirected. A POST without a session is left to its
+   * handler, which knows what was being written and answers with
+   * `sessionExpired()` — a redirect from here would take the person to the
+   * sign-in screen with the text they had typed already lost. */
+  if (!user && !isPublicPath(path) && context.request.method === 'GET') {
+    const target = path + context.url.search
+    return context.redirect(`/autentificare?redirect=${encodeURIComponent(target)}`, 302)
   }
 
   if (path.startsWith(TEACHER_AREA) && user?.role === 'student') {

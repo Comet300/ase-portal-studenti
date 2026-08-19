@@ -21,8 +21,13 @@ export const GET: APIRoute = async ({ locals, request }) => {
 
   const [cont, cereri, mesaje, fisiere, rezervari, invitatii] = await Promise.all([
     queryOne(
-      `SELECT name, email, role, student_number, program, specialization,
-              study_language, study_group, study_year, bio, created_at
+      /* Field names are added, never renamed: this file is downloaded and kept,
+       * and somebody's script that reads `study_group` must keep reading it a
+       * year from now. `first_login_at` is here because it is stored about the
+       * person and the notice says so — the copy has to be complete. */
+      `SELECT name, email, role, student_number, father_initial, program, specialization,
+              study_language, study_group, study_series, study_year, bio, created_at,
+              first_login_at
          FROM users WHERE id = $1`,
       [u.id],
     ),

@@ -4,10 +4,12 @@
 
 product
 
-Authenticated workflow surface: dashboards, data tables, request queues, chat,
-scheduling. Design serves the task. The public pages (acasă, coordonatori, ghid)
-are informational but live inside the same shell and use the same vocabulary —
-they are not a marketing site and should not be designed like one.
+Authenticated workflow surface, all of it: nothing opens without a session
+except the sign-in page and the privacy notice. Dashboards, data tables, request
+queues, chat, scheduling. Design serves the task. The informational screens
+(acasă, coordonatori, ghid) sit behind the same gate, inside the same shell and
+in the same vocabulary — the portal has no marketing face and should not be
+designed as if it had one.
 
 ## Platform
 

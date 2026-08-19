@@ -164,6 +164,12 @@ const STUDENT_NAMES = [
   'Sorin Bălan', 'Teodora Rusu', 'Adrian Costache', 'Gabriela Matei',
 ]
 
+/* A year is split into series before it is split into groups, and the father's
+ * initial is part of the official name. Both are seeded so that the catalogue's
+ * series filter and the printed request have something to show in demo mode. */
+const SERIES = ['A', 'B']
+const FATHER_INITIALS = ['I', 'Gh', 'C', 'M', 'D', 'N']
+
 /** Each student's programme: [level, specialization, language, year]. */
 const BACHELOR_GROUPS = [
   ['bachelor', 'Marketing', 'ro', 3],
@@ -255,9 +261,9 @@ for (const [i, [titlu, description, interval, di, ds]] of STAGES.entries()) {
 async function upsertUser(fields) {
   const { rows } = await q(
     `INSERT INTO users (email, name, role, student_number, program, specialization, study_year,
-                        programme_id, study_language, study_group,
+                        programme_id, study_language, study_group, study_series, father_initial,
                         academic_title, department, office, bio, interests, is_demo)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
      ON CONFLICT (email) DO UPDATE SET
        name = EXCLUDED.name,
        student_number = EXCLUDED.student_number,
@@ -267,6 +273,8 @@ async function upsertUser(fields) {
        programme_id = EXCLUDED.programme_id,
        study_language = EXCLUDED.study_language,
        study_group = EXCLUDED.study_group,
+       study_series = EXCLUDED.study_series,
+       father_initial = EXCLUDED.father_initial,
        -- Human-written text is never overwritten: if someone has edited their
        -- profile in the portal, a restart has no reason to erase their bio.
        bio = COALESCE(users.bio, EXCLUDED.bio),
@@ -282,7 +290,7 @@ const teacherIds = []
 for (const [name, email, department, titlu, office, bachelorSeats, masterSeats, demo, bio, interests] of TEACHERS) {
   const id = await upsertUser([
     email, name, 'teacher', null, null, null, null,
-    null, 'ro', null,
+    null, 'ro', null, null, null,
     titlu, department, office, bio, interests, demo,
   ])
   teacherIds.push(id)
@@ -297,7 +305,7 @@ for (const [name, email, department, titlu, office, bachelorSeats, masterSeats, 
 const [headName, headEmail, headDepartment, titluD, headOffice, headBachelorSeats, headMasterSeats, , headBio, headInterests] = HEAD
 const headId = await upsertUser([
   headEmail, headName, 'head', null, null, null, null,
-  null, 'ro', null,
+  null, 'ro', null, null, null,
   titluD, headDepartment, headOffice, headBio, headInterests, true,
 ])
 await q(
@@ -323,11 +331,29 @@ for (const [i, name] of STUDENT_NAMES.entries()) {
       `MK-${startYear}-${String(i + 1).padStart(4, '0')}`,
       level, specialization, an,
       programmeIds.get(`${level}|${specialization}|${limba}`), limba, `${limba.toUpperCase()}-${1500 + (i % 4)}`,
+      // A series above the group, and the father's initial: „Popescu I. Maria”
+      // is the name the secretariat reads on the printed request.
+      SERIES[i % SERIES.length], FATHER_INITIALS[i % FATHER_INITIALS.length],
       null, 'Marketing', null, null, null,
       i === 0, // the first student is a demo account
     ]),
   )
 }
+
+/* Who has ever signed in.
+ *
+ * Written in `createSession` in the running portal, so a seeded database would
+ * otherwise show the entire faculty as „nu a intrat niciodată” and the flag
+ * would carry no information at all in demo mode. Three students are left
+ * without it on purpose — that state is the one the head of department has to
+ * act on, and it has to be visible without waiting for it to occur.
+ *
+ * `COALESCE` so that re-seeding never moves a real first sign-in. */
+await q(
+  `UPDATE users SET first_login_at = COALESCE(first_login_at, now() - interval '40 days')
+    WHERE id = ANY($1::uuid[])`,
+  [[...teacherIds, headId, ...studentIds.slice(0, -3)]],
+)
 
 /* A demo student with no supervisor at all.
  *
@@ -340,7 +366,7 @@ const unassignedStudentId = await upsertUser([
   'ana.lupu@stud.ase.ro', 'Ana-Maria Lupu', 'student',
   `MK-${startYear}-0099`,
   'bachelor', 'Marketing', 3,
-  programmeIds.get('bachelor|Marketing|ro'), 'ro', 'RO-1503',
+  programmeIds.get('bachelor|Marketing|ro'), 'ro', 'RO-1503', 'A', 'V',
   null, 'Marketing', null, null, null,
   true,
 ])

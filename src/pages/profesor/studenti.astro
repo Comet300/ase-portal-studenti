@@ -17,6 +17,7 @@ import {
   supervisedStudents,
   teacherTopics,
 } from '../../lib/repo'
+import { officialName } from '../../lib/text'
 import { allYears, groupLabel } from '../../lib/years'
 
 const u = Astro.locals.user!
@@ -125,9 +126,10 @@ function deadline(expiresAt: string | null | undefined) {
                     <div class="cerere__cap">
                       <Avatar name={c.student_name} />
                       <div class="cerere__ident">
-                        <strong>{c.student_name}</strong>
+                        <strong>{officialName({ name: c.student_name, father_initial: c.father_initial })}</strong>
                         <span class="muted">
                           {c.student_number} · {groupLabel(c)}
+                          {c.study_group ? ` · grupa ${c.study_group}` : ''}
                         </span>
                       </div>
                       <span class="cerere__termen">
@@ -209,7 +211,17 @@ function deadline(expiresAt: string | null | undefined) {
                   {decidedRequests.map((c) => (
                     <tr>
                       <td class="numeric muted">{c.number}</td>
-                      <td>{c.student_name}</td>
+                      {/* The name alone, without matricol or cohort, was the
+                          one place a decided request could not be matched
+                          against the register two rows below where it can. */}
+                      <td>
+                        <div class="stack stack--tight" style="gap:0">
+                          <strong>{officialName({ name: c.student_name, father_initial: c.father_initial })}</strong>
+                          <span class="muted text-xs">
+                            {c.student_number} · {groupLabel(c)}
+                          </span>
+                        </div>
+                      </td>
                       <td class="celula-title" title={c.title_ro}>{c.title_ro}</td>
                       <td>
                         <span class:list={['badge', STATUS_CLASS[c.status]]}>
@@ -293,7 +305,7 @@ function deadline(expiresAt: string | null | undefined) {
                         <div class="row" style="gap:var(--s-3)">
                           <Avatar name={s.student_name} href={`/profil/${s.student_id}?de_la=${encodeURIComponent(currentPath)}`} />
                           <div class="celula-student">
-                            <strong>{s.student_name}</strong>
+                            <strong>{officialName({ name: s.student_name, father_initial: s.father_initial })}</strong>
                             <span class="muted" title={`${s.student_number} · ${groupLabel(s)}`}>
                               {s.student_number} · {groupLabel(s)}
                             </span>
@@ -620,7 +632,7 @@ function deadline(expiresAt: string | null | undefined) {
                   <datalist id="lista-invitabili">
                     {invitabili.map((s) => (
                       <option
-                        value={`${s.name} — ${groupLabel(s)}${s.request_status === 'pending' ? ' · are o cerere depusă' : ''}`}
+                        value={`${officialName(s)} — ${groupLabel(s)}${s.request_status === 'pending' ? ' · are o cerere depusă' : ''}`}
                         data-id={s.id}
                       />
                     ))}
@@ -691,7 +703,9 @@ function deadline(expiresAt: string | null | undefined) {
                     <div class="row" style="gap:var(--s-3)">
                       <Avatar name={i.student_name} size="xs" />
                       <div class="stack stack--tight" style="gap:0">
-                        <strong class="text-sm">{i.student_name}</strong>
+                        <strong class="text-sm">
+                          {officialName({ name: i.student_name, father_initial: i.father_initial })}
+                        </strong>
                         <span class="muted text-xs">
                           {i.student_number} · trimisă {timeAgo(i.created_at)}
                         </span>

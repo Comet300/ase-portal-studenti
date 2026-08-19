@@ -6,6 +6,7 @@ import Taburi from '../../components/Taburi.astro'
 import { query, queryOne } from '../../lib/db'
 import { seatRequests } from '../../lib/lifecycle'
 import { STATUS_CLASS, STATUS_LABELS, formatDate, programLabel, timeAgo } from '../../lib/repo'
+import { officialName } from '../../lib/text'
 import { LEVEL_LABELS, currentYear } from '../../lib/years'
 
 /**
@@ -27,6 +28,7 @@ const sectiune = (SECTIONS as readonly string[]).includes(requestedSection) ? re
 const teacherFilter = Astro.url.searchParams.get('coordonator') ?? ''
 const programFilter = Astro.url.searchParams.get('program') ?? ''
 const statusFilter = Astro.url.searchParams.get('status') ?? ''
+const seriesFilter = Astro.url.searchParams.get('serie') ?? ''
 
 const year = await currentYear()
 
@@ -38,15 +40,24 @@ interface Row {
   submitted_at: string
   student_name: string
   student_number: string | null
+  father_initial: string | null
   program: string | null
   specialization: string | null
+  study_year: number | null
+  study_series: string | null
+  study_group: string | null
   teacher_id: string
   teacher_name: string
 }
 
+/* The cohort travelled with the student everywhere except here, where the
+ * department's own table showed a name and a programme and nothing that says
+ * which year, series or group the request comes from — the one screen where the
+ * head compares cohorts against each other. */
 const rows = await query<Row>(
   `SELECT r.id, r.number, r.title_ro, r.status, r.submitted_at,
-          s.name AS student_name, s.student_number, s.program, s.specialization,
+          s.name AS student_name, s.student_number, s.father_initial,
+          s.program, s.specialization, s.study_year, s.study_series, s.study_group,
           t.id AS teacher_id, t.name AS teacher_name
      FROM requests r
      JOIN users s ON s.id = r.student_id
@@ -55,10 +66,20 @@ const rows = await query<Row>(
       AND ($1::uuid IS NULL OR r.teacher_id = $1)
       AND ($2::text IS NULL OR s.program = $2)
       AND ($3::text IS NULL OR r.status = $3)
+      AND ($5::text IS NULL OR s.study_series = $5)
     ORDER BY r.submitted_at DESC
     LIMIT 300`,
-  [teacherFilter || null, programFilter || null, statusFilter || null, year?.id],
+  [teacherFilter || null, programFilter || null, statusFilter || null, year?.id, seriesFilter || null],
 )
+
+/** The series the department actually has; there is no list to offer besides. */
+const seriesOptions = (
+  await query<{ study_series: string }>(
+    `SELECT DISTINCT study_series FROM users
+      WHERE role = 'student' AND study_series IS NOT NULL AND study_series <> ''
+      ORDER BY study_series`,
+  )
+).map((r) => r.study_series)
 
 const totals = await queryOne<{
   students: number
@@ -136,6 +157,7 @@ const exportUrl = `/profesor/departament/export-cereri?${new URLSearchParams({
   ...(teacherFilter ? { coordonator: teacherFilter } : {}),
   ...(programFilter ? { program: programFilter } : {}),
   ...(statusFilter ? { status: statusFilter } : {}),
+  ...(seriesFilter ? { serie: seriesFilter } : {}),
 }).toString()}`
 
 const sections = [
@@ -298,6 +320,17 @@ const sections = [
                 <option value="master" selected={programFilter === 'master'}>Master</option>
               </select>
             </div>
+            <div class="field" style="flex:1;min-width:130px">
+              <label class="label" for="serie">Serie</label>
+              <select class="select" id="serie" name="serie">
+                <option value="">Toate seriile</option>
+                {seriesOptions.map((v) => (
+                  <option value={v} selected={seriesFilter === v}>
+                    {v}
+                  </option>
+                ))}
+              </select>
+            </div>
             <div class="field" style="flex:1;min-width:150px">
               <label class="label" for="status">Stare</label>
               <select class="select" id="status" name="status">
@@ -315,7 +348,7 @@ const sections = [
           {rows.length === 0 ? (
             <div class="empty">
               <p class="empty__title">Nicio cerere pentru filtrele alese</p>
-              <p class="empty__text">Schimbă coordonatorul, programul sau starea.</p>
+              <p class="empty__text">Schimbă coordonatorul, programul, seria sau starea.</p>
             </div>
           ) : (
             <div class="table-wrap" tabindex="0" role="region" aria-label="Cereri de locuri suplimentare">
@@ -335,8 +368,15 @@ const sections = [
                     <tr>
                       <td>
                         <div class="stack stack--tight" style="gap:0">
-                          <strong>{r.student_name}</strong>
-                          <span class="muted text-xs">{r.student_number}</span>
+                          <strong>{officialName({ name: r.student_name, father_initial: r.father_initial })}</strong>
+                          <span class="muted text-xs">
+                            {[
+                              r.student_number,
+                              r.study_year ? `anul ${r.study_year}` : null,
+                              r.study_series ? `seria ${r.study_series}` : null,
+                              r.study_group,
+                            ].filter(Boolean).join(' · ')}
+                          </span>
                         </div>
                       </td>
                       <td>

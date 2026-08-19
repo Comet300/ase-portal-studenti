@@ -4,6 +4,7 @@ import Metrica from '../../components/Metrica.astro'
 import ProfesorLayout from '../../layouts/ProfesorLayout.astro'
 import { isDepartmentHead } from '../../lib/auth'
 import { studentDirectory } from '../../lib/repo'
+import { officialName } from '../../lib/text'
 import {
   LANGUAGE_LABELS,
   LEVEL_LABELS,
@@ -27,6 +28,8 @@ import {
 
 const nivel = Astro.url.searchParams.get('nivel') ?? ''
 const limba = Astro.url.searchParams.get('limba') ?? ''
+const serie = Astro.url.searchParams.get('serie') ?? ''
+const cont = Astro.url.searchParams.get('cont') ?? ''
 const stare = Astro.url.searchParams.get('stare') ?? ''
 const searchQuery = (Astro.url.searchParams.get('q') ?? '').trim().toLowerCase()
 
@@ -42,11 +45,16 @@ const yearProgrammes = an ? (await programmes(an.id)).filter((p) => p.is_active)
 const filtered = all.filter((s) => {
   if (nivel && s.program !== nivel) return false
   if (limba && s.study_language !== limba) return false
+  if (serie && (s.study_series ?? '') !== serie) return false
+  if (cont === 'folosit' && !s.first_login_at) return false
+  if (cont === 'neintrat' && s.first_login_at) return false
   if (stare === 'coordonat' && s.request_status !== 'approved') return false
   if (stare === 'asteptare' && s.request_status !== 'pending') return false
   if (stare === 'neinceput' && s.request_status) return false
   if (searchQuery) {
-    const haystack = `${s.name} ${s.student_number ?? ''} ${s.specialization ?? ''} ${s.teacher_name ?? ''}`
+    /* The official name, not the plain one: a head of department looking for
+       „Popescu I.” in a year with four Popescu is looking for the initial. */
+    const haystack = `${officialName(s)} ${s.student_number ?? ''} ${s.specialization ?? ''} ${s.study_series ?? ''} ${s.teacher_name ?? ''}`
     if (!haystack.toLowerCase().includes(searchQuery)) return false
   }
   return true
@@ -82,10 +90,19 @@ const grouped = [...groups.entries()]
 
 const languages = [...new Set(all.map((s) => s.study_language))]
 
+/* Only the series that exist. The column is free text typed from the
+ * registrar's sheet, so there is no list to offer other than the one the cohort
+ * actually contains. */
+const series = [...new Set(all.map((s) => s.study_series).filter(Boolean))].sort() as string[]
+
 const totals = {
   toti: all.length,
   supervised: all.filter((s) => s.request_status === 'approved').length,
   asteptare: all.filter((s) => s.request_status === 'pending').length,
+  /* An account nobody ever signed in with is usually one wrong letter in an
+   * address — and the person on the other end has been waiting for a link that
+   * cannot arrive. Until now the only way to find out was for them to say so. */
+  neintrati: all.filter((s) => !s.first_login_at).length,
 }
 const neinceput = totals.toti - totals.supervised - totals.asteptare
 
@@ -94,6 +111,12 @@ const STATUS_OPTIONS = [
   { value: 'coordonat', text: 'Cu coordonator' },
   { value: 'asteptare', text: 'Cerere în așteptare' },
   { value: 'neinceput', text: 'Nu a depus cerere' },
+]
+
+const ACCOUNT_OPTIONS = [
+  { value: '', text: 'Toate conturile' },
+  { value: 'folosit', text: 'A intrat în portal' },
+  { value: 'neintrat', text: 'Nu a intrat niciodată' },
 ]
 
 /* Where a save comes back to.
@@ -121,6 +144,12 @@ const backUrl = Astro.url.pathname + Astro.url.search
       <Metrica value={totals.supervised} label="cu coordonator confirmat" />
       <Metrica value={totals.asteptare} label="cu cerere în așteptare" />
       <Metrica value={neinceput} label="fără cerere depusă" alerta={neinceput > 0} />
+      <Metrica
+        value={totals.neintrati}
+        label="nu au intrat niciodată în portal"
+        note="verifică adresa lor de email"
+        alerta={totals.neintrati > 0}
+      />
     </div>
 
     <form method="GET" class="panel">
@@ -152,6 +181,21 @@ const backUrl = Astro.url.pathname + Astro.url.search
             }
           </select>
         </div>
+        <div class="field" style="min-width:130px">
+          <label class="label" for="serie">Serie</label>
+          <select class="select" id="serie" name="serie">
+            <option value="">Toate seriile</option>
+            {series.map((v) => <option value={v} selected={serie === v}>{v}</option>)}
+          </select>
+        </div>
+        <div class="field" style="min-width:200px">
+          <label class="label" for="cont">Cont</label>
+          <select class="select" id="cont" name="cont">
+            {ACCOUNT_OPTIONS.map((o) => (
+              <option value={o.value} selected={cont === o.value}>{o.text}</option>
+            ))}
+          </select>
+        </div>
         <div class="field" style="min-width:190px">
           <label class="label" for="stare">Stare</label>
           <select class="select" id="stare" name="stare">
@@ -160,6 +204,15 @@ const backUrl = Astro.url.pathname + Astro.url.search
         </div>
         <button class="btn btn--secondary" type="submit">Filtrează</button>
       </div>
+      {/* The marker is written on sign-in, and it started being written with
+          this version: nothing reconstructs the sign-ins that happened before
+          it. Saying so here is the difference between a filter somebody trusts
+          and one that quietly accuses two dozen students of never having
+          arrived. */}
+      <p class="nota-cont">
+        Portalul reține prima intrare de la această actualizare încoace. Un cont deschis mai demult
+        și nefolosit de atunci apare ca „nu a intrat niciodată”, chiar dacă a fost folosit înainte.
+      </p>
     </form>
 
     {
@@ -184,7 +237,7 @@ const backUrl = Astro.url.pathname + Astro.url.search
               <p class="empty__title">Niciun student pentru filtrele alese</p>
               <p class="empty__text">
                 Cei {all.length} studenți din sesiune nu se potrivesc cu filtrele active. Schimbă
-                nivelul, limba sau starea, ori golește căutarea.
+                nivelul, limba, seria, contul sau starea, ori golește căutarea.
               </p>
               <a class="btn btn--secondary btn--sm" href="/profesor/facultate">Golește filtrele</a>
             </div>
@@ -232,6 +285,8 @@ const backUrl = Astro.url.pathname + Astro.url.search
                 </select>
                 <label class="label" for={`an-grup-${g.key}`}>An</label>
                 <input class="input input--num" id={`an-grup-${g.key}`} name="an_studiu" type="number" min="1" max="6" placeholder="—" />
+                <label class="label" for={`serie-grup-${g.key}`}>Serie</label>
+                <input class="input input--num" id={`serie-grup-${g.key}`} name="serie" placeholder="Ex: B" />
                 <label class="label" for={`gr-grup-${g.key}`}>Grupa</label>
                 <input class="input input--num" id={`gr-grup-${g.key}`} name="grupa" placeholder="Ex: RO-1503" />
                 {/* An empty field means „nu schimba”, as on the single row. */}
@@ -262,8 +317,12 @@ const backUrl = Astro.url.pathname + Astro.url.search
                         Student
                       </span>
                     </th>
-                    <th scope="col">Grupa</th>
+                    {/* Year, series, group — the faculty's own order, from the
+                        widest division to the narrowest. */}
                     <th scope="col">An</th>
+                    <th scope="col">Serie</th>
+                    <th scope="col">Grupa</th>
+                    <th scope="col">Cont</th>
                     <th scope="col">Coordonator</th>
                     <th scope="col">Stare</th>
                     {canAssign && <th scope="col">Grupare</th>}
@@ -290,13 +349,30 @@ const backUrl = Astro.url.pathname + Astro.url.search
                           )}
                           <Avatar name={s.name} src={s.avatar_path} size="xs" href={`/profil/${s.id}`} />
                           <div class="stack stack--tight" style="gap:0">
-                            <strong>{s.name}</strong>
+                            {/* The register's form, initial included: this is
+                                the list the secretariat checks its own against,
+                                and „Popescu Maria” and „Popescu I. Maria” are
+                                two different students in a year with four
+                                Popescu. */}
+                            <strong>{officialName(s)}</strong>
                             <span class="muted text-xs">{s.student_number}</span>
                           </div>
                         </div>
                       </td>
-                      <td class="muted numeric">{s.study_group ?? '—'}</td>
                       <td class="muted numeric">{s.study_year ?? '—'}</td>
+                      <td class="muted numeric">{s.study_series ?? '—'}</td>
+                      <td class="muted numeric">{s.study_group ?? '—'}</td>
+                      <td>
+                        {/* Two states, never a date: „when were they last in
+                            the portal” is the one thing the privacy notice
+                            promises stays inside a coordination. This says only
+                            whether the account was ever used. */}
+                        {s.first_login_at ? (
+                          <span class="badge badge--neutru">A intrat</span>
+                        ) : (
+                          <span class="badge badge--asteptare">Nu a intrat niciodată</span>
+                        )}
+                      </td>
                       <td>
                         {s.teacher_name ? (
                           <a href={`/profil/${s.teacher_id}`}>{s.teacher_name}</a>
@@ -335,7 +411,10 @@ const backUrl = Astro.url.pathname + Astro.url.search
                         needed. */}
                     {canAssign && (
                       <tr class="editor-rand" id={`editor-${s.id}`} hidden>
-                        <td colspan="6">
+                        {/* Eight columns now: student, an, serie, grupa, cont,
+                            coordonator, stare, grupare. It has to be counted by
+                            hand against the header above. */}
+                        <td colspan="8">
                           <form method="POST" action="/api/studenti" class="atribuire">
                             <input type="hidden" name="student_id" value={s.id} />
                             <input type="hidden" name="redirect" value={`${backUrl}#student-${s.id}`} />
@@ -367,6 +446,14 @@ const backUrl = Astro.url.pathname + Astro.url.search
                             {/* A row opened across the full width has space for
                                 a real label; the placeholder stood in for a label
                                 and vanished at the first keystroke. */}
+                            <label class="label" for={`serie-${s.id}`}>Serie</label>
+                            <input
+                              class="input input--num"
+                              id={`serie-${s.id}`}
+                              name="serie"
+                              value={s.study_series ?? ''}
+                              placeholder="Ex: B"
+                            />
                             <label class="label" for={`gr-${s.id}`}>Grupa</label>
                             <input
                               class="input input--num"
@@ -471,6 +558,16 @@ const backUrl = Astro.url.pathname + Astro.url.search
 </script>
 
 <style>
+  /* Read as prose, not as metadata: it is the sentence that decides whether the
+     „nu a intrat niciodată” column can be acted on, so it keeps the 16px floor. */
+  .nota-cont {
+    margin: 0;
+    padding: var(--s-3) var(--s-5) var(--s-4);
+    border-top: 1px solid var(--border);
+    color: var(--ink-soft);
+    max-width: 78ch;
+  }
+
   .cap-student {
     display: inline-flex;
     align-items: center;

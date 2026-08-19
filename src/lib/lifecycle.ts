@@ -25,6 +25,7 @@ export interface Invitation {
   student_id: string
   student_name: string
   student_number: string | null
+  father_initial: string | null
   topic_id: string | null
   topic_title: string | null
   message: string
@@ -39,7 +40,7 @@ const INVITATION_FIELDS = `
   i.id, i.teacher_id, i.student_id, i.topic_id, i.message, i.status,
   i.response_reason, i.expires_at, i.responded_at, i.created_at,
   t.name AS teacher_name, t.academic_title,
-  s.name AS student_name, s.student_number,
+  s.name AS student_name, s.student_number, s.father_initial,
   tp.title AS topic_title`
 
 const INVITATION_JOINS = `

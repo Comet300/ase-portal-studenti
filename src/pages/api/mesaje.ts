@@ -1,5 +1,6 @@
 import type { APIRoute } from 'astro'
 import { myConversation } from '../../lib/chat'
+import { lockNotice } from '../../lib/chat-lock'
 import { queryOne, transaction } from '../../lib/db'
 import { template, sendEmail, html, quote } from '../../lib/mail'
 import { MAX_BYTES, isAllowedExtension, saveFile, mimeForExtension } from '../../lib/files'
@@ -37,13 +38,34 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
    * A thread opened when a request was approved stayed usable even after the
    * request was withdrawn or rejected, and the POST accepted it because it only
    * checked whether you are one of the two parties. The thread stays readable;
-   * writing requires a live link. */
+   * writing requires a live link.
+   *
+   * The refusal had one wording for all eight ways a pair can come apart, and
+   * the person never read it anyway: `redirectWithNotice` answers 303, the
+   * composer's XHR follows that redirect transparently, lands in its success
+   * branch and then navigates to the plain `redirect` field — dropping the
+   * `?notificare` the notice travelled in. The message vanished, the typed text
+   * was already cleared, and nothing on the screen said why.
+   *
+   * So the answer is negotiated: the XHR asks for JSON (scripts/chat.ts) and
+   * gets a 403 it cannot mistake for success, with the reason in it. The plain
+   * form — the portal works without JavaScript — keeps the redirect. */
   if (!conversation.is_active) {
-    return redirectWithNotice(
-      redirectTo,
-      'Conversația este închisă: nu mai există o coordonare activă între voi. O poți citi, dar nu mai poți scrie în ea.',
-      true,
-    )
+    const notice = lockNotice(conversation.lock_reason, {
+      name: conversation.peer_name,
+      forStudent: conversation.student_id === u.id,
+    })
+    const message =
+      notice?.body ??
+      'Nu mai există o coordonare activă între voi. Poți citi conversația, dar nu mai poți scrie în ea.'
+
+    if (request.headers.get('accept')?.includes('application/json')) {
+      return new Response(JSON.stringify({ reason: conversation.lock_reason, message }), {
+        status: 403,
+        headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' },
+      })
+    }
+    return redirectWithNotice(redirectTo, message, true)
   }
 
   if (!body && attachments.length === 0) {

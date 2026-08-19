@@ -26,10 +26,11 @@ const links = u
         : [{ href: '/profesor', text: 'Zona cadrelor didactice' }]),
       { href: '/ghid', text: 'Ghid & Regulament' },
     ]
-  : [
-      { href: '/', text: 'Acasă' },
-      { href: '/coordonatori', text: 'Coordonatori & Teme' },
+  : /* Nothing else in the portal opens without a session: a link to „Acasă” or
+       to the catalogue would only bounce off the gate and land back here. */
+    [
       { href: '/autentificare', text: 'Autentificare' },
+      { href: '/confidentialitate', text: 'Ce date păstrăm despre tine' },
     ]
 ---
 

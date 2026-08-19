@@ -1,0 +1,407 @@
+---
+import Icon from './Icon.astro'
+
+interface Props {
+  id: string
+  name: string
+  label: string
+  value?: string | null
+  /** Earliest day accepted, `YYYY-MM-DD`. On a range end it is the floor below
+   *  which the partner cannot push it. */
+  min?: string
+  /** Latest day accepted, `YYYY-MM-DD`. */
+  max?: string
+  required?: boolean
+  /**
+   * The id of the field this one closes. Set on the *end* of a range: its
+   * earliest day follows the start's value, and the label counts the span.
+   */
+  pereche?: string
+  hint?: string
+  /** The rows this sits in size their fields themselves. */
+  class?: string
+  style?: string
+}
+
+/**
+ * A date, chosen from a calendar written in Romanian.
+ *
+ * The `<input type="date">` is not replaced, it is dressed. It stays the element
+ * that posts `YYYY-MM-DD`, that the server validates, that a phone opens its own
+ * wheel for, and that still works with JavaScript off — replacing it with a
+ * hidden field and a button would have cost the no-JS path, the native
+ * validation and the mobile picker all at once, for a control that is used on
+ * five screens.
+ *
+ * What is added is the half the browser does badly: the drop-down panel is the
+ * operating system's, in a font nobody chose and a palette that follows the OS
+ * theme rather than the page, and the value is written in the browser's locale —
+ * so „05.08.2026” sat two lines under „5 august 2026” on the same screen, and an
+ * English-locale Chrome wrote „8/5/2026”, which is a different day.
+ *
+ * The trigger and the prose read-out are both `hidden` in the markup and revealed
+ * by `scripts/datepicker.ts`. A button that opens nothing is worse than no
+ * button, and a read-out that stops matching the field the moment somebody types
+ * into it is worse than a raw date.
+ */
+const {
+  id,
+  name,
+  label,
+  value,
+  min,
+  max,
+  required = false,
+  pereche,
+  hint,
+  class: extra,
+  style,
+} = Astro.props
+---
+
+<div class:list={['field', extra]} style={style}>
+  <label class="label" for={id}>
+    {label}{required && <span class="label__req" aria-hidden="true">*</span>}
+    {/* „· 14 zile” once both ends of a range are set — the pair says out loud
+        that it is one interval, without a line of its own that would make the
+        field taller than the ones beside it. */}
+    {pereche && <span class="alege-data__durata" data-durata hidden />}
+  </label>
+
+  <div class="alege-data" data-alege-data data-pereche={pereche}>
+    <input
+      class="input alege-data__camp"
+      data-camp
+      type="date"
+      id={id}
+      name={name}
+      value={value ?? ''}
+      min={min}
+      max={max}
+      required={required}
+    />
+
+    {/* `aria-hidden`: the field already carries the value, and a screen reader
+        reading it twice would announce two dates for one control. */}
+    <span class="alege-data__citit" data-citit aria-hidden="true" hidden></span>
+
+    <button
+      class="alege-data__buton"
+      data-buton
+      type="button"
+      hidden
+      aria-haspopup="dialog"
+      aria-expanded="false"
+      aria-label={`Alege data · ${label}`}
+    >
+      <Icon name="calendar" size="md" />
+    </button>
+  </div>
+
+  {hint && <span class="hint">{hint}</span>}
+</div>
+
+<script>
+  import { start } from '../scripts/datepicker'
+
+  start()
+</script>
+
+{/* Global, and this is the reason: the month grid is built in JavaScript, on the
+    first opening, so its forty-two cells never pass through Astro and never
+    receive the scope attribute a scoped block selects on. Rendering the grid in
+    the markup instead would have put 42 buttons per field into every page — on
+    „Calendarul sesiunii”, twenty stages times two fields. Every selector below
+    is under `.alege-data`, which exists nowhere else in the portal. */}
+<style is:global>
+  .alege-data {
+    position: relative;
+  }
+
+  /* Room for the trigger, which sits inside the field's own border rather than
+     beside it: two boxes in a row read as two controls. */
+  .alege-data__camp {
+    padding-right: var(--tap);
+  }
+
+  /* The browser's own calendar glyph goes only once the trigger has actually
+     appeared. Hidden unconditionally, a script that fails to load would leave a
+     field that can only be typed into, with no way to open any picker at all. */
+  .alege-data.is-imbunatatit .alege-data__camp::-webkit-calendar-picker-indicator {
+    display: none;
+  }
+  .alege-data.is-imbunatatit .alege-data__camp::-webkit-inner-spin-button {
+    display: none;
+  }
+
+  /* The value, in the portal's words, laid over the field's own text. Under it
+     instead, as a line of its own, every date field would stand ~20px taller
+     than the text fields beside it and every row that aligns on its bottom edge
+     would come apart. */
+  .alege-data__citit {
+    position: absolute;
+    inset: 1px var(--tap) 1px 1px;
+    display: flex;
+    align-items: center;
+    padding-inline: var(--s-3);
+    border-radius: var(--r-md) 0 0 var(--r-md);
+    background: var(--surface);
+    font-size: var(--t-base);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    /* The press has to reach the field underneath, which then takes the focus
+       that uncovers it. */
+    pointer-events: none;
+  }
+  .alege-data__citit[hidden] {
+    display: none;
+  }
+  /* Typing is always into the real control, never into a picture of it — but
+     only while the field itself has the focus. Written as `:focus-within` it also
+     fired while the calendar was open, and the field flipped back to
+     „21/10/2026” underneath a panel opened to change that very date. */
+  .alege-data__camp:focus + .alege-data__citit {
+    display: none;
+  }
+
+  .alege-data__durata {
+    margin-left: var(--s-1);
+    font-weight: 400;
+    color: var(--ink-muted);
+  }
+  .alege-data__durata.is-eroare {
+    color: var(--danger);
+    font-weight: 600;
+  }
+  .alege-data__durata[hidden] {
+    display: none;
+  }
+
+  .alege-data__buton {
+    position: absolute;
+    top: 1px;
+    right: 1px;
+    bottom: 1px;
+    width: calc(var(--tap) - 2px);
+    display: grid;
+    place-items: center;
+    border: 0;
+    border-radius: 0 var(--r-md) var(--r-md) 0;
+    background: none;
+    color: var(--ink-muted);
+    cursor: pointer;
+    transition:
+      color var(--fast) var(--ease),
+      background-color var(--fast) var(--ease);
+  }
+  .alege-data__buton[hidden] {
+    display: none;
+  }
+  .alege-data__buton:hover {
+    background: var(--surface-sunken);
+    color: var(--ink);
+  }
+  .alege-data__buton[aria-expanded='true'] {
+    color: var(--red);
+  }
+
+  /* --- the panel --------------------------------------------------------- */
+
+  .alege-data__panou {
+    position: absolute;
+    top: calc(100% + 4px);
+    left: 0;
+    z-index: var(--z-drawer);
+    width: 19rem;
+    /* A phone is 320px wide and this panel is 304: anchored blindly it hangs off
+       the edge and widens the whole document. */
+    max-width: calc(100vw - var(--s-6));
+    padding: var(--s-2);
+    background: var(--surface);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--r-md);
+    box-shadow: var(--shadow-raised);
+    animation: alege-data-apare var(--base) var(--ease);
+  }
+  .alege-data__panou[hidden] {
+    display: none;
+  }
+  .alege-data__panou.is-dreapta {
+    left: auto;
+    right: 0;
+  }
+  .alege-data__panou.is-sus {
+    top: auto;
+    bottom: calc(100% + 4px);
+  }
+
+  @keyframes alege-data-apare {
+    from {
+      opacity: 0;
+      transform: translateY(-4px);
+    }
+  }
+
+  .alege-data__cap {
+    display: grid;
+    grid-template-columns: var(--tap) 1fr var(--tap);
+    align-items: center;
+    margin-bottom: var(--s-1);
+  }
+
+  /* „octombrie 2026”, lower case: Romanian does not capitalise month names, and
+     the portal writes them that way everywhere else. */
+  .alege-data__luna {
+    text-align: center;
+    font-size: var(--t-sm);
+    font-weight: 600;
+  }
+
+  .alege-data__nav {
+    display: grid;
+    place-items: center;
+    width: var(--tap);
+    height: var(--tap);
+    border: 0;
+    border-radius: var(--r-sm);
+    background: none;
+    color: var(--ink-soft);
+    cursor: pointer;
+    transition:
+      color var(--fast) var(--ease),
+      background-color var(--fast) var(--ease);
+  }
+  .alege-data__nav:hover:not(:disabled) {
+    background: var(--surface-sunken);
+    color: var(--ink);
+  }
+  .alege-data__nav:disabled {
+    color: var(--border-strong);
+    cursor: not-allowed;
+  }
+
+  .alege-data__rand {
+    display: grid;
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+  }
+
+  .alege-data__cap-zi {
+    padding-block: var(--s-1);
+    text-align: center;
+    font-size: var(--t-xs);
+    font-weight: 600;
+    color: var(--ink-muted);
+    text-transform: capitalize;
+  }
+
+  .alege-data__zi {
+    position: relative;
+    /* Whole tap target, and the cells touch, so there is no dead strip between
+       two days on a phone. */
+    min-height: var(--tap);
+    display: grid;
+    place-items: center;
+    border: 0;
+    border-radius: var(--r-sm);
+    background: none;
+    color: var(--ink);
+    font-size: var(--t-sm);
+    font-variant-numeric: tabular-nums;
+    cursor: pointer;
+    transition:
+      color var(--fast) var(--ease),
+      background-color var(--fast) var(--ease);
+  }
+  .alege-data__zi:hover {
+    background: var(--surface-sunken);
+  }
+  .alege-data__zi.is-alta-luna {
+    color: var(--ink-muted);
+  }
+
+  /* Today is a landmark, not a choice: it is marked underneath, in neutral, so
+     it cannot be mistaken for the day that is selected. */
+  .alege-data__zi.is-azi {
+    font-weight: 700;
+  }
+  .alege-data__zi.is-azi::after {
+    content: '';
+    position: absolute;
+    bottom: 7px;
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+    background: var(--ink-muted);
+  }
+
+  /* The span between the two ends of a range, in furniture grey: the red is the
+     seal on the chosen day and stays rare. */
+  .alege-data__zi.is-interval {
+    background: var(--surface-sunken);
+    border-radius: 0;
+  }
+  .alege-data__zi.is-capat {
+    box-shadow: inset 0 0 0 1px var(--border-strong);
+  }
+
+  .alege-data__zi[aria-selected='true'] {
+    background: var(--red-tint);
+    box-shadow: inset 0 0 0 1px var(--red);
+    color: var(--red);
+    font-weight: 600;
+  }
+  .alege-data__zi[aria-selected='true'].is-azi::after {
+    background: var(--red);
+  }
+
+  .alege-data__zi[aria-disabled='true'] {
+    color: var(--border-strong);
+    cursor: not-allowed;
+  }
+  .alege-data__zi[aria-disabled='true']:hover {
+    background: none;
+  }
+
+  .alege-data__subsol {
+    display: flex;
+    gap: var(--s-1);
+    margin-top: var(--s-1);
+    padding-top: var(--s-1);
+    border-top: 1px solid var(--border);
+  }
+
+  .alege-data__actiune {
+    min-height: 34px;
+    padding-inline: var(--s-3);
+    border: 0;
+    border-radius: var(--r-sm);
+    background: none;
+    color: var(--ink-soft);
+    font-size: var(--t-sm);
+    cursor: pointer;
+    transition:
+      color var(--fast) var(--ease),
+      background-color var(--fast) var(--ease);
+  }
+  .alege-data__actiune:hover {
+    background: var(--surface-sunken);
+    color: var(--ink);
+  }
+
+  /* On paper the control is not pressed, so it goes; the prose stays and takes
+     its place in the flow. Without this the sheet reads „2026-10-01”, which is
+     worse than what was there before. */
+  @media print {
+    .alege-data__camp,
+    .alege-data__buton,
+    .alege-data__panou {
+      display: none !important;
+    }
+    .alege-data__citit {
+      position: static;
+      padding-inline: 0;
+      border-bottom: 1px solid var(--border);
+    }
+  }
+</style>

@@ -1,6 +1,7 @@
 ---
 import Avatar from './Avatar.astro'
 import type { Conversation, Message } from '../lib/chat'
+import { lockNotice } from '../lib/chat-lock'
 import { formatTime, monthLabel, shortMonth, timeAgo } from '../lib/repo'
 import { prezenta } from '../lib/presence'
 import { ACCEPT } from '../lib/files'
@@ -21,6 +22,10 @@ const EVENT_LABELS: Record<string, string> = {
   invitation_declined: 'Propunere refuzată',
   consultation_scheduled: 'Consultație programată',
   consultation_cancelled: 'Consultație anulată',
+  /* The end of a supervision that went well. Entering the grade turns the
+     thread read-only from one second to the next, and until the vocabulary of
+     migration 0016 there was no way to write down why. */
+  coordination_ended: 'Coordonare încheiată',
   /* „Locuri alocate” was taken out: nothing ever writes it. Seats are granted
      between the director and the coordinator, while the portal's threads are
      (student, coordinator) — the event would have nowhere to exist. The notice
@@ -73,6 +78,26 @@ const {
   pageSize = 40,
   hasContext = false,
 } = Astro.props
+
+/**
+ * The composer, or the reason there is no composer.
+ *
+ * A thread whose pairing has ended kept a textarea, a paperclip and a „Trimite”
+ * that all worked right up to the server, which refused the message with a
+ * notice nobody ever saw. What the student got was: the text they had typed
+ * disappearing, and no explanation anywhere.
+ *
+ * The composer is not disabled — a greyed-out box invites people to keep
+ * trying. It is replaced by the record of what closed it, in the vocabulary the
+ * thread already uses for everything the portal did (PRODUCT.md: the portal's
+ * own actions are not messages).
+ */
+const lock = active
+  ? lockNotice(active.lock_reason, {
+      name: active.peer_name,
+      forStudent: active.student_id === userId,
+    })
+  : null
 
 /**
  * The files, by month.
@@ -165,7 +190,13 @@ const STARTER_MESSAGES = [
                     <strong>{c.peer_name}</strong>
                     <small>{c.last_message_at ? timeAgo(c.last_message_at) : ''}</small>
                   </span>
-                  <span class="thread__preview">{c.last_message ?? 'Niciun mesaj încă'}</span>
+                  {/* Which of these five can still be written in, before
+                      opening any of them. Written out, not drawn: a grey tint
+                      on the row would be a state carried by colour alone. */}
+                  <span class="thread__preview">
+                    {!c.is_active && <span class="thread__inchis">Doar citire · </span>}
+                    {c.last_message ?? 'Niciun mesaj încă'}
+                  </span>
                 </span>
                 {c.unread > 0 && <span class="thread__badge numeric">{c.unread}</span>}
               </a>
@@ -251,8 +282,11 @@ const STARTER_MESSAGES = [
               </a>
             )}
 
-            {messages.length === 0 && (
-              /* An empty thread asks for a beginning, not an explanation. */
+            {messages.length === 0 && !lock && (
+              /* An empty thread asks for a beginning, not an explanation —
+                 unless it can no longer be written in, in which case „Scrie
+                 primul mesaj” and three ready-made openers above a composer
+                 that is not there would be an invitation to nothing. */
               <div class="chat__inceput">
                 <p class="empty__title">Scrie primul mesaj</p>
                 <p class="empty__text">
@@ -428,45 +462,67 @@ const STARTER_MESSAGES = [
 
           </aside>
 
-          <form class="chat__compose" method="POST" action="/api/mesaje" enctype="multipart/form-data">
-            <input type="hidden" name="conversation_id" value={active.id} />
-            <input type="hidden" name="redirect" value={`${base}?conversatie=${active.id}`} />
+          {lock ? (
+            /* Not a bubble and not a toast: the same record the thread uses for
+               every decision, laid across the strip the composer used to
+               occupy, so the bottom edge of the conversation is where it always
+               was. */
+            <div class:list={['eveniment', 'eveniment--blocaj', { 'is-rau': lock.tone === 'bad' }]}>
+              <span class="eveniment__eticheta">{lock.label}</span>
+              <p class="eveniment__corp">{lock.body}</p>
+              {lock.action && (
+                <a class="btn btn--secondary btn--sm" href={lock.action.href}>
+                  {lock.action.text}
+                </a>
+              )}
+            </div>
+          ) : (
+            <form class="chat__compose" method="POST" action="/api/mesaje" enctype="multipart/form-data">
+              <input type="hidden" name="conversation_id" value={active.id} />
+              <input type="hidden" name="redirect" value={`${base}?conversatie=${active.id}`} />
 
-            {/* The button is a button, not a label: a label takes no keyboard
-                focus, so attaching a file was impossible without a mouse. The
-                field stays in the page, visually hidden but accessible. */}
-            <input type="file" name="file" class="visually-hidden" id="camp-fisier" accept={ACCEPT} multiple />
-            <button class="attach" type="button" id="alege-fisier">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
-                <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
-              </svg>
-              <span class="visually-hidden">Atașează fișiere</span>
-            </button>
+              {/* The button is a button, not a label: a label takes no keyboard
+                  focus, so attaching a file was impossible without a mouse. The
+                  field stays in the page, visually hidden but accessible. */}
+              <input type="file" name="file" class="visually-hidden" id="camp-fisier" accept={ACCEPT} multiple />
+              <button class="attach" type="button" id="alege-fisier">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+                  <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
+                </svg>
+                <span class="visually-hidden">Atașează fișiere</span>
+              </button>
 
-            <div class="chat__camp">
-              {/* The chosen files are visible before sending: otherwise there is
-                  no way to know what got attached, nor how to change your mind.
-                  The bar underneath shows how much of the whole has gone up, and
-                  the „✕” on the layer stops the upload.
+              <div class="chat__camp">
+                {/* The chosen files are visible before sending: otherwise there is
+                    no way to know what got attached, nor how to change your mind.
+                    The bar underneath shows how much of the whole has gone up, and
+                    the „✕” on the layer stops the upload.
 
-                  The list is built from JavaScript, one row per file: a chapter
-                  arrives with the questionnaire and with the data file, and
-                  before this it meant three messages for a single thought. */}
-              <div class="atasamente" id="atasamente" hidden>
-                <ul class="atasamente__lista" id="atasamente-lista"></ul>
-                <span class="atasamente__bara" id="atasamente-bara"></span>
+                    The list is built from JavaScript, one row per file: a chapter
+                    arrives with the questionnaire and with the data file, and
+                    before this it meant three messages for a single thought. */}
+                <div class="atasamente" id="atasamente" hidden>
+                  {/* How many there are, how heavy they are, and — when they no
+                      longer fit — that the row continues to the right. The fade
+                      at the edge alone would be a state carried by colour. */}
+                  <p class="atasamente__rezumat" id="atasamente-rezumat" aria-live="polite"></p>
+                  <div class="atasamente__pista" id="atasamente-pista">
+                    <ul class="atasamente__lista" id="atasamente-lista" aria-label="Fișiere atașate"></ul>
+                  </div>
+                  <span class="atasamente__bara" id="atasamente-bara"></span>
+                </div>
+
+                <textarea class="chat__input" name="body" rows="1" placeholder="Scrie un mesaj…" aria-label="Mesaj" data-autogrow></textarea>
               </div>
 
-              <textarea class="chat__input" name="body" rows="1" placeholder="Scrie un mesaj…" aria-label="Mesaj" data-autogrow></textarea>
-            </div>
-
-            <button class="btn btn--primary" type="submit">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
-                <path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z" />
-              </svg>
-              <span class="chat__send-label">Trimite</span>
-            </button>
-          </form>
+              <button class="btn btn--primary" type="submit">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+                  <path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z" />
+                </svg>
+                <span class="chat__send-label">Trimite</span>
+              </button>
+            </form>
+          )}
         </>
       ) : (
         <div class="empty" style="margin:auto">
@@ -582,6 +638,11 @@ const STARTER_MESSAGES = [
     white-space: nowrap;
   }
 
+  .thread__inchis {
+    font-weight: 600;
+    color: var(--ink-soft);
+  }
+
   .thread__badge {
     display: grid;
     place-items: center;
@@ -663,7 +724,21 @@ const STARTER_MESSAGES = [
     font-size: var(--t-xs);
   }
 
-  .bubble {
+  /* The bubbles are written under `:global()`, and on purpose.
+     -------------------------------------------------------------------------
+     Astro compiles every selector in this block to `.bubble[data-astro-cid-…]`,
+     an attribute it stamps on the elements *it* renders. The provisional bubble
+     — the one standing in for the message while it is on its way to the server
+     — is built by scripts/chat.ts, so it never carries that attribute: every
+     rule below missed it, and what a person saw the moment they pressed
+     „Trimite” was unstyled text on the page background.
+
+     Writing the attribute from JavaScript would work today and break at the
+     next build: the hash is derived from the file's content. The selectors stay
+     anchored to `.chat__messages`, which is rendered here and does carry it, so
+     the globals cannot leak past the thread. */
+
+  .chat__messages :global(.bubble) {
     align-self: flex-start;
     max-width: min(72ch, 78%);
     padding: var(--s-3) var(--s-4);
@@ -682,7 +757,7 @@ const STARTER_MESSAGES = [
      half the surface of the screen, in a place that is furniture, not action. It
      stays the same colour family, at the intensity that tells apart without
      dominating. */
-  .bubble--mine {
+  .chat__messages :global(.bubble--mine) {
     align-self: flex-end;
     background: var(--red-tint);
     border-color: #f3d9d5;
@@ -693,22 +768,22 @@ const STARTER_MESSAGES = [
 
   /* Five replies in a row from the same person read as one block, not as five
      boxes: the continuation loses the tail and sticks to the one before it. */
-  .bubble--continuare {
+  .chat__messages :global(.bubble--continuare) {
     margin-top: calc(var(--s-2) * -1 + 2px);
     border-top-left-radius: var(--r-sm);
   }
-  .bubble--mine.bubble--continuare {
+  .chat__messages :global(.bubble--mine.bubble--continuare) {
     border-top-left-radius: 14px;
     border-top-right-radius: var(--r-sm);
   }
 
-  .bubble__body {
+  .chat__messages :global(.bubble__body) {
     font-size: var(--t-sm);
     white-space: pre-wrap;
     text-wrap: pretty;
   }
 
-  .bubble__time {
+  .chat__messages :global(.bubble__time) {
     display: inline-flex;
     align-items: center;
     gap: var(--s-1);
@@ -717,20 +792,20 @@ const STARTER_MESSAGES = [
     color: var(--ink-muted);
   }
 
-  .bubble__stare {
+  .chat__messages :global(.bubble__stare) {
     letter-spacing: -1px;
     color: var(--info);
   }
 
   /* A photo named through its file is a photo you do not see. */
-  .bubble__imagine {
+  .chat__messages :global(.bubble__imagine) {
     display: block;
     max-width: 260px;
     border-radius: var(--r-md);
     overflow: hidden;
     line-height: 0;
   }
-  .bubble__imagine img {
+  .chat__messages :global(.bubble__imagine img) {
     width: 100%;
     height: auto;
     max-height: 260px;
@@ -738,14 +813,14 @@ const STARTER_MESSAGES = [
   }
 
   /* The provisional bubble, while the message is on its way to the server. */
-  .bubble.is-pending {
+  .chat__messages :global(.bubble.is-pending) {
     opacity: 0.6;
   }
-  .bubble.is-failed {
+  .chat__messages :global(.bubble.is-failed) {
     border-color: var(--danger);
     background: var(--danger-tint);
   }
-  .bubble__reia {
+  .chat__messages :global(.bubble__reia) {
     align-self: flex-end;
     margin-top: var(--s-1);
     border: 1px solid var(--danger);
@@ -760,7 +835,7 @@ const STARTER_MESSAGES = [
 
   /* Only the last bubble enters with motion — with all of them animated, a long
      thread would shudder at every load. */
-  .chat__messages > .bubble:last-child {
+  .chat__messages > :global(.bubble:last-child) {
     animation: bula-noua var(--base) var(--ease-spring);
   }
 
@@ -771,7 +846,7 @@ const STARTER_MESSAGES = [
     }
   }
 
-  .bubble__file {
+  .chat__messages :global(.bubble__file) {
     display: inline-flex;
     align-items: center;
     gap: var(--s-2);
@@ -782,11 +857,11 @@ const STARTER_MESSAGES = [
     color: var(--ink);
     text-decoration: none;
   }
-  .bubble__file svg {
+  .chat__messages :global(.bubble__file svg) {
     width: 14px;
     height: 14px;
   }
-  .bubble--mine .bubble__file {
+  .chat__messages :global(.bubble--mine .bubble__file) {
     background: rgba(153, 0, 0, 0.07);
     color: var(--ink);
   }
@@ -951,6 +1026,30 @@ const STARTER_MESSAGES = [
   }
   .eveniment.is-rau .eveniment__eticheta {
     color: var(--danger);
+  }
+
+  /* The record that closes the thread takes the place of the composer, so it
+     takes its edges too: the same strip, the same line above it, the same
+     surface. Dashed inside the conversation it reads as one more entry in the
+     history; here it is the bottom of the screen, and a dashed frame floating
+     over the whole width would read as a warning banner. */
+  .eveniment--blocaj {
+    align-self: stretch;
+    width: auto;
+    margin-block: 0;
+    padding: var(--s-4);
+    gap: var(--s-2);
+    align-items: center;
+    border: 0;
+    border-top: 1px solid var(--border);
+    border-radius: 0;
+    background: var(--surface);
+  }
+  .eveniment--blocaj.is-rau {
+    border-top-color: var(--danger);
+  }
+  .eveniment--blocaj .eveniment__corp {
+    max-width: 62ch;
   }
 
   .chat__fisiere-buton {
@@ -1140,21 +1239,95 @@ const STARTER_MESSAGES = [
     min-width: 0;
   }
 
-  /* The layer with the chosen files: one row per file, with the shared upload
-     bar underneath — the progress the browser reports is that of the whole
-     request, not of each file, so one bar per file would lie. */
+  /* The strip of chosen files.
+     -------------------------------------------------------------------------
+     Two things were wrong with it, and they compounded.
+
+     Every `.atasament…` rule here used to be dead. Astro scopes them to
+     `[data-astro-cid-…]`, the chips are built by scripts/chat.ts and never
+     carried it, so `svg { width: 15px }` never applied — and an `<svg>` with a
+     viewBox, no dimensions and no CSS falls back to the replaced-element
+     default of 300×150px. That giant glyph was the „huge thumbnail”, and it was
+     identical for a .docx and for a photo.
+
+     The row also wrapped. Ten files (the client's cap) at 150px tall came to
+     five rows and some 700px of composer, inside a `.chat` that hides its
+     overflow: the message list was squeezed towards nothing and „Trimite” went
+     under the bottom edge. It is now one row that scrolls in its own box —
+     never the page — with a fixed height whatever the file types are. */
   .atasamente {
     position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-1);
     padding-bottom: 3px;
+  }
+
+  .atasamente__rezumat {
+    font-size: var(--t-xs);
+    color: var(--ink-muted);
+  }
+
+  .atasamente__pista {
+    position: relative;
+  }
+
+  /* That the row continues past the edge. The fade is the quiet half of the
+     signal; the loud half is the word in `.atasamente__rezumat`, because a
+     gradient is a state carried by colour alone. */
+  .atasamente__pista::before,
+  .atasamente__pista::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    z-index: 1;
+    width: var(--s-5);
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity var(--fast) var(--ease);
+  }
+  .atasamente__pista::before {
+    left: 0;
+    background: linear-gradient(to right, var(--surface), transparent);
+  }
+  .atasamente__pista::after {
+    right: 0;
+    background: linear-gradient(to left, var(--surface), transparent);
+  }
+  .atasamente__pista[data-overflow-start]::before,
+  .atasamente__pista[data-overflow-end]::after {
+    opacity: 1;
   }
 
   .atasamente__lista {
     list-style: none;
     margin: 0;
-    padding: 0;
+    /* The padding is the room the focus ring needs. The container clips, and
+       the ring is drawn 2px outside the „✕” — without it, the first and the
+       last chip lose the only sign of where the keyboard is. */
+    padding: var(--s-1);
     display: flex;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     gap: var(--s-2);
+    overflow-x: auto;
+    /* The strip scrolls, the thread behind it does not: flicking to the end of
+       the files used to carry on into the conversation. */
+    overscroll-behavior-x: contain;
+    scroll-snap-type: x proximity;
+    scroll-padding-inline: var(--s-1);
+    scrollbar-width: thin;
+    scrollbar-color: var(--border-strong) transparent;
+    /* As on `.table-wrap`: without it the lateral scroll of the strip becomes
+       the lateral scroll of the document. */
+    contain: paint;
+  }
+  .atasamente__lista::-webkit-scrollbar {
+    height: 6px;
+  }
+  .atasamente__lista::-webkit-scrollbar-thumb {
+    background: var(--border-strong);
+    border-radius: 999px;
   }
 
   .atasamente__bara {
@@ -1166,54 +1339,91 @@ const STARTER_MESSAGES = [
     transition: width 120ms linear;
   }
 
-  .atasament {
+  /* The chips themselves are built in scripts/chat.ts, so their rules are
+     written global — see the note above the bubbles for why the scope
+     attribute is not written from JavaScript. They stay anchored under
+     `.atasamente__lista`, which is rendered here. */
+  .atasamente__lista :global(.atasament) {
     position: relative;
+    /* Fixed, not fluid: the row is a rhythm you can flick through, and the
+       snap has something to land on. */
+    flex: 0 0 13rem;
+    scroll-snap-align: start;
     display: flex;
     align-items: center;
     gap: var(--s-2);
-    max-width: 100%;
-    padding: var(--s-2) var(--s-2) var(--s-2) var(--s-3);
+    /* One height for a photo, a .docx and a .zip alike — the strip must not
+       change height when the next file happens to be an image. */
+    height: 3rem;
+    padding-left: var(--s-2);
     border: 1px solid var(--border-strong);
     border-radius: var(--r-md);
     background: var(--surface-sunken);
     overflow: hidden;
   }
-  .atasament svg {
-    width: 15px;
-    height: 15px;
-    color: var(--ink-muted);
+
+  /* The box has the size; the image only fills it. An `<img>` left to its own
+     dimensions is exactly how a 4000px photo took over the composer. */
+  .atasamente__lista :global(.atasament__vizual) {
+    display: grid;
+    place-items: center;
+    width: 34px;
+    height: 34px;
     flex: none;
+    border: 1px solid var(--border);
+    border-radius: var(--r-sm);
+    background: var(--surface);
+    color: var(--ink-muted);
+    overflow: hidden;
   }
-  .atasament__corp {
+  .atasamente__lista :global(.atasament__vizual img) {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+  .atasamente__lista :global(.atasament__vizual svg) {
+    width: 16px;
+    height: 16px;
+  }
+
+  .atasamente__lista :global(.atasament__corp) {
     display: flex;
     flex-direction: column;
+    flex: 1;
     min-width: 0;
     line-height: 1.3;
   }
-  .atasament__corp strong {
+  .atasamente__lista :global(.atasament__corp strong) {
     font-size: var(--t-xs);
     font-weight: 500;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  .atasament__corp small {
+  .atasamente__lista :global(.atasament__corp small) {
     font-size: var(--t-xs);
+    color: var(--ink-muted);
   }
-  .atasament__scoate {
+
+  /* The glyph is small, the target is not: removing a file by mistake is
+     cheaper than not being able to remove it at all on a phone. */
+  .atasamente__lista :global(.atasament__scoate) {
+    display: grid;
+    place-items: center;
+    width: var(--tap);
+    align-self: stretch;
+    flex: none;
     border: 0;
     background: none;
     color: var(--ink-muted);
-    cursor: pointer;
-    padding: 0 var(--s-1);
     font-size: var(--t-sm);
     line-height: 1;
-    flex: none;
+    cursor: pointer;
+    transition: color var(--fast) var(--ease);
   }
-  .atasament__scoate:hover {
+  .atasamente__lista :global(.atasament__scoate:hover) {
     color: var(--danger);
   }
-
   .chat__compose {
     display: flex;
     align-items: flex-end;

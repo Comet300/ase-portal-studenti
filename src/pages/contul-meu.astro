@@ -3,6 +3,7 @@ import Avatar from '../components/Avatar.astro'
 import StudentLayout from '../layouts/StudentLayout.astro'
 import { ROLE_LABELS } from '../lib/auth'
 import { formatDate, studentRequests } from '../lib/repo'
+import { officialName } from '../lib/text'
 import { languageLabel, levelLabel } from '../lib/years'
 
 const u = Astro.locals.user!
@@ -35,6 +36,20 @@ const saved = Astro.url.searchParams.get('salvat') === '1'
       </div>
 
       <dl class="details">
+        {/* The name as it is printed on the cerere and read at the counter. It
+            is here because a typo in the initial is a document handed back, and
+            until now nobody could see the initial in order to report it. */}
+        <div>
+          <dt>Nume în acte</dt>
+          <dd>
+            {officialName(u)}
+            {!u.father_initial && (
+              <span class="muted text-sm">
+                {' '}— fără inițiala tatălui; scrie secretariatului dacă lipsește
+              </span>
+            )}
+          </dd>
+        </div>
         <div>
           <dt>Email instituțional</dt>
           <dd>{u.email}</dd>
@@ -58,6 +73,10 @@ const saved = Astro.url.searchParams.get('salvat') === '1'
         <div>
           <dt>An de studiu</dt>
           <dd>{u.study_year ?? '—'}</dd>
+        </div>
+        <div>
+          <dt>Serie</dt>
+          <dd>{u.study_series ?? '—'}</dd>
         </div>
         <div>
           <dt>Grupa</dt>

@@ -1,19 +1,35 @@
 ---
 import StudentLayout from '../layouts/StudentLayout.astro'
 import { formatDate, stages, currentStage, studentMilestones, studentRequests } from '../lib/repo'
+/* `astro check` does not look inside a frontmatter `return`, so it reports
+ * `homeFor` as an unused import. It is not: deleting it leaves the redirect
+ * below calling a name that no longer exists, and nothing says so until a
+ * teacher opens the page. */
+import { homeFor } from '../lib/http'
 import { currentYearLabel } from '../lib/years'
 
-const u = Astro.locals.user
-const [stageList, currentStageRow, yearLabel] = await Promise.all([
+/* The student home.
+ *
+ * Nothing in the portal is readable without a session any more, so this page
+ * has one audience. It used to open with a paragraph introducing the portal to
+ * a visitor who no longer exists, and a member of the teaching staff was given
+ * a student shell with „Cererile mele” in it — a screen that is empty for them.
+ * They are sent to their own home instead. */
+const u = Astro.locals.user!
+
+if (u.role !== 'student') {
+  return Astro.redirect(homeFor(u), 302)
+}
+
+const [stageList, currentStageRow, yearLabel, requests, milestones] = await Promise.all([
   stages(),
   currentStage(),
   currentYearLabel(),
+  studentRequests(u.id),
+  studentMilestones(u.id),
 ])
 
-// A signed-in student sees their own situation instead of the general text.
-const requests = u?.role === 'student' ? await studentRequests(u.id) : []
 const activeRequest = requests.find((c) => c.status === 'approved' || c.status === 'pending')
-const milestones = u?.role === 'student' ? await studentMilestones(u.id) : []
 /* „Următorul termen” has to be in the future.
  *
  * It used to take the first unfinished one, in order, so on 29 July the page
@@ -33,30 +49,10 @@ const nextMilestoneOverdue = Boolean(
  * The first sentence on the screen.
  *
  * There used to be a single one for everybody — an introduction to the portal,
- * shown the same way to a visitor who does not know it and to a student who
- * comes in for the fifteenth time to see whether they have been answered. And
- * a member of the teaching staff got „Cererile mele” as the main action, that
- * is a student page, empty for them.
+ * shown the same way to somebody who does not know it and to a student who
+ * comes in for the fifteenth time to see whether they have been answered.
  */
 const intro = (() => {
-  if (!u) {
-    return {
-      title: 'Tot ce ține de lucrarea ta, într-un singur loc',
-      text: 'Alegi coordonatorul, depui cererea, urmărești termenele și discuți cu profesorul — fără drumuri la secretariat și fără fire de email pierdute.',
-      action: { href: '/autentificare', text: 'Intră în cont' },
-      secondary: { href: '/coordonatori', text: 'Vezi coordonatorii' },
-    }
-  }
-
-  if (u.role !== 'student') {
-    return {
-      title: `Bine ai revenit, ${u.name.split(' ').slice(-1)[0]}`,
-      text: 'Ești autentificat ca și cadru didactic. Triajul cererilor, temele propuse și consultațiile sunt în zona dedicată.',
-      action: { href: '/profesor', text: 'Deschide zona cadrelor didactice' },
-      secondary: { href: '/coordonatori', text: 'Vezi catalogul public' },
-    }
-  }
-
   if (activeRequest?.status === 'approved') {
     return {
       title: activeRequest.title_ro,
@@ -116,43 +112,41 @@ const RESOURCES = [
         </div>
       </div>
 
-      {
-        u?.role === 'student' && (
-          <aside class="situatie">
-            <h2 class="situatie__titlu">Situația ta</h2>
-            {activeRequest ? (
-              <>
+      <aside class="situatie">
+        <h2 class="situatie__titlu">Situația ta</h2>
+        {
+          activeRequest ? (
+            <>
+              <p class="situatie__linie">
+                <span class="muted">Coordonator</span>
+                <strong>{activeRequest.teacher_name}</strong>
+              </p>
+              <p class="situatie__linie">
+                <span class="muted">Cerere</span>
+                <strong>{activeRequest.status === 'approved' ? 'Aprobată' : 'În așteptare'}</strong>
+              </p>
+              {nextMilestone && (
                 <p class="situatie__linie">
-                  <span class="muted">Coordonator</span>
-                  <strong>{activeRequest.teacher_name}</strong>
+                  <span class="muted">
+                    {nextMilestoneOverdue ? 'Termen depășit' : 'Următorul termen'}
+                  </span>
+                  <strong class:list={{ 'is-overdue': nextMilestoneOverdue }}>
+                    {nextMilestone.title} · {formatDate(nextMilestone.due_on)}
+                  </strong>
                 </p>
-                <p class="situatie__linie">
-                  <span class="muted">Cerere</span>
-                  <strong>{activeRequest.status === 'approved' ? 'Aprobată' : 'În așteptare'}</strong>
-                </p>
-                {nextMilestone && (
-                  <p class="situatie__linie">
-                    <span class="muted">
-                      {nextMilestoneOverdue ? 'Termen depășit' : 'Următorul termen'}
-                    </span>
-                    <strong class:list={{ 'is-overdue': nextMilestoneOverdue }}>
-                      {nextMilestone.title} · {formatDate(nextMilestone.due_on)}
-                    </strong>
-                  </p>
-                )}
-              </>
-            ) : (
-              <>
-                <p class="muted text-sm">
-                  Nu ai încă o cerere activă. Primul pas este să alegi un coordonator și să depui
-                  cererea de coordonare.
-                </p>
-                <a href="/coordonatori" class="btn btn--primary btn--sm">Alege coordonator</a>
-              </>
-            )}
-          </aside>
-        )
-      }
+              )}
+            </>
+          ) : (
+            <>
+              <p class="muted text-sm">
+                Nu ai încă o cerere activă. Primul pas este să alegi un coordonator și să depui
+                cererea de coordonare.
+              </p>
+              <a href="/coordonatori" class="btn btn--primary btn--sm">Alege coordonator</a>
+            </>
+          )
+        }
+      </aside>
     </section>
 
     <section class="stack">

@@ -205,12 +205,27 @@ export function levelLabel(level: string | null): string {
   return (level && LEVEL_LABELS[level]) || 'Licență'
 }
 
-/** „Licență · Marketing · engleză” — the group a student belongs to, in one line. */
+/**
+ * „Licență · Marketing · engleză · anul 3 · seria B” — the cohort a student
+ * belongs to, in one line.
+ *
+ * The series is part of it because the faculty splits a year into series before
+ * it splits it into groups, and six screens read this one function: adding it
+ * here is what keeps the coordinator's list, the message panel and the profile
+ * from each describing the same student differently. The group code itself
+ * stays out — it belongs in a column of its own, next to the year, on the
+ * screens that administer it.
+ *
+ * `study_series` is optional in the type on purpose: several callers select
+ * only what they render, and a required field would break them at compile time
+ * for a line they do not show.
+ */
 export function groupLabel(u: {
   program: string | null
   specialization: string | null
   study_language?: string | null
   study_year?: number | null
+  study_series?: string | null
 }): string {
   const parts = [levelLabel(u.program)]
   if (u.specialization) parts.push(u.specialization)
@@ -218,5 +233,17 @@ export function groupLabel(u: {
     parts.push(languageLabel(u.study_language).toLowerCase())
   }
   if (u.study_year) parts.push(`anul ${u.study_year}`)
+  if (u.study_series) parts.push(`seria ${u.study_series}`)
   return parts.join(' · ')
+}
+
+/**
+ * The series, written the same way wherever it is stored.
+ *
+ * It is free text typed by hand, exactly like the group code — so „a”, „A” and
+ * „ A ” would otherwise coexist and the catalogue's series filter would offer
+ * all three as separate cohorts. Trimmed and upper-cased at every write point.
+ */
+export function normalizeSeries(raw: unknown): string {
+  return String(raw ?? '').trim().toLocaleUpperCase('ro-RO')
 }

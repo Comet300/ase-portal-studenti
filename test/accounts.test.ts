@@ -12,7 +12,8 @@ import { parseAccountRows, parseAccountRole } from '../src/lib/accounts.ts'
  * here.
  */
 
-const GOOD_ROW = 'Ioana Dumitru;ioana.dumitru@stud.ase.ro;student;MK-2025-0142;Marketing;3;RO-1503'
+const GOOD_ROW =
+  'Ioana Dumitru;ioana.dumitru@stud.ase.ro;student;MK-2025-0142;Marketing;3;RO-1503;B;I.'
 
 describe('parseAccountRows', () => {
   it('citește un rând complet', () => {
@@ -26,6 +27,8 @@ describe('parseAccountRows', () => {
       programme: 'Marketing',
       year: '3',
       group: 'RO-1503',
+      series: 'B',
+      fatherInitial: 'I',
     })
   })
 
@@ -74,6 +77,43 @@ describe('parseAccountRows', () => {
     assert.equal(parseAccountRows('Ana;ana@x.ro;student;;;9;').accepted.length, 0)
     assert.equal(parseAccountRows('Ana;ana@x.ro;student;;;3;').accepted.length, 1)
     assert.equal(parseAccountRows('Ana;ana@x.ro;student;;;;').accepted.length, 1, 'anul lipsă e permis')
+  })
+
+  /* The two columns were appended after „Grupa”, not slotted in beside „An”:
+     reading is positional, so a list saved last term must keep meaning what it
+     meant. These two cases are what would break if anybody moved them. */
+  it('seria și inițiala lipsesc dintr-o listă veche, fără să respingă rândul', () => {
+    const { accepted, rejected } = parseAccountRows(
+      'Ana Pop;ana@x.ro;student;MK-1;Marketing;3;RO-1503',
+    )
+    assert.equal(rejected.length, 0)
+    assert.equal(accepted[0].series, '')
+    assert.equal(accepted[0].fatherInitial, '')
+    assert.equal(accepted[0].group, 'RO-1503', 'grupa rămâne pe poziția ei')
+  })
+
+  it('normalizează seria la litere mari — „a” și „A” sunt aceeași serie', () => {
+    assert.equal(parseAccountRows('Ana;ana@x.ro;student;;;;; a ;').accepted[0].series, 'A')
+  })
+
+  it('acceptă inițiala cu sau fără punct, și pe cea din două litere', () => {
+    const rows = parseAccountRows(
+      [
+        'Ana;a@x.ro;student;;;;;A;I',
+        'Bogdan;b@x.ro;student;;;;;A;i.',
+        'Cristina;c@x.ro;student;;;;;A;Gh.',
+      ].join('\n'),
+    )
+    assert.equal(rows.rejected.length, 0)
+    assert.deepEqual(rows.accepted.map((r) => r.fatherInitial), ['I', 'I', 'Gh'])
+  })
+
+  /* A cell that slipped a column would otherwise be printed inside somebody's
+     name on a document that gets signed at the secretariat. */
+  it('respinge o inițială care e de fapt un cuvânt', () => {
+    const { accepted, rejected } = parseAccountRows('Ana;ana@x.ro;student;;;;;A;Ionescu')
+    assert.equal(accepted.length, 0)
+    assert.match(rejected[0].reason, /inițiala tatălui/)
   })
 
   it('taie pe tab când nu există punct și virgulă — lipire din Excel', () => {

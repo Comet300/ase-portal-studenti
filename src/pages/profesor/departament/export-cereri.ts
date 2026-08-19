@@ -4,6 +4,7 @@ import { isDepartmentHead } from '../../../lib/auth'
 import { query } from '../../../lib/db'
 import { STATUS_LABELS, programLabel } from '../../../lib/repo'
 import { id } from '../../../lib/ids'
+import { formatInitial, officialName } from '../../../lib/text'
 import { currentYearLabel } from '../../../lib/years'
 
 /** CSV of the department's requests, honouring the filters shown on screen. */
@@ -20,15 +21,20 @@ export const GET: APIRoute = async ({ locals, url, request }) => {
     number: string
     student_name: string
     student_number: string | null
+    father_initial: string | null
     program: string | null
     specialization: string | null
+    study_year: number | null
+    study_series: string | null
+    study_group: string | null
     teacher_name: string
     title_ro: string
     status: string
     submitted_at: string
     decided_at: string | null
   }>(
-    `SELECT r.number, s.name AS student_name, s.student_number, s.program, s.specialization,
+    `SELECT r.number, s.name AS student_name, s.student_number, s.father_initial,
+            s.program, s.specialization, s.study_year, s.study_series, s.study_group,
             t.name AS teacher_name, r.title_ro, r.status, r.submitted_at, r.decided_at
        FROM requests r
        JOIN users s ON s.id = r.student_id
@@ -37,6 +43,7 @@ export const GET: APIRoute = async ({ locals, url, request }) => {
         AND ($1::uuid IS NULL OR r.teacher_id = $1)
         AND ($2::text IS NULL OR s.program = $2)
         AND ($3::text IS NULL OR r.status = $3)
+        AND ($4::text IS NULL OR s.study_series = $4)
       ORDER BY t.name, s.name`,
     [
       // Same year as the table this button sits under: an export that quietly
@@ -44,18 +51,29 @@ export const GET: APIRoute = async ({ locals, url, request }) => {
       id(url.searchParams.get('coordonator')),
       url.searchParams.get('program') || null,
       url.searchParams.get('status') || null,
+      // The series filter is on the screen too; a file that ignored it would
+      // hold rows the table above it does not show.
+      url.searchParams.get('serie') || null,
     ],
   )
 
   const cell = (v: string | null) => `"${(v ?? '').replace(/"/g, '""')}"`
+  /* The two exports of the same cohort disagreed: this one carried neither the
+   * year nor the group, so a row here could not be reconciled with a row in
+   * „Export coordonări”. The columns now line up. */
   const header = [
-    'Numar cerere', 'Student', 'Numar matricol', 'Program', 'Specializare',
+    'Numar cerere', 'Student', 'Inițiala tatălui', 'Numar matricol', 'Program', 'Specializare',
+    'An', 'Seria', 'Grupa',
     'Coordonator', 'Titlul lucrarii', 'Stare', 'Depusa la', 'Decisa la',
   ]
 
   const body = rows.map((r) =>
     [
-      r.number, r.student_name, r.student_number, programLabel(r.program), r.specialization,
+      r.number,
+      officialName({ name: r.student_name, father_initial: r.father_initial }),
+      formatInitial(r.father_initial),
+      r.student_number, programLabel(r.program), r.specialization,
+      r.study_year === null ? '' : String(r.study_year), r.study_series, r.study_group,
       r.teacher_name, r.title_ro, STATUS_LABELS[r.status] ?? r.status,
       r.submitted_at?.slice(0, 10) ?? '', r.decided_at?.slice(0, 10) ?? '',
     ].map(cell).join(';'),

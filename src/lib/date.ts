@@ -12,10 +12,13 @@
 
 /* --- Romanian formatting --------------------------------------------------- */
 
-const MONTHS = [
+export const MONTHS = [
   'ianuarie', 'februarie', 'martie', 'aprilie', 'mai', 'iunie',
   'iulie', 'august', 'septembrie', 'octombrie', 'noiembrie', 'decembrie',
 ]
+
+/** Monday first, as the whole portal groups: `getDay()` numbering is not this. */
+export const WEEKDAYS = ['luni', 'marți', 'miercuri', 'joi', 'vineri', 'sâmbătă', 'duminică']
 
 export function formatDate(iso: string | null, withTime = false): string {
   if (!iso) return '—'
@@ -48,8 +51,13 @@ export function startOfWeek(iso: string): string {
  * one lower. The effect: every Monday fell into the week before, and the groups
  * of consultations were named „26 iulie – 1 august” — that is, Sunday to Saturday.
  * It looked plausible enough to go unnoticed.
+ *
+ * Exported because the pages compute their own „azi” for `min`/`max` on date
+ * fields, and every one of them had written `toISOString().slice(0, 10)` —
+ * the same bug, once per screen: between midnight and 03:00 in summer a
+ * coordinator could publish consultation hours for a day already gone.
  */
-function localDay(d: Date): string {
+export function localDay(d: Date): string {
   const l = String(d.getMonth() + 1).padStart(2, '0')
   const z = String(d.getDate()).padStart(2, '0')
   return `${d.getFullYear()}-${l}-${z}`
@@ -62,7 +70,7 @@ function localDay(d: Date): string {
  * looking for, and the two do not exclude each other: the first stays as a
  * subtitle.
  */
-export function weekLabel(mondayIso: string, todayIso = new Date().toISOString().slice(0, 10)) {
+export function weekLabel(mondayIso: string, todayIso = localDay(new Date())) {
   const monday = new Date(mondayIso + 'T00:00:00')
   const sunday = new Date(monday)
   sunday.setDate(sunday.getDate() + 6)
@@ -97,7 +105,7 @@ export function weekLabel(mondayIso: string, todayIso = new Date().toISOString()
  * year is written only when it is not the current one, otherwise it repeats in
  * every group header.
  */
-export function monthLabel(iso: string, todayIso = new Date().toISOString()): string {
+export function monthLabel(iso: string, todayIso = localDay(new Date())): string {
   const d = new Date(iso)
   const currentYear = new Date(todayIso).getFullYear()
   return d.getFullYear() === currentYear
@@ -124,4 +132,32 @@ export function timeAgo(iso: string | null): string {
 
 export function shortMonth(iso: string): string {
   return MONTHS[new Date(iso).getMonth()].slice(0, 3)
+}
+
+/**
+ * The six weeks a month is drawn on.
+ *
+ * A month grid is not the month: it starts on the Monday of the week the first
+ * falls in, and it is always six rows — never five, even for a February that
+ * fits in four. A panel that changes height between two months moves the „luna
+ * următoare” button out from under the cursor that is pressing it.
+ *
+ * `new Date(an, luna, 1 - 3)` normalises into the previous month on its own, so
+ * the edges of the year need no special case, and the days are read off the
+ * local components: the grid drawn on screen is the calendar the reader lives in,
+ * not the one in UTC.
+ */
+export function monthGrid(year: number, month: number): string[] {
+  const first = new Date(year, month, 1)
+  const shift = (first.getDay() + 6) % 7 // luni = 0
+  return Array.from({ length: 42 }, (_, i) => localDay(new Date(year, month, 1 - shift + i)))
+}
+
+/** „2026-08-19” as a local date, or null when it is not a day at all. */
+export function parseDay(iso: string): Date | null {
+  const parts = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso)
+  if (!parts) return null
+  const d = new Date(Number(parts[1]), Number(parts[2]) - 1, Number(parts[3]))
+  // 2026-02-31 parses field by field and lands in March; it is not a day.
+  return localDay(d) === iso ? d : null
 }

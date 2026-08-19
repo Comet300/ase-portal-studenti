@@ -2,7 +2,8 @@
 import Avatar from '../components/Avatar.astro'
 import StudentLayout from '../layouts/StudentLayout.astro'
 import { pairings, publicTopics, supervisors } from '../lib/repo'
-import { LANGUAGE_LABELS, LEVEL_LABELS, languageLabel } from '../lib/years'
+import { officialName } from '../lib/text'
+import { LANGUAGE_LABELS, LEVEL_LABELS, groupLabel, languageLabel } from '../lib/years'
 
 /**
  * The catalogue, from both ends.
@@ -351,11 +352,13 @@ const freeTeachers = teachers.filter((t) => !t.is_full).length
               nume: p.name,
               students: theirStudents.map((s) => ({
                 id: s.student_id,
-                nume: s.student_name,
+                nume: officialName({ name: s.student_name, father_initial: s.father_initial }),
                 titlu: s.title_ro,
-                group: [s.program === 'master' ? 'Master' : 'Licență', s.specialization]
-                  .filter(Boolean)
-                  .join(' · '),
+                /* „Licență · Marketing” said nothing about which cohort: a
+                   student reading this list is looking for people in their own
+                   year and series, and the whole point of the dialog is to
+                   recognise somebody in it. */
+                group: groupLabel(s),
               })),
             })}
           />

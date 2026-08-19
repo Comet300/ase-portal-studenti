@@ -3,6 +3,7 @@ import { isDepartmentHead } from '../../lib/auth'
 import { execute, query, queryOne } from '../../lib/db'
 import { deadEnd, internalPath, redirectWithNotice } from '../../lib/http'
 import { id as formId } from '../../lib/ids'
+import { normalizeSeries } from '../../lib/years'
 
 /**
  * Which group a student belongs to.
@@ -12,6 +13,10 @@ import { id as formId } from '../../lib/ids'
  * language, and those three are written onto the student in the same statement:
  * every screen that groups or filters reads the plain columns, and a programme
  * that disagreed with them would split one cohort into two.
+ *
+ * Series and group are both free text off the same sheet. The series is
+ * upper-cased on the way in, because „a” and „A” would otherwise stand for two
+ * separate cohorts in the catalogue's filter.
  */
 
 const PAGE = '/profesor/facultate'
@@ -25,6 +30,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
   const programmeId = formId(form.get('program_id'))
   const rawYear = form.get('an_studiu')
   const studyGroup = String(form.get('grupa') ?? '').trim()
+  const studySeries = normalizeSeries(form.get('serie'))
 
   /* One or many.
    *
@@ -96,9 +102,13 @@ export const POST: APIRoute = async ({ request, locals }) => {
             specialization = $4,
             study_language = $5,
             study_year     = COALESCE($6, study_year),
-            study_group    = COALESCE(NULLIF($7, ''), study_group)
+            study_group    = COALESCE(NULLIF($7, ''), study_group),
+            study_series   = COALESCE(NULLIF($8, ''), study_series)
       WHERE id = ANY($1::uuid[]) AND role = 'student'`,
-    [studenti.map((s) => s.id), programme.id, programme.level, programme.name, programme.language, year, studyGroup],
+    [
+      studenti.map((s) => s.id), programme.id, programme.level, programme.name, programme.language,
+      year, studyGroup, studySeries,
+    ],
   )
 
   /* The message said „a fost mutat la X” on every save, even when the

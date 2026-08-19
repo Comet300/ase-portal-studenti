@@ -135,6 +135,15 @@ const iconPaths: Record<string, string> = {
           >
           <span class="nav__text">Portalul studenților</span>
         </a>
+        {/* The notice lived only in the student shell's footer, so a teacher
+            or the head of department could use the portal from end to end
+            without ever being shown what it keeps about them. */}
+        <a href="/confidentialitate" class="nav__link nav__link--quiet" title="Confidențialitate">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"
+            ><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg
+          >
+          <span class="nav__text">Confidențialitate</span>
+        </a>
         <div class="user">
           <span class="user__avatar">{initials(u.name)}</span>
           <span class="user__meta">

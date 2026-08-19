@@ -48,6 +48,8 @@ export const POST: APIRoute = async ({ request, locals }) => {
 
   /* --- add a single person ------------------------------------------------ */
   if (action === 'adauga') {
+    // The order is `ACCOUNT_COLUMNS`, field for field: the same reader parses
+    // this line and the pasted list, and it reads by position.
     const line = [
       String(form.get('nume') ?? ''),
       String(form.get('email') ?? ''),
@@ -56,6 +58,8 @@ export const POST: APIRoute = async ({ request, locals }) => {
       String(form.get('program') ?? ''),
       String(form.get('an') ?? ''),
       String(form.get('grupa') ?? ''),
+      String(form.get('serie') ?? ''),
+      String(form.get('initiala_tatalui') ?? ''),
     ].join(';')
 
     // The same parsing as for the pasted list: one set of rules, not two.
@@ -202,13 +206,15 @@ async function adauga(
       const p = r.programme ? programmes.get(r.programme.toLowerCase()) : undefined
       const { rowCount } = await client.query(
         `INSERT INTO users (email, name, role, student_number, programme_id,
-                            program, specialization, study_language, study_year, study_group, created_by)
-         VALUES ($1, $2, $3, NULLIF($4, ''), $5, $6, $7, COALESCE($8, 'ro'), NULLIF($9, '')::int, NULLIF($10, ''), $11)
+                            program, specialization, study_language, study_year, study_group,
+                            study_series, father_initial, created_by)
+         VALUES ($1, $2, $3, NULLIF($4, ''), $5, $6, $7, COALESCE($8, 'ro'), NULLIF($9, '')::int,
+                 NULLIF($10, ''), NULLIF($11, ''), NULLIF($12, ''), $13)
          ON CONFLICT (email) DO NOTHING`,
         [
           r.email, r.name, r.role, r.studentNumber,
           p?.id ?? null, p?.level ?? null, p?.name ?? null, p?.language ?? null,
-          r.year, r.group, createdBy,
+          r.year, r.group, r.series, r.fatherInitial, createdBy,
         ],
       )
       inserted += rowCount ?? 0

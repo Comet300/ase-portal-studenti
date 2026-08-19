@@ -15,7 +15,8 @@ import {
   supervisedStudents,
 } from '../../lib/repo'
 import { teacherInvitations } from '../../lib/lifecycle'
-import { currentYearLabel } from '../../lib/years'
+import { officialName } from '../../lib/text'
+import { currentYearLabel, groupLabel } from '../../lib/years'
 
 const u = Astro.locals.user!
 const [stat, cereri, studenti, slots, stageList, etapa, locuri, invitatii] = await Promise.all([
@@ -128,8 +129,8 @@ const necitite = studenti.reduce((s, x) => s + x.unread, 0)
                       {c.title_ro}
                     </a>
                     <span class="lista__meta">
-                      {c.student_name} · {c.student_number} ·{' '}
-                      {c.program === 'master' ? 'Master' : 'Licență'} · depusă {timeAgo(c.submitted_at)}
+                      {officialName({ name: c.student_name, father_initial: c.father_initial })} ·{' '}
+                      {c.student_number} · {groupLabel(c)} · depusă {timeAgo(c.submitted_at)}
                     </span>
                   </span>
                   {/* Accepting takes up a seat and ties a student to you for the

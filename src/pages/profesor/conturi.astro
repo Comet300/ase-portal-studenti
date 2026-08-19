@@ -6,7 +6,7 @@ import Taburi from '../../components/Taburi.astro'
 import { query } from '../../lib/db'
 import { ACCOUNT_COLUMNS } from '../../lib/accounts'
 import { formatDate } from '../../lib/repo'
-import { numar } from '../../lib/text'
+import { numar, officialName } from '../../lib/text'
 import { LANGUAGE_LABELS, LEVEL_LABELS, currentYear, programmes } from '../../lib/years'
 
 /**
@@ -43,6 +43,9 @@ const conturi = await query<{
   specialization: string | null
   study_year: number | null
   study_group: string | null
+  study_series: string | null
+  father_initial: string | null
+  first_login_at: string | null
   avatar_path: string | null
   is_active: boolean
   deactivated_at: string | null
@@ -50,7 +53,8 @@ const conturi = await query<{
   coordonari: number
 }>(
   `SELECT u.id, u.name, u.email, u.role, u.student_number, u.specialization,
-          u.study_year, u.study_group, u.avatar_path, u.is_active,
+          u.study_year, u.study_group, u.study_series, u.father_initial,
+          u.first_login_at::text, u.avatar_path, u.is_active,
           u.deactivated_at::text, u.created_at::text,
           (SELECT count(*)::int FROM requests r
             WHERE (r.student_id = u.id OR r.teacher_id = u.id) AND r.status = 'approved') AS coordonari
@@ -62,7 +66,7 @@ const visibleAccounts = conturi.filter((o) => {
   if (!showInactive && !o.is_active) return false
   if (roleFilter && o.role !== roleFilter) return false
   if (searchQuery) {
-    const tot = `${o.name} ${o.email} ${o.student_number ?? ''} ${o.specialization ?? ''}`
+    const tot = `${officialName(o)} ${o.email} ${o.student_number ?? ''} ${o.specialization ?? ''} ${o.study_series ?? ''}`
     if (!tot.toLowerCase().includes(searchQuery)) return false
   }
   return true
@@ -74,6 +78,11 @@ const total = {
   cadre: activeAccounts.filter((o) => o.role !== 'student').length,
   closed: conturi.length - activeAccounts.length,
   withoutSupervision: activeAccounts.filter((o) => o.role === 'student' && o.coordonari === 0).length,
+  /* The address is corrected on this screen, and this is the number that says
+   * which addresses need looking at: an account nobody ever signed in with is
+   * usually one wrong letter, and the person is waiting for a link that cannot
+   * arrive. */
+  neverUsed: activeAccounts.filter((o) => !o.first_login_at).length,
 }
 
 const an = await currentYear()
@@ -114,6 +123,12 @@ const sections = [
             value={total.withoutSupervision}
             label="studenți fără coordonare"
             alerta={total.withoutSupervision > 0}
+          />
+          <Metrica
+            value={total.neverUsed}
+            label="conturi nefolosite niciodată"
+            note="verifică adresa"
+            alerta={total.neverUsed > 0}
           />
           <Metrica value={total.closed} label="conturi închise" />
         </div>
@@ -181,7 +196,7 @@ const sections = [
                         <div class="row" style="gap:var(--s-3)">
                           <Avatar name={o.name} src={o.avatar_path} size="xs" href={`/profil/${o.id}`} />
                           <div class="stack stack--tight" style="gap:0">
-                            <strong>{o.name}</strong>
+                            <strong>{officialName(o)}</strong>
                             {o.student_number && <span class="muted text-xs">{o.student_number}</span>}
                           </div>
                         </div>
@@ -190,13 +205,28 @@ const sections = [
                       <td class="muted">{ROLE_TEXT[o.role]}</td>
                       <td class="muted text-xs">
                         {o.role === 'student'
-                          ? [o.specialization, o.study_group, o.study_year ? `anul ${o.study_year}` : null]
-                              .filter(Boolean).join(' · ') || '—'
+                          ? [
+                              o.specialization,
+                              o.study_year ? `anul ${o.study_year}` : null,
+                              o.study_series ? `seria ${o.study_series}` : null,
+                              o.study_group,
+                            ].filter(Boolean).join(' · ') || '—'
                           : '—'}
                       </td>
                       <td>
+                        {/* „Nu a intrat” sits beside „Acces”, not instead of
+                            it: the two say different things, and an account
+                            that is open but has never been used is the one
+                            whose address is worth re-reading. Never a date —
+                            the privacy notice keeps presence inside a
+                            coordination. */}
                         {o.is_active ? (
-                          <span class="badge badge--aprobata">Acces</span>
+                          <span class="stack stack--tight" style="gap:2px">
+                            <span class="badge badge--aprobata">Acces</span>
+                            {!o.first_login_at && (
+                              <span class="badge badge--asteptare">Nu a intrat niciodată</span>
+                            )}
+                          </span>
                         ) : (
                           <span class="badge badge--neutru" title={`Închis ${formatDate(o.deactivated_at)}`}>
                             Închis
@@ -317,9 +347,24 @@ const sections = [
                 <label class="label" for="an">An</label>
                 <input class="input input--num" id="an" name="an" type="number" min="1" max="6" />
               </div>
+              <div class="field" style="min-width:110px">
+                <label class="label" for="serie">Serie</label>
+                <input class="input" id="serie" name="serie" placeholder="B" />
+              </div>
               <div class="field" style="min-width:140px">
                 <label class="label" for="grupa">Grupa</label>
                 <input class="input" id="grupa" name="grupa" placeholder="RO-1503" />
+              </div>
+            </div>
+
+            <div class="row row--wrap" style="gap:var(--s-3)">
+              <div class="field" style="min-width:180px">
+                <label class="label" for="initiala_tatalui">Inițiala tatălui</label>
+                <input class="input" id="initiala_tatalui" name="initiala_tatalui"
+                  maxlength="3" placeholder="I" />
+                <span class="hint">
+                  Face parte din numele oficial: „Popescu I. Maria”. Una sau două litere.
+                </span>
               </div>
             </div>
 
@@ -342,14 +387,17 @@ const sections = [
               separate prin <strong>;</strong> — sau prin tab, dacă lipești direct din Excel.
               Numele și adresa sunt obligatorii; restul se completează dacă există.
               Cine e deja în portal este sărit, deci o listă retrimisă nu dublează pe nimeni.
+              <strong>Seria</strong> și <strong>inițiala tatălui</strong> sunt ultimele două
+              coloane, adăugate la coadă: o listă salvată în semestrul trecut se lipește mai
+              departe fără să fie rescrisă.
             </p>
 
             <div class="field">
               <label class="label" for="randuri">Rânduri</label>
               <textarea class="textarea" id="randuri" name="randuri" rows="6" required spellcheck="false"
                 placeholder={`${ACCOUNT_COLUMNS.join(';')}
-Ioana Dumitru;ioana.dumitru@stud.ase.ro;student;MK-2025-0142;Marketing;3;RO-1503
-Prof. univ. dr. Elena Radu;elena.radu@ase.ro;cadru didactic;;;;`}
+Dumitru Ioana;ioana.dumitru@stud.ase.ro;student;MK-2025-0142;Marketing;3;RO-1503;B;I
+Prof. univ. dr. Elena Radu;elena.radu@ase.ro;cadru didactic;;;;;;`}
                 data-autogrow />
             </div>
 

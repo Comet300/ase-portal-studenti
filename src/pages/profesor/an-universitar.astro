@@ -1,4 +1,5 @@
 ---
+import AlegeData from '../../components/AlegeData.astro'
 import ProfesorLayout from '../../layouts/ProfesorLayout.astro'
 import { query } from '../../lib/db'
 import { formatDate } from '../../lib/repo'
@@ -104,17 +105,28 @@ const byLevel = {
 
         <div class="row row--wrap" style="gap:var(--s-3)">
           <div class="field" style="flex:1;min-width:160px">
-            <label class="label" for="eticheta">Denumire</label>
+            <label class="label" for="eticheta">
+              Denumire <span class="label__req" aria-hidden="true">*</span>
+            </label>
             <input class="input" id="eticheta" name="eticheta" value={suggested.label} required />
           </div>
-          <div class="field" style="flex:1;min-width:170px">
-            <label class="label" for="inceput">Începe</label>
-            <input class="input" id="inceput" name="inceput" type="date" value={suggested.startsOn} required />
-          </div>
-          <div class="field" style="flex:1;min-width:170px">
-            <label class="label" for="sfarsit">Se încheie</label>
-            <input class="input" id="sfarsit" name="sfarsit" type="date" value={suggested.endsOn} required />
-          </div>
+          <AlegeData
+            id="inceput"
+            name="inceput"
+            label="Începe"
+            value={suggested.startsOn}
+            required
+            style="flex:1;min-width:240px"
+          />
+          <AlegeData
+            id="sfarsit"
+            name="sfarsit"
+            label="Se încheie"
+            value={suggested.endsOn}
+            required
+            pereche="inceput"
+            style="flex:1;min-width:240px"
+          />
         </div>
 
         <fieldset class="preia">

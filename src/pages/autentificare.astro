@@ -1,6 +1,7 @@
 ---
 import BaseLayout from '../layouts/BaseLayout.astro'
 import { demoAccounts, DEMO_MODE, initials, ROLE_LABELS } from '../lib/auth'
+import { homeFor, internalPath } from '../lib/http'
 
 const redirect = Astro.url.searchParams.get('redirect') ?? ''
 const trimis = Astro.url.searchParams.get('trimis') === '1'
@@ -8,9 +9,11 @@ const eroare = Astro.url.searchParams.get('eroare')
 const typedEmail = Astro.url.searchParams.get('email') ?? ''
 const demoAccountList = await demoAccounts()
 
+/* Someone already signed in who follows a deep link — from an email, from a
+ * bookmark — lands on the link, not on their home page: the gate sends them
+ * here with `redirect` still attached. */
 if (Astro.locals.user && !trimis) {
-  const u = Astro.locals.user
-  return Astro.redirect(u.role === 'student' ? '/cererile-mele' : '/profesor', 302)
+  return Astro.redirect(internalPath(redirect, homeFor(Astro.locals.user)), 302)
 }
 
 ---
@@ -18,13 +21,15 @@ if (Astro.locals.user && !trimis) {
 <BaseLayout title="Autentificare" description="Acces cu contul instituțional ASE">
   <div class="screen">
     <main class="card" id="continut">
-      <a href="/" class="brand">
+      {/* Not a link: `/` is behind the gate, so clicking the mark sent the
+          visitor straight back to this page with a `redirect` glued on. */}
+      <p class="brand">
         <span class="brand__mark" aria-hidden="true">A</span>
         <span class="brand__text">
           <strong>Portal Studenți</strong>
           <small>Facultatea de Marketing · ASE București</small>
         </span>
-      </a>
+      </p>
 
       {
         trimis ? (
@@ -149,6 +154,14 @@ if (Astro.locals.user && !trimis) {
         )
       }
     </main>
+
+    {/* The POST from this form writes the address and the IP it came from before
+        any account exists, so the notice has to be readable from here — this
+        page and the notice are the only two a visitor without a session can
+        open. */}
+    <p class="subsol">
+      <a class="link" href="/confidentialitate">Ce date păstrăm despre tine</a>
+    </p>
   </div>
 </BaseLayout>
 
@@ -214,9 +227,16 @@ if (Astro.locals.user && !trimis) {
   .screen {
     min-height: 100svh;
     display: grid;
-    place-items: center;
+    align-content: center;
+    justify-items: center;
+    gap: var(--s-4);
     padding: var(--s-5);
     background: var(--bg);
+  }
+
+  .subsol {
+    font-size: var(--t-sm);
+    color: var(--ink-muted);
   }
 
   .card {
@@ -236,7 +256,6 @@ if (Astro.locals.user && !trimis) {
     display: flex;
     align-items: center;
     gap: var(--s-3);
-    text-decoration: none;
     color: var(--ink);
   }
 

@@ -1,6 +1,7 @@
 ---
+import AlegeData from '../../components/AlegeData.astro'
 import ProfesorLayout from '../../layouts/ProfesorLayout.astro'
-import { currentStage, formatDate, stages } from '../../lib/repo'
+import { currentStage, formatDate, localDay, stages } from '../../lib/repo'
 
 /**
  * Editing the session calendar.
@@ -11,7 +12,7 @@ import { currentStage, formatDate, stages } from '../../lib/repo'
  */
 
 const [list, current] = await Promise.all([stages(), currentStage()])
-const today = new Date().toISOString().slice(0, 10)
+const today = localDay(new Date())
 const currentYear = new Date().getFullYear()
 
 /**
@@ -169,15 +170,26 @@ const conflicts = etape.filter((e) => e.reversed || e.outOfOrder).length
                       </div>
                     </div>
 
+                    {/* The two dates are one interval, and the portal used to
+                        find that out only after a round trip to the server: the
+                        second field starts where the first one ends and counts
+                        the span in its own label. */}
                     <div class="row row--wrap" style="gap:var(--s-3)">
-                      <div class="field" style="flex:1;min-width:170px">
-                        <label class="label" for={`inceput-${s.id}`}>Începe</label>
-                        <input class="input" id={`inceput-${s.id}`} name="inceput" type="date" value={s.starts_on?.slice(0, 10) ?? ''} />
-                      </div>
-                      <div class="field" style="flex:1;min-width:170px">
-                        <label class="label" for={`sfarsit-${s.id}`}>Se încheie</label>
-                        <input class="input" id={`sfarsit-${s.id}`} name="sfarsit" type="date" value={s.ends_on?.slice(0, 10) ?? ''} />
-                      </div>
+                      <AlegeData
+                        id={`inceput-${s.id}`}
+                        name="inceput"
+                        label="Începe"
+                        value={s.inceput}
+                        style="flex:1;min-width:240px"
+                      />
+                      <AlegeData
+                        id={`sfarsit-${s.id}`}
+                        name="sfarsit"
+                        label="Se încheie"
+                        value={s.sfarsit}
+                        pereche={`inceput-${s.id}`}
+                        style="flex:1;min-width:240px"
+                      />
                     </div>
 
                     <div class="field">
@@ -210,14 +222,14 @@ const conflicts = etape.filter((e) => e.reversed || e.outOfOrder).length
             <label class="label" for="etapa-interval">Interval afișat</label>
             <input class="input" id="etapa-interval" name="interval" required placeholder={`Ex: Mai ${currentYear}`} />
           </div>
-          <div class="field" style="flex:1;min-width:160px">
-            <label class="label" for="etapa-inceput">Începe</label>
-            <input class="input" id="etapa-inceput" name="inceput" type="date" />
-          </div>
-          <div class="field" style="flex:1;min-width:160px">
-            <label class="label" for="etapa-sfarsit">Se încheie</label>
-            <input class="input" id="etapa-sfarsit" name="sfarsit" type="date" />
-          </div>
+          <AlegeData id="etapa-inceput" name="inceput" label="Începe" style="flex:1;min-width:240px" />
+          <AlegeData
+            id="etapa-sfarsit"
+            name="sfarsit"
+            label="Se încheie"
+            pereche="etapa-inceput"
+            style="flex:1;min-width:240px"
+          />
           <button class="btn btn--primary" type="submit">Adaugă etapa</button>
         </form>
         <p class="hint" style="margin-top:var(--s-2)">

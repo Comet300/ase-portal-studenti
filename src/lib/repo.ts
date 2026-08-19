@@ -7,6 +7,7 @@ import { execute, query, queryOne } from './db'
 export {
   formatDate,
   formatTime,
+  localDay,
   monthLabel,
   shortMonth,
   startOfWeek,
@@ -61,7 +62,9 @@ export interface RequestRow {
   specialization: string | null
   study_language: string
   study_group: string | null
+  study_series: string | null
   study_year: number | null
+  father_initial: string | null
   student_avatar: string | null
   teacher_id: string
   teacher_name: string
@@ -81,8 +84,8 @@ const REQUEST_FIELDS = `
   r.status, r.rejection_reason, r.decision_note, r.expires_at,
   r.submitted_at, r.decided_at,
   s.id AS student_id, s.name AS student_name, s.email AS student_email,
-  s.student_number, s.program, s.specialization,
-  s.study_language, s.study_group, s.study_year, s.avatar_path AS student_avatar,
+  s.student_number, s.program, s.specialization, s.father_initial,
+  s.study_language, s.study_group, s.study_series, s.study_year, s.avatar_path AS student_avatar,
   t.id AS teacher_id, t.name AS teacher_name, t.academic_title`
 
 /* --- user-facing Romanian labels ------------------------------------------- */
@@ -590,6 +593,9 @@ export interface Pairing {
   specialization: string | null
   study_language: string
   study_year: number | null
+  study_series: string | null
+  study_group: string | null
+  father_initial: string | null
   teacher_id: string
   teacher_name: string
   academic_title: string | null
@@ -607,8 +613,9 @@ export interface Pairing {
 export function pairings(yearId?: string): Promise<Pairing[]> {
   return query<Pairing>(
     `SELECT r.id AS request_id, r.title_ro, r.decided_at,
-            s.id AS student_id, s.name AS student_name, s.student_number,
+            s.id AS student_id, s.name AS student_name, s.student_number, s.father_initial,
             s.program, s.specialization, s.study_language, s.study_year,
+            s.study_series, s.study_group,
             t.id AS teacher_id, t.name AS teacher_name, t.academic_title
        FROM requests r
        JOIN users s ON s.id = r.student_id
@@ -630,7 +637,11 @@ export interface DirectoryStudent {
   specialization: string | null
   study_language: string
   study_group: string | null
+  study_series: string | null
   study_year: number | null
+  father_initial: string | null
+  /** When they first signed in. NULL means the account was never used. */
+  first_login_at: string | null
   avatar_path: string | null
   teacher_id: string | null
   teacher_name: string | null
@@ -641,7 +652,8 @@ export interface DirectoryStudent {
 export function studentDirectory(yearId?: string): Promise<DirectoryStudent[]> {
   return query<DirectoryStudent>(
     `SELECT s.id, s.name, s.email, s.student_number, s.program, s.specialization,
-            s.study_language, s.study_group, s.study_year, s.avatar_path,
+            s.study_language, s.study_group, s.study_series, s.study_year,
+            s.father_initial, s.first_login_at::text, s.avatar_path,
             t.id AS teacher_id, t.name AS teacher_name, r.status AS request_status
        FROM users s
        LEFT JOIN requests r
@@ -650,7 +662,10 @@ export function studentDirectory(yearId?: string): Promise<DirectoryStudent[]> {
         AND r.status IN ('pending', 'approved')
        LEFT JOIN users t ON t.id = r.teacher_id
       WHERE s.role = 'student'
-      ORDER BY s.program DESC, s.specialization, s.study_language, s.name`,
+      /* Series before name: it is a column of the catalogue now, and a list
+         ordered only by name interleaves three series into one illegible run. */
+      ORDER BY s.program DESC, s.specialization, s.study_language,
+               s.study_series NULLS LAST, s.name`,
     [yearId ?? null],
   )
 }

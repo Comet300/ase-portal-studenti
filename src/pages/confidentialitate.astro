@@ -50,7 +50,10 @@ const u = Astro.locals.user
         <dl class="specificatii">
           <div>
             <dt>Contul</dt>
-            <dd>Nume, adresă instituțională, rol, număr matricol, program, grupă, an de studiu.</dd>
+            <dd>
+              Nume, inițiala tatălui — parte din numele oficial, cel tipărit pe cerere —, adresă
+              instituțională, rol, număr matricol, program, an de studiu, serie și grupă.
+            </dd>
           </div>
           <div>
             <dt>Profilul</dt>
@@ -85,6 +88,15 @@ const u = Astro.locals.user
             </dd>
           </div>
           <div>
+            <dt>Prima intrare</dt>
+            <dd>
+              Momentul primei intrări în portal, scris o singură dată și niciodată rescris. Nu este
+              istoric de prezență: nu spune când ai fost ultima dată aici, ci doar dacă adresa ta a
+              funcționat vreodată — altfel un cont deschis cu o literă greșită rămâne netrimis, iar
+              tu aștepți un link care nu poate ajunge.
+            </dd>
+          </div>
+          <div>
             <dt>Accesul la date</dt>
             <dd>
               Exporturile și descărcările de fișiere: cine, ce a atins, câte înregistrări și când.
@@ -102,8 +114,15 @@ const u = Astro.locals.user
             lucrării tale.
           </li>
           <li>
-            <strong>Orice cadru didactic</strong> vede numele, numărul matricol, grupa și dacă ai
-            un coordonator — informația din catalogul facultății.
+            <strong>Orice cadru didactic</strong> vede numele oficial, cu inițiala tatălui, numărul
+            matricol, anul, seria, grupa și dacă ai un coordonator — informația din catalogul
+            facultății.
+          </li>
+          <li>
+            <strong>În catalog</strong> se vede și dacă un cont a fost folosit vreodată — două
+            stări, „a intrat” sau „nu a intrat niciodată”, fără nicio dată. Este alt fapt decât
+            prezența: spune dacă adresa a funcționat, nu când ai fost ultima dată în portal.
+            Directorul se uită la el ca să corecteze adresele care nu au ajuns nicăieri.
           </li>
           <li>
             <strong>Directorul de departament</strong> vede în plus situația pe programe și
@@ -112,14 +131,17 @@ const u = Astro.locals.user
           <li>
             <strong>Nimeni</strong> nu vede când ai fost ultima dată în portal, în afară de
             coordonatorul tău — și doar în conversația voastră, nu în catalog și nu pe profil.
+            Semnul „a intrat” din catalog nu schimbă asta: nu poartă nicio dată și nu se mai
+            modifică după prima ta intrare.
           </li>
           <li>
             <strong>Nimeni</strong> nu vede conversațiile altei perechi. Mesajele și fișierele sunt
             accesibile doar celor doi, verificat la fiecare cerere.
           </li>
           <li>
-            Titlurile lucrărilor susținute devin publice în arhivă, cum se întâmplă și cu
-            registrele tipărite ale facultății.
+            Titlurile lucrărilor susținute rămân în arhiva sesiunii, pe care o vede oricine are
+            cont în portal — cum se întâmplă și cu registrele tipărite ale facultății. În afara
+            portalului nu se vede nimic: nicio pagină nu se deschide fără autentificare.
           </li>
         </ul>
       </section>

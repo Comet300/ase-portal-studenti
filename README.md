@@ -18,6 +18,22 @@ Rutele `/profesor/*` cer rolul `teacher` sau `head`; `/profesor/departament`,
 fără drept primește 404, nu 403 — nu confirmăm existența unei zone pe care nu o
 poate folosi.
 
+## Acces
+
+Portalul nu are față publică. Fără sesiune se deschid doar `/autentificare`,
+`/intra`, `/confidentialitate`, `/404`, `/500` și rutele de serviciu
+`/api/autentificare`, `/api/demo-login`, `/api/deconectare`, `/api/sanatate`,
+`/api/sweep`. Lista este în `src/lib/routes.ts`, se potrivește pe calea exactă
+(nu pe prefix) și este fixată în `test/routes.test.ts`: o rută publică nouă
+costă o linie acolo, pe care o vede recenzentul. Orice altă adresă cerută fără
+sesiune duce la `/autentificare?redirect=<calea cerută, cu tot cu query>`, deci
+linkul urmat se deschide după autentificare, nu se pierde.
+
+După autentificare fiecare rol ajunge acasă la el — studentul pe `/`, cadrul
+didactic și directorul pe `/profesor`. Regula este `homeFor()` din
+`src/lib/http.ts`, folosită de linkul din email, de intrarea demonstrativă și de
+pagina de autentificare.
+
 ## Anul universitar
 
 Anul este un obiect, nu o convenție: `academic_years` (octombrie–septembrie, un
@@ -51,7 +67,10 @@ folosință. În bază se păstrează doar amprenta SHA-256 a tokenului.
 
 `DEMO_MODE=true` adaugă intrarea directă în conturile marcate `is_demo`, fără
 email. **Este o ocolire reală a autentificării**: implicit dezactivată, anunțată
-vizibil în interfață, iar ruta răspunde 404 când e oprită.
+vizibil în interfață, iar ruta răspunde 404 când e oprită. Acum că nimic nu se
+deschide fără sesiune, pagina de autentificare este toată suprafața publică, iar
+butoanele demonstrative de pe ea sunt un clic până în orice ecran — de aceea, cu
+`NODE_ENV=production`, pornirea scrie un avertisment în log.
 
 ## Configurare
 

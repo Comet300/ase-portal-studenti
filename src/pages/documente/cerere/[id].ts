@@ -4,6 +4,7 @@ import { renderDoc } from '../../../lib/doc'
 import { id as routeId } from '../../../lib/ids'
 import { escapeHtml } from '../../../lib/mail'
 import { formatDate } from '../../../lib/repo'
+import { officialName } from '../../../lib/text'
 import { languageLabel, levelLabel } from '../../../lib/years'
 
 /**
@@ -32,10 +33,12 @@ export const GET: APIRoute = async ({ params, locals }) => {
     submitted_at: string
     student_name: string
     student_number: string | null
+    father_initial: string | null
     program: string | null
     specialization: string | null
     study_year: number | null
     study_language: string
+    study_series: string | null
     study_group: string | null
     teacher_name: string
     academic_title: string | null
@@ -43,8 +46,9 @@ export const GET: APIRoute = async ({ params, locals }) => {
     year_label: string
   }>(
     `SELECT r.number, r.title_ro, r.title_en, r.objectives, r.motivation, r.decided_at, r.submitted_at,
-            s.name AS student_name, s.student_number, s.program, s.specialization,
-            s.study_year, s.study_language, s.study_group,
+            s.name AS student_name, s.student_number, s.father_initial,
+            s.program, s.specialization,
+            s.study_year, s.study_language, s.study_series, s.study_group,
             t.name AS teacher_name, t.academic_title, t.department,
             y.label AS year_label
        FROM requests r
@@ -62,6 +66,12 @@ export const GET: APIRoute = async ({ params, locals }) => {
   const e = escapeHtml
   const row = (label: string, value: string) => `<dt>${label}</dt><dd>${value}</dd>`
 
+  /* The name the secretariat matches against the register — „Popescu I. Maria”.
+   * The document used to print `users.name`, without the father's initial, and
+   * a request that does not carry it is a request that comes back from the
+   * counter. */
+  const studentName = officialName({ name: r.student_name, father_initial: r.father_initial })
+
   return new Response(
     renderDoc(
       `Cerere de coordonare ${r.number}`,
@@ -71,11 +81,12 @@ export const GET: APIRoute = async ({ params, locals }) => {
        </p>
 
        <p style="margin-top:24pt">Domnule/Doamnă Decan,</p>
-       <p>Subsemnatul(a) <strong>${e(r.student_name)}</strong>, student(ă) în anul
+       <p>Subsemnatul(a) <strong>${e(studentName)}</strong>, student(ă) în anul
        <strong>${r.study_year ?? '—'}</strong> la programul de studii de
        <strong>${levelLabel(r.program).toLowerCase()}</strong>, specializarea
        <strong>${e(r.specialization ?? '—')}</strong>, limba de studiu
-       <strong>${languageLabel(r.study_language).toLowerCase()}</strong>, grupa
+       <strong>${languageLabel(r.study_language).toLowerCase()}</strong>, seria
+       <strong>${e(r.study_series ?? '—')}</strong>, grupa
        <strong>${e(r.study_group ?? '—')}</strong>, număr matricol
        <strong>${e(r.student_number ?? '—')}</strong>, vă rog să aprobați coordonarea lucrării mele
        de finalizare a studiilor de către <strong>${e(r.teacher_name)}</strong>.</p>
@@ -108,7 +119,7 @@ export const GET: APIRoute = async ({ params, locals }) => {
        <p class="note">Document generat automat din Portalul Studenți pe baza cererii înregistrate
        electronic. Se tipărește, se semnează de ambele părți și se depune la secretariatul
        facultății.</p>`,
-      `Cererea ${r.number} · ${r.student_name}`,
+      `Cererea ${r.number} · ${studentName}`,
     ),
     { headers: { 'content-type': 'text/html; charset=utf-8' } },
   )

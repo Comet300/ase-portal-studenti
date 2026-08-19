@@ -1,4 +1,5 @@
 import { execute, query, queryOne } from './db'
+import type { LockReason } from './chat-lock'
 
 /**
  * Messaging between a student and their supervisor.
@@ -23,6 +24,15 @@ export interface Conversation {
   unread: number
   /** Can it still be written to? A thread without a live pairing is read-only. */
   is_active: boolean
+  /**
+   * Why it is read-only, when it is. `null` while the pairing is live.
+   *
+   * Computed by both queries, not only by the one that opens a thread: the
+   * pages fall back to `conversations[0]` when no thread is named in the
+   * address, so a conversation that arrived through the list would have
+   * carried a closed composer with nothing next to it saying why.
+   */
+  lock_reason: LockReason | null
 }
 
 export interface MessageFile {
@@ -66,13 +76,57 @@ export interface Message {
  * read-only.
  */
 const PAIRING_LIVE = `(
-  EXISTS (SELECT 1 FROM requests r
-           WHERE r.student_id = c.student_id AND r.teacher_id = c.teacher_id
-             AND r.status IN ('approved', 'pending'))
-  OR EXISTS (SELECT 1 FROM invitations i
-              WHERE i.student_id = c.student_id AND i.teacher_id = c.teacher_id
-                AND i.status IN ('pending', 'accepted'))
+  peer.is_active
+  AND (
+    EXISTS (SELECT 1 FROM requests r
+             WHERE r.student_id = c.student_id AND r.teacher_id = c.teacher_id
+               AND r.status IN ('approved', 'pending'))
+    OR EXISTS (SELECT 1 FROM invitations i
+                WHERE i.student_id = c.student_id AND i.teacher_id = c.teacher_id
+                  AND i.status IN ('pending', 'accepted'))
+  )
 )`
+
+/**
+ * Which of the ways the pair came apart is the one that happened.
+ *
+ * A message to somebody whose account has been closed was accepted, written and
+ * then announced by an email to an address that can no longer sign in — so the
+ * closed account comes first, before any request is looked at.
+ *
+ * Otherwise the answer is the last thing that happened between the two, across
+ * both tables: a student who was refused in March and refused a proposal in May
+ * is told about May. A `draft` request is nobody's link, so it falls through to
+ * `never_linked` — which is also the answer for the thread a rejection opens
+ * for a pair that never had anything else.
+ */
+const LOCK_REASON = `CASE
+  WHEN ${PAIRING_LIVE} THEN NULL::text
+  WHEN NOT peer.is_active THEN 'peer_inactive'
+  ELSE COALESCE(
+    (SELECT CASE
+              WHEN latest.source = 'request'    AND latest.status = 'defended'  THEN 'defended'
+              WHEN latest.source = 'request'    AND latest.status = 'rejected'  THEN 'request_rejected'
+              WHEN latest.source = 'request'    AND latest.status = 'withdrawn' THEN 'request_withdrawn'
+              WHEN latest.source = 'request'    AND latest.status = 'expired'   THEN 'request_expired'
+              WHEN latest.source = 'invitation' AND latest.status = 'declined'  THEN 'invitation_declined'
+              WHEN latest.source = 'invitation' AND latest.status = 'expired'   THEN 'invitation_expired'
+            END
+       FROM (
+         SELECT 'request' AS source, r.status,
+                COALESCE(r.defended_on::timestamptz, r.decided_at, r.updated_at) AS happened_at
+           FROM requests r
+          WHERE r.student_id = c.student_id AND r.teacher_id = c.teacher_id
+         UNION ALL
+         SELECT 'invitation', i.status,
+                COALESCE(i.responded_at, i.expires_at, i.created_at)
+           FROM invitations i
+          WHERE i.student_id = c.student_id AND i.teacher_id = c.teacher_id
+       ) latest
+      ORDER BY latest.happened_at DESC NULLS LAST
+      LIMIT 1),
+    'never_linked')
+END`
 
 /** Threads the user takes part in, most recently active first. */
 export function myConversations(userId: string, asStudent: boolean) {
@@ -106,7 +160,8 @@ export function myConversations(userId: string, asStudent: boolean) {
               ORDER BY m.created_at DESC LIMIT 1) AS last_message,
             (SELECT count(*)::int FROM messages m
               WHERE m.conversation_id = c.id AND m.sender_id <> $1 AND m.read_at IS NULL) AS unread,
-            ${PAIRING_LIVE} AS is_active
+            ${PAIRING_LIVE} AS is_active,
+            ${LOCK_REASON} AS lock_reason
        FROM conversations c
        JOIN users peer ON peer.id = c.${theirs}
       WHERE c.${mine} = $1
@@ -126,7 +181,8 @@ export function myConversation(userId: string, conversationId: string) {
             peer.avatar_path AS peer_avatar,
             NULL::text AS last_message,
             0 AS unread,
-            ${PAIRING_LIVE} AS is_active
+            ${PAIRING_LIVE} AS is_active,
+            ${LOCK_REASON} AS lock_reason
        FROM conversations c
        JOIN users peer
          ON peer.id = CASE WHEN c.student_id = $1 THEN c.teacher_id ELSE c.student_id END
@@ -279,8 +335,13 @@ export async function postEvent(e: {
    * screen for the student and for the coordinator, and a path saved now would
    * have aged along with the routes. Without it, the notification opens the
    * conversation thread.
+   *
+   * The list mirrors the CHECK constraint on the column exactly (migration
+   * 0016). A value the constraint does not know is not a compile error and not
+   * a runtime error either — `postEvent` swallows it — it is an event that
+   * never reaches anybody, which is why the two lists are kept in step.
    */
-  subjectKind?: 'request' | 'invitation' | 'slot'
+  subjectKind?: 'request' | 'invitation' | 'slot' | 'change'
   subjectId?: string | null
 }): Promise<string | null> {
   // Never rejects. Every caller reaches this *after* committing the decision it
@@ -301,7 +362,7 @@ async function writeEvent(e: {
   eventType: string
   body: string
   createConversation?: boolean
-  subjectKind?: 'request' | 'invitation' | 'slot'
+  subjectKind?: 'request' | 'invitation' | 'slot' | 'change'
   subjectId?: string | null
 }): Promise<string | null> {
   const conversation = e.createConversation
@@ -353,7 +414,7 @@ export interface NotificationRow {
   created_at: string
   read_at: string | null
   conversation_id: string
-  subject_kind: 'request' | 'invitation' | 'slot' | null
+  subject_kind: 'request' | 'invitation' | 'slot' | 'change' | null
   subject_id: string | null
   /** Who produced the event — the other party in the conversation, not the reader. */
   peer_name: string

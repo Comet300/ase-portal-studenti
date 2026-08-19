@@ -1,6 +1,6 @@
 ---
 import { consumeMagicLink, createSession, SESSION_COOKIE } from '../lib/auth'
-import { internalPath } from '../lib/http'
+import { homeFor, internalPath } from '../lib/http'
 
 /**
  * Consumes the token from the email, opens the session and sends the user where
@@ -31,10 +31,7 @@ Astro.cookies.set(SESSION_COOKIE, await createSession(result.user.id), {
   maxAge: 60 * 60 * 24 * 30,
 })
 
-const destination = internalPath(
-  result.redirectTo,
-  result.user.role === 'student' ? '/cererile-mele' : '/profesor',
-)
+const destination = internalPath(result.redirectTo, homeFor(result.user))
 
 return Astro.redirect(destination, 302)
 ---

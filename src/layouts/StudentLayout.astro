@@ -21,29 +21,29 @@ const yearLabel = await currentYearLabel()
 
 const hasThesis = u?.role === 'student' && (await hasApprovedRequest(u.id))
 
-/* A visitor was handed four links in the bar that sent him straight to the
- * sign-in screen — including „Cererile Mele”, which means nothing to him.
- * Everything that requires a session now sits in a single place, behind `u`.
+/* Every screen in the bar is behind the session gate now, so with no session
+ * there is nothing to put in it: the only page this layout still renders for a
+ * signed-out visitor is the privacy notice, and there a row of links that all
+ * bounce off the gate is seven ways of saying „autentifică-te”. The one way in
+ * stays as the button on the right.
  *
  * And once the request is approved, the page is no longer about requests: it is
  * about the thesis, and it is named that way. */
-const navLinks = [
-  { href: '/', text: SCREENS['/'], key: 'acasa' },
-  { href: '/coordonatori', text: SCREENS['/coordonatori'], key: 'coordonatori' },
-  ...(u
-    ? [
-        {
-          href: '/cererile-mele',
-          text: hasThesis ? 'Lucrarea mea' : SCREENS['/cererile-mele'],
-          key: 'cereri',
-        },
-        { href: '/mesaje', text: SCREENS['/mesaje'], key: 'mesaje' },
-        { href: '/consultatii', text: SCREENS['/consultatii'], key: 'consultatii' },
-        { href: '/arhiva', text: SCREENS['/arhiva'], key: 'arhiva' },
-      ]
-    : []),
-  { href: '/ghid', text: SCREENS['/ghid'], key: 'ghid' },
-]
+const navLinks = u
+  ? [
+      { href: '/', text: SCREENS['/'], key: 'acasa' },
+      { href: '/coordonatori', text: SCREENS['/coordonatori'], key: 'coordonatori' },
+      {
+        href: '/cererile-mele',
+        text: hasThesis ? 'Lucrarea mea' : SCREENS['/cererile-mele'],
+        key: 'cereri',
+      },
+      { href: '/mesaje', text: SCREENS['/mesaje'], key: 'mesaje' },
+      { href: '/consultatii', text: SCREENS['/consultatii'], key: 'consultatii' },
+      { href: '/arhiva', text: SCREENS['/arhiva'], key: 'arhiva' },
+      { href: '/ghid', text: SCREENS['/ghid'], key: 'ghid' },
+    ]
+  : []
 
 /* Only in the phone menu: on a small screen the avatar is easily lost, and it
  * is the only road to the account and to signing out. The „Zona cadrelor
@@ -134,11 +134,15 @@ const accountLinks = [
             </a>
           )
         }
-        <button class="hamburger" aria-label="Deschide meniul" aria-expanded="false" aria-controls="meniu-mobil">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-            ><path d="M3 6h18M3 12h18M3 18h18"></path></svg
-          >
-        </button>
+        {/* With no session the drawer has nothing in it: the button opened an
+            empty panel over the page. */}
+        {u && (
+          <button class="hamburger" aria-label="Deschide meniul" aria-expanded="false" aria-controls="meniu-mobil">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M3 6h18M3 12h18M3 18h18" />
+            </svg>
+          </button>
+        )}
       </div>
     </div>
 

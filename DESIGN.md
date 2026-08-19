@@ -156,6 +156,7 @@ Ce se repetă pe trei ecrane devine componentă. Nu mai devreme.
 | `Chat` | Firul, lista de conversații, sertarul de fișiere, contextul lucrării. |
 | `Clopotel` | Notificările, cu destinația calculată din subiectul evenimentului și rolul cititorului. |
 | `AlegeAn` | Selectorul de an universitar. |
+| `AlegeData` | Un `<input type="date">` îmbrăcat: declanșator propriu, grilă de lună în românește, valoarea citită ca proză peste câmp. Cu `pereche`, capătul unui interval — `min` urmărește începutul și eticheta numără zilele. |
 | `RandSlot` | Un interval de consultație, ca rând de tabel. |
 | `Icon` | Pictogramele, dintr-un singur set. |
 
@@ -165,6 +166,10 @@ Ce se repetă pe trei ecrane devine componentă. Nu mai devreme.
 
 Nouă scripturi, toate în `src/scripts/`, pornite din `BaseLayout`. Fiecare nu face
 nimic pe paginile care nu îl privesc.
+
+Al zecelea, `datepicker`, pornește din `AlegeData`, nu din `BaseLayout`: Astro îl
+împachetează o singură dată per pagină care folosește componenta, deci ecranele
+studenților — unde nu există niciun câmp de dată — nu îl descarcă deloc.
 
 - `formulare` — o singură ascultare delegată pentru toate formularele: stare de
   încărcare pe butonul apăsat (`aria-disabled`, **niciodată** `disabled`, care ar

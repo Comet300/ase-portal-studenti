@@ -1,3 +1,5 @@
+import type { Role } from './auth'
+
 /**
  * Redirect helper.
  *
@@ -28,6 +30,18 @@ export function internalPath(path: string | null | undefined, fallback = '/'): s
   if (!path) return fallback
   if (!path.startsWith('/') || path.startsWith('//') || path.startsWith('/\\')) return fallback
   return path
+}
+
+/**
+ * Where a role belongs after signing in.
+ *
+ * The pair was written out in four places — the magic link, the demo sign-in,
+ * the sign-in page and signing out — and they had already drifted: the demo
+ * buttons fell back to `redirect()`'s own `/`, so a teacher who used them
+ * landed on the student home. One rule, one place.
+ */
+export function homeFor(user: { role: Role }): string {
+  return user.role === 'student' ? '/' : '/profesor'
 }
 
 export function redirect(path: string, status: 302 | 303 = 303): Response {

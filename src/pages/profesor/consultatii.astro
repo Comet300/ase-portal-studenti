@@ -1,7 +1,9 @@
 ---
+import AlegeData from '../../components/AlegeData.astro'
 import ProfesorLayout from '../../layouts/ProfesorLayout.astro'
 import RandSlot from '../../components/RandSlot.astro'
-import { startOfWeek, supervisedStudents, teacherSlots, weekLabel } from '../../lib/repo'
+import { localDay, startOfWeek, supervisedStudents, teacherSlots, weekLabel } from '../../lib/repo'
+import { officialName } from '../../lib/text'
 
 /**
  * The consultation schedule.
@@ -14,7 +16,7 @@ import { startOfWeek, supervisedStudents, teacherSlots, weekLabel } from '../../
 const u = Astro.locals.user!
 const [sloturi, studenti] = await Promise.all([teacherSlots(u.id), supervisedStudents(u.id)])
 
-const today = new Date().toISOString().slice(0, 10)
+const today = localDay(new Date())
 const withStudentId = Astro.url.searchParams.get('cu') ?? ''
 
 /**
@@ -94,7 +96,7 @@ const active = sloturi.filter((s) => !s.is_cancelled).length
                       checked={s.student_id === withStudentId}
                     />
                     <span class="student-optiune__corp">
-                      <strong>{s.student_name}</strong>
+                      <strong>{officialName({ name: s.student_name, father_initial: s.father_initial })}</strong>
                       <small class="muted">{s.title_ro}</small>
                     </span>
                   </label>
@@ -107,11 +109,8 @@ const active = sloturi.filter((s) => !s.is_cancelled).length
               as the student list: otherwise the rows stretch to fill the height
               of the list and gaps appear between „Ziua” and „Durata”. */}
           <div class="programare__detalii">
-            <div class="programare__pereche">
-              <div class="field">
-                <label class="label" for="prog-zi">Ziua</label>
-                <input class="input" id="prog-zi" name="zi" type="date" min={today} required />
-              </div>
+            <div class="programare__pereche programare__pereche--zi">
+              <AlegeData id="prog-zi" name="zi" label="Ziua" min={today} required />
               {/* This was a numeric field with whole hours, and the SQL
                   concatenated „hours”: a consultation at 14:30 simply could not
                   be expressed. */}
@@ -253,10 +252,14 @@ const active = sloturi.filter((s) => !s.is_cancelled).length
       <form method="POST" action="/api/sloturi" class="stack">
         <input type="hidden" name="actiune" value="publica" />
         <div class="row row--wrap" style="gap:var(--s-3);align-items:flex-end">
-          <div class="field" style="flex:1;min-width:160px">
-            <label class="label" for="slot-zi">Ore deschise în ziua</label>
-            <input class="input" id="slot-zi" name="zi" type="date" min={today} required />
-          </div>
+          <AlegeData
+            id="slot-zi"
+            name="zi"
+            label="Ore deschise în ziua"
+            min={today}
+            required
+            style="flex:1;min-width:240px"
+          />
           <div class="field" style="min-width:96px">
             <label class="label" for="slot-start">De la</label>
             <input class="input" id="slot-start" name="ora_start" type="time" value="14:00" step="900" required />
@@ -358,6 +361,19 @@ const active = sloturi.filter((s) => !s.is_cancelled).length
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
     gap: var(--s-4);
     align-items: start;
+  }
+
+  /* A day written out — „12 septembrie 2026” — needs more room than „14:00”.
+     Split down the middle, the date was the only field on the screen that had to
+     be truncated to fit its own box; under 1200px there is no split that leaves
+     both of them enough, so they stack. */
+  .programare__pereche--zi {
+    grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);
+  }
+  @media (max-width: 1200px) {
+    .programare__pereche--zi {
+      grid-template-columns: minmax(0, 1fr);
+    }
   }
 
   /* The student list stops at the height of the right-hand column, so that the
