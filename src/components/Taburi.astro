@@ -1,18 +1,18 @@
 ---
 /**
- * O bară de secțiuni, ca legături.
+ * A bar of sections, as links.
  *
- * Patru ecrane aveau fiecare bara lui, cu patru variante de stil și una singură
- * care marca pagina curentă pentru un cititor de ecran. Legături, nu butoane:
- * o secțiune este o adresă pe care cineva o poate trimite unui coleg, și
- * funcționează fără JavaScript.
+ * Four screens each had their own bar, with four style variants and a single
+ * one that marked the current page for a screen reader. Links, not buttons:
+ * a section is an address someone can send to a colleague, and it works
+ * without JavaScript.
  */
 interface Tab {
-  cheie: string
+  key: string
   text: string
   href: string
-  /** Numărul din dreapta etichetei; ascuns când e zero, ca să nu adauge zgomot. */
-  contor?: number | null
+  /** The number to the right of the label; hidden when zero, so it adds no noise. */
+  count?: number | null
 }
 
 interface Props {
@@ -29,11 +29,11 @@ const { taburi, activ, eticheta } = Astro.props
     taburi.map((t) => (
       <a
         href={t.href}
-        class:list={['tab', { 'is-activ': activ === t.cheie }]}
-        aria-current={activ === t.cheie ? 'page' : undefined}
+        class:list={['tab', { 'is-activ': activ === t.key }]}
+        aria-current={activ === t.key ? 'page' : undefined}
       >
         {t.text}
-        {t.contor != null && t.contor > 0 && <span class="tab__contor numeric">{t.contor}</span>}
+        {t.count != null && t.count > 0 && <span class="tab__contor numeric">{t.count}</span>}
       </a>
     ))
   }

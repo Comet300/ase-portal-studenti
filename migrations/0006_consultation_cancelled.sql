@@ -1,11 +1,11 @@
--- O consultație anulată este un eveniment ca oricare altul din firul perechii.
+-- A cancelled consultation is an event like any other in the pair's thread.
 --
--- Anularea nu spunea nimănui nimic: un UPDATE pe rezervare și atât, deși
--- dialogul de confirmare promitea studentului că „coordonatorul vede anularea”.
--- Acum pleacă email, invitație de anulare în calendar și un eveniment în fir —
--- iar tipul lui trebuie să existe în constrângere, altfel `postEvent` îl
--- respinge în tăcere, pentru că înghite orice eroare ca să nu strice acțiunea
--- deja comisă.
+-- Cancelling told nobody anything: an UPDATE on the booking and that was all,
+-- even though the confirmation dialog promised the student that „coordonatorul
+-- vede anularea”. Now an email goes out, a cancellation invitation in the
+-- calendar and an event in the thread — and its type has to exist in the
+-- constraint, otherwise `postEvent` rejects it in silence, because it swallows
+-- any error so as not to break the action already carried out.
 
 ALTER TABLE messages DROP CONSTRAINT messages_event_type_check;
 

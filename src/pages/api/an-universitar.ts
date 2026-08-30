@@ -2,7 +2,7 @@ import type { APIRoute } from 'astro'
 import { isDepartmentHead } from '../../lib/auth'
 import { execute, queryOne, transaction } from '../../lib/db'
 import { deadEnd, redirectWithNotice } from '../../lib/http'
-import { citesteRanduriArhiva, nivelArhiva } from '../../lib/arhiva'
+import { parseArchiveRows, parseArchiveLevel } from '../../lib/archive'
 import { formAction } from '../../lib/forms'
 import { openYear } from '../../lib/years'
 import { id as formId } from '../../lib/ids'
@@ -43,28 +43,29 @@ export const POST: APIRoute = async ({ request, locals }) => {
     )
     if (existing) return back(`Anul „${label}” există deja.`, true)
 
-    /* Trecerea anului nu se dezface.
+    /* Turning the year over cannot be undone.
      *
-     * Sesiunea curentă intră în arhivă cu tot ce conține, coordonările se
-     * încheie, catalogul se golește — la un singur clic, dintr-un formular care
-     * stă deschis pe ecran. Confirmarea nu este o casetă de bifat, ci denumirea
-     * anului care se închide, scrisă de mână: singurul gest care nu se poate face
-     * din reflex. Se compară cu anul curent din baza de date, nu cu ce a trimis
-     * pagina. */
-    const anCurent = await queryOne<{ label: string }>(
+     * The current session goes into the archive with everything it holds, the
+     * coordinations end, the catalogue empties — on a single click, from a form
+     * that sits open on the screen. The confirmation is not a checkbox but the
+     * label of the year being closed, written by hand: the one gesture that
+     * cannot be made out of reflex. It is compared against the current year in
+     * the database, not against what the page submitted. */
+    const currentYearRow = await queryOne<{ label: string }>(
       `SELECT label FROM academic_years WHERE is_current`,
     )
-    /* Cratima ține locul liniuței de dialog.
+    /* The hyphen stands in for the dash.
      *
-     * Denumirea este „2025–2026”, cu liniuță en — un caracter care nu există pe
-     * tastatura românească. Cerând-o exact, gardul ar fi fost imposibil de trecut
-     * fără copiere din pagină, ceea ce transformă confirmarea în copiere, adică în
-     * exact reflexul pe care încearcă să îl oprească. */
-    const fara = (t: string) => t.replace(/[\u2010-\u2015]/g, '-')
+     * The label is „2025–2026”, with an en dash — a character that does not
+     * exist on the Romanian keyboard. Demanding it exactly would have made the
+     * gate impossible to pass without copying from the page, which turns the
+     * confirmation into copying, that is into exactly the reflex it is trying
+     * to stop. */
+    const normalizeDashes = (t: string) => t.replace(/[\u2010-\u2015]/g, '-')
     const confirmare = String(form.get('confirmare') ?? '').trim()
-    if (anCurent && fara(confirmare) !== fara(anCurent.label)) {
+    if (currentYearRow && normalizeDashes(confirmare) !== normalizeDashes(currentYearRow.label)) {
       return back(
-        `Scrie exact „${anCurent.label}” în câmpul de confirmare ca să închizi sesiunea în curs.`,
+        `Scrie exact „${currentYearRow.label}” în câmpul de confirmare ca să închizi sesiunea în curs.`,
         true,
       )
     }
@@ -76,7 +77,14 @@ export const POST: APIRoute = async ({ request, locals }) => {
       copySeats: form.get('preia_locuri') === 'da',
     })
 
-    return back(`Anul ${label} este deschis. Sesiunea anterioară a trecut în arhivă.`)
+    /* The next step is named, because it is the one nothing on this screen does.
+     * Opening a year carries the *existing* people forward — it never brings a
+     * new cohort into being, and the director who has just archived a session
+     * is exactly the person about to look for where the first-year list goes. */
+    return back(
+      `Anul ${label} este deschis. Sesiunea anterioară a trecut în arhivă. ` +
+        'Urmează promoția nouă: se adaugă din Conturi → „Importă o promoție”.',
+    )
   }
 
   if (action === 'adauga_program') {
@@ -122,29 +130,30 @@ export const POST: APIRoute = async ({ request, locals }) => {
     if (!year) return back('Alege anul universitar în care se importă.', true)
     if (!raw) return back('Lipsesc rândurile de importat.', true)
 
-    /* Aceeași citire ca în previzualizare.
+    /* The same parse as in the preview.
      *
-     * Lipirea este intenționat o casetă de text, nu un fișier: sursa este aproape
-     * întotdeauna o selecție de coloane din foaia de calcul, iar lipirea scutește
-     * drumul export–încărcare.
+     * Pasting is deliberately a text box, not a file: the source is almost
+     * always a selection of columns out of the spreadsheet, and pasting spares
+     * the export–upload trip.
      *
-     * Ce a arătat previzualizarea nu este de încredere — se recitește aici textul
-     * trimis, cu aceeași funcție, deci cele două nu pot să se despartă. */
-    const { bune, respinse: respinseCitite } = citesteRanduriArhiva(raw)
-    const respinse = respinseCitite.map((r) => `rândul ${r.numar}: ${r.motiv}`)
+     * What the preview showed is not to be trusted — the submitted text is
+     * parsed again here, with the same function, so the two cannot drift
+     * apart. */
+    const { accepted, rejected: rejectedRows } = parseArchiveRows(raw)
+    const rejectedMessages = rejectedRows.map((r) => `rândul ${r.numar}: ${r.reason}`)
 
-    if (bune.length === 0) {
+    if (accepted.length === 0) {
       return back(
-        `Niciun rând nu a putut fi importat. ${respinse.slice(0, 3).join('; ')}${respinse.length > 3 ? `; și încă ${respinse.length - 3}` : ''}.`,
+        `Niciun rând nu a putut fi importat. ${rejectedMessages.slice(0, 3).join('; ')}${rejectedMessages.length > 3 ? `; și încă ${rejectedMessages.length - 3}` : ''}.`,
         true,
       )
     }
 
-    // O singură tranzacție: dacă pică ceva la ultimul rând, nu rămâne nimic pe
-    // jumătate în arhiva publică.
+    // A single transaction: if something fails on the last row, nothing is
+    // left half-done in the public archive.
     const imported = await transaction(async (client) => {
       let n = 0
-      for (const r of bune) {
+      for (const r of accepted) {
         const { rowCount } = await client.query(
           `INSERT INTO archive_entries (academic_year_id, student_name, student_number, programme,
                                         level, language, teacher_name, title_ro, defended_on, created_by)
@@ -156,7 +165,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
                WHERE academic_year_id = $1 AND student_name = $2 AND title_ro = $8
             )`,
           [
-            yearId, r.studentName, r.studentNumber, r.programme, nivelArhiva(r.level), r.language,
+            yearId, r.studentName, r.studentNumber, r.programme, parseArchiveLevel(r.level), r.language,
             r.teacherName, r.title, r.defended, u!.id,
           ],
         )
@@ -165,15 +174,15 @@ export const POST: APIRoute = async ({ request, locals }) => {
       return n
     })
 
-    const duplicate = bune.length - imported
+    const duplicate = accepted.length - imported
 
     return back(
       `${imported} ${imported === 1 ? 'înregistrare importată' : 'înregistrări importate'} în ${year.label}.` +
         (duplicate > 0 ? ` ${duplicate} ${duplicate === 1 ? 'exista deja' : 'existau deja'}.` : '') +
-        (respinse.length > 0
-          ? ` ${respinse.length} ${respinse.length === 1 ? 'rând respins' : 'rânduri respinse'} — ${respinse.slice(0, 3).join('; ')}${respinse.length > 3 ? '; …' : ''}.`
+        (rejectedMessages.length > 0
+          ? ` ${rejectedMessages.length} ${rejectedMessages.length === 1 ? 'rând respins' : 'rânduri respinse'} — ${rejectedMessages.slice(0, 3).join('; ')}${rejectedMessages.length > 3 ? '; …' : ''}.`
           : ''),
-      imported === 0 || respinse.length > 0,
+      imported === 0 || rejectedMessages.length > 0,
     )
   }
 

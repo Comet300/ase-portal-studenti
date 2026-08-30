@@ -18,7 +18,14 @@ import type { FileStore, StoredFile } from '../ports'
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const STORED_NAME = /^[a-f0-9-]+\.[a-z0-9]+$/
 
+/** What a message may carry: a chapter, a questionnaire, a data set. */
 export const MAX_BYTES = 15 * 1024 * 1024
+
+/* The absolute ceiling of the store, whatever a caller asks for. A finished
+ * thesis with figures and scanned annexes goes past fifteen megabytes often
+ * enough that refusing it would send the file back to email — which is the
+ * habit this feature exists to end — but nothing here is a video. */
+export const MAX_ABSOLUTE_BYTES = 40 * 1024 * 1024
 
 function extension(name: string): string {
   const raw = name.includes('.') ? name.split('.').pop()! : ''
@@ -37,9 +44,14 @@ export function createDiskFileStore(root: string): FileStore {
   }
 
   return {
-    async save(folder: string, originalName: string, bytes: Buffer): Promise<string> {
+    async save(folder: string, originalName: string, bytes: Buffer, maxBytes = MAX_BYTES): Promise<string> {
       if (!UUID.test(folder)) throw new Error('Invalid folder id')
-      if (bytes.byteLength > MAX_BYTES) throw new Error('File too large')
+      /* Two ceilings, and the lower of them wins: the caller's, which is about
+         what this kind of file is, and the store's, which is about what the
+         disk behind it will take. */
+      if (bytes.byteLength > Math.min(maxBytes, MAX_ABSOLUTE_BYTES)) {
+        throw new Error('File too large')
+      }
 
       const dir = join(base, folder)
       await mkdir(dir, { recursive: true })

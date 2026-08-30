@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 /**
- * Aplică `migrations/*.sql` în ordinea numelor de fișier.
+ * Applies `migrations/*.sql` in the order of the file names.
  *
- * Fiecare fișier rulează în propria tranzacție și este înregistrat în
- * `schema_migrations`, deci un fișier care eșuează nu lasă schema pe jumătate,
- * iar o rulare repetată aplică doar ce e nou. Lock-ul consultativ serializează
- * două containere care pornesc în același timp.
+ * Every file runs in its own transaction and is recorded in
+ * `schema_migrations`, so a file that fails does not leave the schema half
+ * applied, and a repeated run applies only what is new. The advisory lock
+ * serializes two containers that start at the same time.
  */
 
 import { readdir, readFile } from 'node:fs/promises'

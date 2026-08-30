@@ -1,24 +1,24 @@
--- Susținerea, ca fapt distinct de aprobare.
+-- The defence, as a fact distinct from the approval.
 --
--- Arhiva prezenta `requests.decided_at` drept dată a susținerii: o lucrare
--- aprobată în martie și susținută în iulie apărea în arhivă cu martie. Sunt două
--- evenimente diferite la câteva luni distanță, iar arhiva unei facultăți este
--- exact locul în care diferența contează.
+-- The archive presented `requests.decided_at` as the date of the defence: a
+-- thesis approved in March and defended in July appeared in the archive with
+-- March. They are two different events a few months apart, and a faculty's
+-- archive is exactly the place where the difference matters.
 --
--- Terminarea lucrării nu avea nici stare: o coordonare rămânea „aprobată” pentru
--- totdeauna, deci un student care își luase licența în urmă cu doi ani apărea în
--- continuare printre cei coordonați activ.
+-- Finishing the thesis had no state either: a supervision stayed „aprobată”
+-- forever, so a student who had taken their degree two years ago still showed
+-- up among those actively supervised.
 
 ALTER TABLE requests
   ADD COLUMN defended_on date,
   ADD COLUMN grade       numeric(4, 2);
 
--- Doar lucrările susținute au dată; indexul servește listele de arhivă.
+-- Only defended theses have a date; the index serves the archive listings.
 CREATE INDEX idx_requests_defended
   ON requests (defended_on) WHERE defended_on IS NOT NULL;
 
--- Starea „susținută” intră în vocabularul existent, ca badge-urile și filtrele
--- să nu aibă nevoie de un caz special.
+-- The „susținută” state joins the existing vocabulary, so that badges and
+-- filters do not need a special case.
 ALTER TABLE requests DROP CONSTRAINT IF EXISTS requests_status_check;
 ALTER TABLE requests ADD CONSTRAINT requests_status_check
   CHECK (status IN ('draft', 'pending', 'approved', 'rejected', 'expired', 'withdrawn', 'defended'));

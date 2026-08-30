@@ -1,12 +1,13 @@
 ---
 import AlegeAn from '../components/AlegeAn.astro'
 import Metrica from '../components/Metrica.astro'
+import ProfesorLayout from '../layouts/ProfesorLayout.astro'
 import StudentLayout from '../layouts/StudentLayout.astro'
 import { archiveRows, formatDate } from '../lib/repo'
 import { LEVEL_LABELS, allYears, languageLabel, levelLabel } from '../lib/years'
 
 /**
- * The public archive.
+ * The archive of finished theses.
  *
  * Open to everyone signed in, students included: knowing what was written last
  * year, and by whom, under which coordinator, is how a student picks a direction
@@ -15,12 +16,33 @@ import { LEVEL_LABELS, allYears, languageLabel, levelLabel } from '../lib/years'
  * Two sources read as one list. Sessions the portal ran produce their own rows;
  * sessions before it existed are typed in by the head of department. The
  * provenance is shown, but it does not split the table.
+ *
+ * It renders in the shell of whoever is reading it. Until the teaching-staff
+ * sidebar got an entry for it, the only way here from the teacher area was the
+ * „Portalul studenților” exit — and that dropped a coordinator into the student
+ * top bar, which reads as a different portal.
  */
+
+const u = Astro.locals.user!
+const isStudent = u.role === 'student'
+const isHead = u.role === 'head'
+
+/* The archive of the whole faculty is the department's register: it names every
+ * student of every past session, their coordinator and their title. It stays
+ * open to students — it is the catalogue they are told to read before choosing
+ * a direction — and to the director, who answers for it. A coordinator's own
+ * past sessions are on „Activitatea mea”, with the same rows for their own
+ * students. 404, not 403, like every other closed door here. */
+if (u.role === 'teacher') return Astro.rewrite('/404')
 
 const years = await allYears()
 const requested = Astro.url.searchParams.get('an') ?? ''
-const year =
-  years.find((y) => y.id === requested) ?? years.find((y) => !y.is_current) ?? years[0]
+/* The default is the last session that ended, not the one under way: theses are
+ * defended at the end, so the current year is empty until then and whoever
+ * landed on it concluded the archive was broken. The picker says which year it
+ * is showing, and the note under it says why that one. */
+const previousYear = years.find((y) => !y.is_current)
+const year = years.find((y) => y.id === requested) ?? previousYear ?? years[0]
 
 const rows = year ? await archiveRows(year.id) : []
 const search = (Astro.url.searchParams.get('q') ?? '').trim().toLowerCase()
@@ -45,22 +67,25 @@ const levels = {
   bachelor: filtered.filter((r) => r.level === 'bachelor').length,
   master: filtered.filter((r) => r.level === 'master').length,
 }
+
+const hasImported = filtered.some((r) => r.source === 'import')
+
+// A pasted paragraph in the search box must not become a three-line heading.
+const searchLabel = search.length > 40 ? `${search.slice(0, 40)}…` : search
+
+const lede =
+  'Lucrările de finalizare susținute în sesiunile anterioare, cu coordonatorii lor. Citește-o înainte să scrii cuiva: aici se vede ce direcții a coordonat efectiv un cadru didactic.'
+
+const Shell = isStudent ? StudentLayout : ProfesorLayout
 ---
 
-<StudentLayout
+<Shell
   title="Arhivă"
   description="Lucrările de finalizare a studiilor din sesiunile anterioare, cu coordonatorii lor"
+  lede={lede}
   active="arhiva"
 >
   <div class="container stack stack--loose">
-    <header class="stack stack--tight">
-      <h1 class="page-title">Arhiva sesiunilor</h1>
-      <p class="page-lede">
-        Ce s-a scris în sesiunile anterioare și sub coordonarea cui. Folosește-o ca să vezi ce
-        direcții a coordonat efectiv un cadru didactic, înainte să îi scrii.
-      </p>
-    </header>
-
     <div class="panel">
       <div class="panel__body row row--wrap" style="gap:var(--s-4);align-items:flex-end">
         <AlegeAn years={years} selected={year?.id ?? ''} base="/arhiva"
@@ -68,30 +93,30 @@ const levels = {
         <form method="GET" class="row row--wrap" style="gap:var(--s-3);align-items:flex-end;flex:1">
           <input type="hidden" name="an" value={year?.id} />
           <div class="field" style="flex:2;min-width:240px">
-            <label class="label" for="q">Caută</label>
+            <label class="label" for="q">Caută în arhivă</label>
             <input class="input" id="q" name="q" type="search" value={search}
-              placeholder="Nume, coordonator, titlu sau specializare…" />
+              placeholder="Nume de student, coordonator, titlu sau specializare…" />
           </div>
           <button class="btn btn--secondary" type="submit">Caută</button>
         </form>
       </div>
       <p class="panel__footer hint">
-        Lucrările apar în sesiunea în care sunt susținute, nu în cea în care a început
-        coordonarea — un student poate alege coordonatorul în anul II și susține la finalul
-        anului III.
+        Arhiva se deschide pe ultima sesiune încheiată: o lucrare intră în sesiunea în care este
+        susținută, nu în cea în care a început coordonarea — un student poate alege coordonatorul în
+        anul II și susține la finalul anului III.
       </p>
     </div>
 
     <div class="grid-auto">
       <Metrica
-        valoare={filtered.length}
-        eticheta={`${filtered.length === 1 ? 'lucrare' : 'lucrări'} în ${year?.label ?? ''}`}
+        value={filtered.length}
+        label={`${filtered.length === 1 ? 'lucrare' : 'lucrări'} în ${year?.label ?? ''}`}
       />
-      <Metrica valoare={levels.bachelor} eticheta={LEVEL_LABELS.bachelor.toLowerCase()} />
-      <Metrica valoare={levels.master} eticheta={LEVEL_LABELS.master.toLowerCase()} />
+      <Metrica value={levels.bachelor} label={LEVEL_LABELS.bachelor.toLowerCase()} />
+      <Metrica value={levels.master} label={LEVEL_LABELS.master.toLowerCase()} />
       <Metrica
-        valoare={grouped.length}
-        eticheta={grouped.length === 1 ? 'coordonator' : 'coordonatori'}
+        value={grouped.length}
+        label={grouped.length === 1 ? 'coordonator' : 'coordonatori'}
       />
     </div>
 
@@ -100,15 +125,33 @@ const levels = {
         <section class="panel">
           <div class="empty">
             <p class="empty__title">
-              {search ? 'Nimic nu corespunde căutării' : `Nicio înregistrare pentru ${year?.label}`}
+              {search
+                ? `Nicio lucrare nu conține „${searchLabel}” în ${year?.label}`
+                : `Nicio lucrare înregistrată în ${year?.label}`}
             </p>
             <p class="empty__text">
               {search
-                ? 'Încearcă alt cuvânt-cheie sau alt an universitar.'
+                ? 'Caută după un singur cuvânt din titlu sau după numele coordonatorului, ori schimbă anul universitar.'
                 : year?.is_current
-                  ? 'Sesiunea este în curs. Coordonările confirmate apar aici pe măsură ce sunt aprobate.'
-                  : 'Pentru acest an nu au fost încă introduse date. Directorul de departament le poate importa.'}
+                  ? 'Sesiunea este în curs: lucrările intră în arhivă după susținere. Până atunci, ultima sesiune încheiată este cea cu ce s-a scris.'
+                  : 'Pentru acest an nu au fost încă introduse date. Sesiunile dinaintea portalului se importă din evidența facultății.'}
             </p>
+            {search ? (
+              <a class="btn btn--secondary btn--sm" href={`/arhiva?an=${year?.id ?? ''}`}>
+                Șterge căutarea
+              </a>
+            ) : year?.is_current && previousYear ? (
+              <a class="btn btn--primary btn--sm" href={`/arhiva?an=${previousYear.id}`}>
+                Vezi sesiunea {previousYear.label}
+              </a>
+            ) : (
+              !year?.is_current &&
+              u.role === 'head' && (
+                <a class="btn btn--primary btn--sm" href="/profesor/an-universitar">
+                  Importă datele sesiunii
+                </a>
+              )
+            )}
           </div>
         </section>
       ) : (
@@ -141,10 +184,20 @@ const levels = {
                         {formatDate(r.defended_on)}
                       </span>
                     )}
+                    {/* Lucrarea predată prin portal. O deschid cei care au
+                        dreptul să o citească — directorul, care răspunde de
+                        arhivă, și coordonatorul ei; ruta verifică din nou, ea
+                        este poarta. Pentru ceilalți nu există nici linkul. */}
+                    {r.thesis_file_id && (isHead || r.teacher_id === u.id) && (
+                      <a class="btn btn--ghost btn--sm" href={`/fisiere/${r.thesis_file_id}`}>
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" />
+                        </svg>
+                        Lucrarea
+                      </a>
+                    )}
                     {r.source === 'import' && (
-                      <span class="badge badge--ciorna" title="Introdusă din evidența facultății">
-                        din evidență
-                      </span>
+                      <span class="badge badge--ciorna">din evidență</span>
                     )}
                   </span>
                 </li>
@@ -154,8 +207,20 @@ const levels = {
         ))
       )
     }
+
+    {/* The badge used to explain itself only in a `title` attribute — invisible
+        on a phone, and to anyone who does not hover a grey label. */}
+    {
+      hasImported && (
+        <p class="hint">
+          Rândurile marcate <span class="badge badge--ciorna">din evidență</span> au fost
+          introduse din registrele facultății, din sesiuni dinaintea portalului. Restul sunt
+          coordonări înregistrate aici, cerere cu cerere.
+        </p>
+      )
+    }
   </div>
-</StudentLayout>
+</Shell>
 
 <style>
   .lucrari {

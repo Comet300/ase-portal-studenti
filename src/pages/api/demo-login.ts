@@ -1,37 +1,37 @@
 import type { APIRoute } from 'astro'
-import { SESSION_COOKIE, createSession, DEMO_MODE } from '../../lib/auth'
+import { SESSION_COOKIE, createSession, DEMO_MODE, type Role } from '../../lib/auth'
 import { queryOne } from '../../lib/db'
-import { deadEnd, redirect } from '../../lib/http'
+import { deadEnd, homeFor, redirect } from '../../lib/http'
 
 /**
- * Intrare fără email pentru conturile demonstrative.
+ * Sign-in without email, for the demonstration accounts.
  *
- * Este o ocolire reală a autentificării, de aceea: se activează doar cu
- * DEMO_MODE=true, funcționează exclusiv pentru conturile marcate `cont_demo`, și
- * este anunțată vizibil în interfață. Cu DEMO_MODE dezactivat ruta răspunde 404,
- * ca să nu confirme nici măcar că există.
+ * It is a genuine bypass of authentication, hence: it is switched on only with
+ * DEMO_MODE=true, it works exclusively for the accounts marked `cont_demo`, and
+ * it is announced visibly in the interface. With DEMO_MODE off the route answers
+ * 404, so as not to confirm even that it exists.
  */
 export const POST: APIRoute = async ({ request, cookies, url }) => {
   if (!DEMO_MODE) {
     return deadEnd(404, 'Pagina nu a fost găsită', 'Adresa aceasta nu duce nicăieri în portal.')
   }
 
-  const date = await request.formData()
-  const utilizatorId = String(date.get('utilizator_id') ?? '')
-  const redirectTo = String(date.get('redirect') ?? '')
+  const form = await request.formData()
+  const userId = String(form.get('utilizator_id') ?? '')
+  const redirectTo = String(form.get('redirect') ?? '')
 
-  const utilizator = await queryOne<{ id: string; role: string }>(
+  const user = await queryOne<{ id: string; role: Role }>(
     `SELECT id, role FROM users WHERE id = $1 AND is_demo = true`,
-    [utilizatorId],
+    [userId],
   )
 
-  if (!utilizator) {
+  if (!user) {
     return redirect('/autentificare?eroare=' + encodeURIComponent('Cont demonstrativ inexistent.'))
   }
 
-  const sesiuneId = await createSession(utilizator.id)
+  const sessionId = await createSession(user.id)
 
-  cookies.set(SESSION_COOKIE, sesiuneId, {
+  cookies.set(SESSION_COOKIE, sessionId, {
     path: '/',
     httpOnly: true,
     sameSite: 'lax',
@@ -39,6 +39,5 @@ export const POST: APIRoute = async ({ request, cookies, url }) => {
     maxAge: 60 * 60 * 24 * 30,
   })
 
-  const implicit = utilizator.role === 'student' ? '/cererile-mele' : '/profesor'
-  return redirect(redirectTo || implicit)
+  return redirect(redirectTo || homeFor(user))
 }

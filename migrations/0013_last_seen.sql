@@ -1,13 +1,15 @@
--- Când a fost cineva ultima dată în portal.
+-- When someone was last in the portal.
 --
--- Un student trimite un capitol și așteaptă. Nu are cum să știe dacă
--- coordonatorul e în portal chiar acum — deci fie mai scrie „ați văzut?”, fie
--- așteaptă două zile degeaba. Coordonatorul, la fel, când amână un răspuns pentru
--- „mai târziu”: nu are cum să vadă dacă studentul mai e acolo.
+-- A student sends in a chapter and waits. There is no way to know whether the
+-- coordinator is in the portal right now — so either they write another „ați
+-- văzut?”, or they wait two days for nothing. The coordinator, likewise, when
+-- putting an answer off until „mai târziu”: there is no way to see whether the
+-- student is still there.
 --
--- Se păstrează un singur moment, nu un istoric: nu se poate reconstitui din el
--- când a intrat cineva și cât a stat, doar dacă e prin apropiere acum. Se vede
--- exclusiv între cei doi dintr-o conversație — deja legați printr-o coordonare —
--- și scris gros: „acum”, „acum câteva minute”, „astăzi”. Nota de informare o
--- spune, ca peste tot în portalul acesta.
+-- A single moment is kept, not a history: it cannot be reconstructed from it
+-- when somebody came in and how long they stayed, only whether they are nearby
+-- right now. It is visible exclusively between the two people in a conversation
+-- — already tied together by a coordination — and written coarsely: „acum”,
+-- „acum câteva minute”, „astăzi”. The privacy notice says so, as everywhere
+-- else in this portal.
 ALTER TABLE users ADD COLUMN IF NOT EXISTS last_seen_at timestamptz;

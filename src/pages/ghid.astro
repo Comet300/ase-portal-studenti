@@ -32,15 +32,13 @@ const DOCS = [
 ]
 ---
 
-<StudentLayout title="Ghid & Regulament" active="ghid">
+<StudentLayout
+  title="Ghid & Regulament"
+  active="ghid"
+  erou="amplu"
+  lede="Reguli de redactare, utilizarea instrumentelor de inteligență artificială, procedura antiplagiat și documentele de care ai nevoie."
+>
   <div class="container stack stack--loose">
-    <header class="stack stack--tight">
-      <h1 class="page-title">Ghid & Regulament</h1>
-      <p class="page-lede">
-        Reguli de redactare, utilizarea instrumentelor de inteligență artificială, procedura
-        antiplagiat și documentele de care ai nevoie.
-      </p>
-    </header>
 
     <div class="taburi" role="tablist" aria-label="Secțiuni ghid">
       <button class="tab is-activ" role="tab" aria-selected="true" aria-controls="p-redactare" id="t-redactare">
@@ -130,17 +128,19 @@ const DOCS = [
           decide dacă lucrarea poate fi susținută.
         </p>
 
-        {/* Ghidul descria o încărcare care nu există în portal: pasul întâi
-            trimitea studentul să caute un buton inexistent. Se descrie procesul
-            real, cu legătura chiar lângă instrucțiune. */}
+        {/* Ghidul descria trimiterea pe email, pentru că portalul chiar nu avea
+            unde să primească lucrarea. Acum are, iar primul pas este butonul,
+            nu ocolul. */}
         <ol class="lista-num">
           <li>
-            Trimiți forma finală în format PDF coordonatorului, prin{' '}
-            <a class="link" href="/mesaje">Mesaje</a>, până la termenul din calendar.
+            Încarci forma finală în format PDF pe{' '}
+            <a class="link" href="/lucrarea-mea#lucrare">Lucrarea mea</a>, împreună cu declarația
+            de originalitate semnată, până la termenul din calendar. Coordonatorul este anunțat pe
+            loc; o poți înlocui oricând până la susținere.
           </li>
           <li>Coordonatorul o încarcă în platforma antiplagiat a universității.</li>
           <li>Raportul ajunge la coordonator, care îl analizează împreună cu tine.</li>
-          <li>Dacă sunt necesare corecturi, primești un termen nou și trimiți din nou fișierul.</li>
+          <li>Dacă sunt necesare corecturi, primești un termen nou și încarci versiunea nouă.</li>
         </ol>
 
         <h3 class="section-title" style="font-size:var(--t-md)">Ce contează în raport</h3>
@@ -203,35 +203,36 @@ const DOCS = [
   const panels = tabs.map((t) => document.getElementById(t.getAttribute('aria-controls')!)!)
 
   /**
-   * Schimbarea filei, cu sau fără intrare în istoric.
+   * Switching the tab, with or without an entry in the history.
    *
-   * Era `replaceState` mereu: patru file citite pe rând nu lăsau nicio urmă, iar
-   * Înapoi ducea afară din ghid, nu la fila anterioară. Cine ajungea la
-   * „Antiplagiat” din regulament și voia să se întoarcă pierdea pagina.
+   * It was always `replaceState`: four tabs read one after the other left no
+   * trace at all, and Back led out of the guide instead of to the previous tab.
+   * Anyone who reached „Antiplagiat” from the regulations and wanted to go back
+   * lost the page.
    *
-   * Un clic sau o săgeată este o navigare și intră în istoric; sincronizarea de
-   * la încărcare sau de la Înapoi doar reflectă starea, deci nu.
+   * A click or an arrow key is a navigation and goes into the history; the sync
+   * on load or on Back only reflects the state, so it does not.
    */
-  function showTab(index: number, istoric: 'push' | 'replace' | 'niciun' = 'replace') {
+  function showTab(index: number, historyMode: 'push' | 'replace' | 'niciun' = 'replace') {
     tabs.forEach((t, i) => {
       const active = i === index
       t.classList.toggle('is-activ', active)
       t.setAttribute('aria-selected', String(active))
-      /* Un tablist are un singur opritor de tabulare: săgețile trec între file,
-         Tab iese din grup. Fără asta, patru file însemnau patru apăsări de Tab
-         înainte de a ajunge la conținut. */
+      /* A tablist has a single tab stop: the arrow keys move between the tabs,
+         Tab leaves the group. Without this, four tabs meant four presses of Tab
+         before reaching the content. */
       t.setAttribute('tabindex', active ? '0' : '-1')
       panels[i].hidden = !active
     })
-    if (istoric === 'niciun') return
-    const adresa = `#${tabs[index].id.replace('t-', '')}`
-    if (istoric === 'push') history.pushState({}, '', adresa)
-    else history.replaceState({}, '', adresa)
+    if (historyMode === 'niciun') return
+    const hash = `#${tabs[index].id.replace('t-', '')}`
+    if (historyMode === 'push') history.pushState({}, '', hash)
+    else history.replaceState({}, '', hash)
   }
 
   tabs.forEach((t, i) => {
     t.addEventListener('click', () => showTab(i, 'push'))
-    // Săgețile stânga/dreapta trec între file, cum se așteaptă la un tablist.
+    // Left/right arrows move between the tabs, as is expected of a tablist.
     t.addEventListener('keydown', (e) => {
       if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return
       e.preventDefault()
@@ -241,7 +242,7 @@ const DOCS = [
     })
   })
 
-  function dinAdresa(avertizeaza: boolean) {
+  function applyFromHash(warnOnMissing: boolean) {
     const anchor = location.hash.replace('#', '')
     if (!anchor) {
       showTab(0, 'niciun')
@@ -249,16 +250,17 @@ const DOCS = [
     }
     const fila = tabs.findIndex((t) => t.id === `t-${anchor}`)
     if (fila >= 0) showTab(fila, 'niciun')
-    // O ancoră care nu duce nicăieri lăsa pagina pe prima filă, fără niciun
-    // semn — așa a trăit `#formulare` până acum, deși fila se numește altfel.
-    else if (avertizeaza) {
+    // An anchor that leads nowhere left the page on the first tab, with no sign
+    // at all — that is how `#formulare` has lived until now, even though the tab
+    // is called something else.
+    else if (warnOnMissing) {
       console.warn(`[ghid] nu există fila „${anchor}”; linkul care trimite aici e vechi.`)
     }
   }
 
-  // Linkurile din alte pagini (/ghid#antiplagiat) deschid fila potrivită.
-  dinAdresa(true)
-  window.addEventListener('popstate', () => dinAdresa(false))
+  // Links from other pages (/ghid#antiplagiat) open the right tab.
+  applyFromHash(true)
+  window.addEventListener('popstate', () => applyFromHash(false))
 </script>
 
 <style>

@@ -1,147 +1,159 @@
 import { crc32 } from 'node:zlib'
 
 /**
- * Un ZIP fără compresie, scris de mână.
+ * A ZIP without compression, written by hand.
  *
- * Motivul pentru care nu este o dependență: portalul are trei — `pg`, `resend`,
- * `astro` — și singurul lucru cerut aici este să pui zece fișiere într-un plic.
- * Metoda „store” (0) nu comprimă nimic, deci nu are nevoie de niciun algoritm:
- * este doar antet, octeți, antet, octeți, apoi un cuprins la final. Capitolele
- * unei lucrări sunt oricum .docx și .pdf, adică deja comprimate — un deflate
- * peste ele ar câștiga procente și ar aduce un algoritm întreg.
+ * The reason it is not a dependency: the portal has three — `pg`, `resend`,
+ * `astro` — and the only thing asked for here is to put ten files into an
+ * envelope. The „store” method (0) compresses nothing, so it needs no algorithm
+ * at all: it is only header, bytes, header, bytes, then a directory at the end.
+ * The chapters of a thesis are .docx and .pdf anyway, that is, already
+ * compressed — a deflate over them would win percentages and would bring in a
+ * whole algorithm.
  *
- * Formatul este PKZIP APPNOTE 6.3.3, partea din el fără care nimic nu deschide
- * arhiva: semnăturile 0x04034b50 (fișier), 0x02014b50 (cuprins), 0x06054b50
- * (sfârșit). Se scrie cu Zip64 mereu absent, deci limita este 4 GB pe arhivă și
- * 65.535 de fișiere; o conversație nu ajunge la niciuna, iar plafonul de 15 MB
- * pe fișier o ține departe de amândouă.
+ * The format is PKZIP APPNOTE 6.3.3, the part of it without which nothing opens
+ * the archive: the signatures 0x04034b50 (file), 0x02014b50 (directory),
+ * 0x06054b50 (end). It is written with Zip64 always absent, so the limit is
+ * 4 GB per archive and 65,535 files; a conversation reaches neither, and the
+ * 15 MB per file ceiling keeps it far from both.
  *
- * Datele se scriu în antetul local, nu în descriptorul de la sfârșit: mărimea și
- * CRC-ul sunt cunoscute înainte, pentru că fișierele vin din memorie.
+ * The date is written in the local header, not in the descriptor at the end:
+ * the size and the CRC are known beforehand, because the files come from
+ * memory.
  */
 
-export interface IntrareZip {
-  /** Numele din arhivă. Se curăță aici: separatorii ar crea foldere. */
+export interface ZipEntry {
+  /** The name inside the archive. Cleaned here: separators would create folders. */
   nume: string
-  octeti: Buffer
-  /** Data fișierului, pentru ce arată arhiva la deschidere. */
-  data?: Date
+  bytes: Buffer
+  /** The file's date, for what the archive shows when opened. */
+  date?: Date
 }
 
 /**
- * Ora în format MS-DOS: doi octeți pentru oră, doi pentru dată, cu secunda
- * împărțită la doi (formatul are cinci biți pentru ea) și anii numărați din
- * 1980. Este ce înțeleg toate programele de arhivare, inclusiv Windows.
+ * The time in MS-DOS format: two bytes for the time, two for the date, with the
+ * second divided by two (the format has five bits for it) and the years counted
+ * from 1980. It is what every archiving program understands, Windows included.
  */
-function ceasDos(d: Date): { ora: number; data: number } {
+function dosTimestamp(d: Date): { time: number; date: number } {
   return {
-    ora: (d.getHours() << 11) | (d.getMinutes() << 5) | (Math.floor(d.getSeconds() / 2) & 0x1f),
-    data: ((d.getFullYear() - 1980) << 9) | ((d.getMonth() + 1) << 5) | d.getDate(),
+    time: (d.getHours() << 11) | (d.getMinutes() << 5) | (Math.floor(d.getSeconds() / 2) & 0x1f),
+    date: ((d.getFullYear() - 1980) << 9) | ((d.getMonth() + 1) << 5) | d.getDate(),
   }
 }
 
 /**
- * Nume de intrare curățat.
+ * A cleaned entry name.
  *
- * Un `/` ar crea un folder, un `..` ar urca din el, iar un nume gol ar produce o
- * intrare pe care unele programe refuză să o extragă. Numele originale vin de la
- * cine a încărcat fișierul, deci nu se pot crede pe cuvânt.
+ * A `/` would create a folder, a `..` would climb out of it, and an empty name
+ * would produce an entry that some programs refuse to extract. The original
+ * names come from whoever uploaded the file, so they cannot be taken at their
+ * word.
  */
-function numeSigur(nume: string, rezerva: string): string {
-  const curat = nume
+function safeName(nume: string, fallback: string): string {
+  const cleaned = nume
     .replace(/[/\\]+/g, '-')
     .replace(/^\.+/, '')
     .replace(/[\x00-\x1f\x7f]/g, '')
     .trim()
     .slice(0, 180)
-  return curat || rezerva
+  return cleaned || fallback
 }
 
 /**
- * Numele unice în arhivă.
+ * The names made unique inside the archive.
  *
- * Doi studenți trimit „capitolul 2.docx” în aceeași conversație, sau același
- * student îl trimite de două ori: într-o arhivă ar fi două intrări cu un nume,
- * iar dezarhivarea ar păstra una. Al doilea primește un indice.
+ * Two students send „capitolul 2.docx” in the same conversation, or the same
+ * student sends it twice: in one archive there would be two entries with one
+ * name, and unzipping would keep one. The second one gets an index.
  */
-function numeUnice(nume: string[]): string[] {
-  const vazute = new Map<string, number>()
+function uniqueNames(nume: string[]): string[] {
+  const seen = new Map<string, number>()
   return nume.map((n) => {
-    const cheie = n.toLowerCase()
-    const deCateOri = vazute.get(cheie) ?? 0
-    vazute.set(cheie, deCateOri + 1)
-    if (deCateOri === 0) return n
-    const punct = n.lastIndexOf('.')
-    return punct > 0
-      ? `${n.slice(0, punct)} (${deCateOri + 1})${n.slice(punct)}`
-      : `${n} (${deCateOri + 1})`
+    const key = n.toLowerCase()
+    const seenCount = seen.get(key) ?? 0
+    seen.set(key, seenCount + 1)
+    if (seenCount === 0) return n
+    const dot = n.lastIndexOf('.')
+    return dot > 0
+      ? `${n.slice(0, dot)} (${seenCount + 1})${n.slice(dot)}`
+      : `${n} (${seenCount + 1})`
   })
 }
 
-export function construiesteZip(intrari: IntrareZip[]): Buffer {
-  const bucati: Buffer[] = []
-  const cuprins: Buffer[] = []
-  let deplasare = 0
+/**
+ * The archive, from entries whose names are or are not to be trusted.
+ *
+ * `caiRealeDeFisier` turns off both the cleaning and the uniquing: an .xlsx is
+ * a ZIP whose entries *are* paths — `xl/worksheets/sheet1.xml` — and a slash
+ * replaced with a dash there produces a file no spreadsheet opens. It is only
+ * ever set by code that writes the names itself; anything coming from a person
+ * goes through the default.
+ */
+export function buildZip(entries: ZipEntry[], caiRealeDeFisier = false): Buffer {
+  const parts: Buffer[] = []
+  const directory: Buffer[] = []
+  let offset = 0
 
-  const numeCurate = numeUnice(
-    intrari.map((i, idx) => numeSigur(i.nume, `fisier-${idx + 1}.bin`)),
-  )
+  const cleanNames = caiRealeDeFisier
+    ? entries.map((i) => i.nume)
+    : uniqueNames(entries.map((i, idx) => safeName(i.nume, `fisier-${idx + 1}.bin`)))
 
-  intrari.forEach((intrare, idx) => {
-    const nume = Buffer.from(numeCurate[idx], 'utf8')
-    const suma = crc32(intrare.octeti)
-    const marime = intrare.octeti.byteLength
-    const { ora, data } = ceasDos(intrare.data ?? new Date())
+  entries.forEach((entry, idx) => {
+    const nume = Buffer.from(cleanNames[idx], 'utf8')
+    const checksum = crc32(entry.bytes)
+    const size = entry.bytes.byteLength
+    const { time, date } = dosTimestamp(entry.date ?? new Date())
 
-    const antet = Buffer.alloc(30)
-    antet.writeUInt32LE(0x04034b50, 0)
-    antet.writeUInt16LE(20, 4) // versiunea minimă: 2.0
-    // Bitul 11 spune că numele este UTF-8; fără el diacriticele ajung mojibake.
-    antet.writeUInt16LE(0x0800, 6)
-    antet.writeUInt16LE(0, 8) // metoda: store
-    antet.writeUInt16LE(ora, 10)
-    antet.writeUInt16LE(data, 12)
-    antet.writeUInt32LE(suma, 14)
-    antet.writeUInt32LE(marime, 18)
-    antet.writeUInt32LE(marime, 22)
-    antet.writeUInt16LE(nume.byteLength, 26)
-    antet.writeUInt16LE(0, 28) // fără câmpuri extra
+    const localHeader = Buffer.alloc(30)
+    localHeader.writeUInt32LE(0x04034b50, 0)
+    localHeader.writeUInt16LE(20, 4) // minimum version: 2.0
+    // Bit 11 says the name is UTF-8; without it the diacritics end up mojibake.
+    localHeader.writeUInt16LE(0x0800, 6)
+    localHeader.writeUInt16LE(0, 8) // method: store
+    localHeader.writeUInt16LE(time, 10)
+    localHeader.writeUInt16LE(date, 12)
+    localHeader.writeUInt32LE(checksum, 14)
+    localHeader.writeUInt32LE(size, 18)
+    localHeader.writeUInt32LE(size, 22)
+    localHeader.writeUInt16LE(nume.byteLength, 26)
+    localHeader.writeUInt16LE(0, 28) // no extra fields
 
-    const inregistrare = Buffer.alloc(46)
-    inregistrare.writeUInt32LE(0x02014b50, 0)
-    inregistrare.writeUInt16LE(20, 4) // scris de versiunea 2.0
-    inregistrare.writeUInt16LE(20, 6)
-    inregistrare.writeUInt16LE(0x0800, 8)
-    inregistrare.writeUInt16LE(0, 10)
-    inregistrare.writeUInt16LE(ora, 12)
-    inregistrare.writeUInt16LE(data, 14)
-    inregistrare.writeUInt32LE(suma, 16)
-    inregistrare.writeUInt32LE(marime, 20)
-    inregistrare.writeUInt32LE(marime, 24)
-    inregistrare.writeUInt16LE(nume.byteLength, 28)
-    inregistrare.writeUInt16LE(0, 30)
-    inregistrare.writeUInt16LE(0, 32)
-    inregistrare.writeUInt16LE(0, 34)
-    inregistrare.writeUInt16LE(0, 36)
-    inregistrare.writeUInt32LE(0, 38)
-    inregistrare.writeUInt32LE(deplasare, 42)
+    const directoryRecord = Buffer.alloc(46)
+    directoryRecord.writeUInt32LE(0x02014b50, 0)
+    directoryRecord.writeUInt16LE(20, 4) // written by version 2.0
+    directoryRecord.writeUInt16LE(20, 6)
+    directoryRecord.writeUInt16LE(0x0800, 8)
+    directoryRecord.writeUInt16LE(0, 10)
+    directoryRecord.writeUInt16LE(time, 12)
+    directoryRecord.writeUInt16LE(date, 14)
+    directoryRecord.writeUInt32LE(checksum, 16)
+    directoryRecord.writeUInt32LE(size, 20)
+    directoryRecord.writeUInt32LE(size, 24)
+    directoryRecord.writeUInt16LE(nume.byteLength, 28)
+    directoryRecord.writeUInt16LE(0, 30)
+    directoryRecord.writeUInt16LE(0, 32)
+    directoryRecord.writeUInt16LE(0, 34)
+    directoryRecord.writeUInt16LE(0, 36)
+    directoryRecord.writeUInt32LE(0, 38)
+    directoryRecord.writeUInt32LE(offset, 42)
 
-    bucati.push(antet, nume, intrare.octeti)
-    cuprins.push(inregistrare, nume)
-    deplasare += antet.byteLength + nume.byteLength + marime
+    parts.push(localHeader, nume, entry.bytes)
+    directory.push(directoryRecord, nume)
+    offset += localHeader.byteLength + nume.byteLength + size
   })
 
-  const cuprinsIntreg = Buffer.concat(cuprins)
+  const directoryBytes = Buffer.concat(directory)
 
-  const sfarsit = Buffer.alloc(22)
-  sfarsit.writeUInt32LE(0x06054b50, 0)
-  sfarsit.writeUInt16LE(0, 4) // un singur volum
-  sfarsit.writeUInt16LE(0, 6)
-  sfarsit.writeUInt16LE(intrari.length, 8)
-  sfarsit.writeUInt16LE(intrari.length, 10)
-  sfarsit.writeUInt32LE(cuprinsIntreg.byteLength, 12)
-  sfarsit.writeUInt32LE(deplasare, 16)
-  sfarsit.writeUInt16LE(0, 20) // fără comentariu
+  const endRecord = Buffer.alloc(22)
+  endRecord.writeUInt32LE(0x06054b50, 0)
+  endRecord.writeUInt16LE(0, 4) // a single volume
+  endRecord.writeUInt16LE(0, 6)
+  endRecord.writeUInt16LE(entries.length, 8)
+  endRecord.writeUInt16LE(entries.length, 10)
+  endRecord.writeUInt32LE(directoryBytes.byteLength, 12)
+  endRecord.writeUInt32LE(offset, 16)
+  endRecord.writeUInt16LE(0, 20) // no comment
 
-  return Buffer.concat([...bucati, cuprinsIntreg, sfarsit])
+  return Buffer.concat([...parts, directoryBytes, endRecord])
 }

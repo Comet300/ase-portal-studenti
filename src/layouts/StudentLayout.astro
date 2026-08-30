@@ -2,57 +2,73 @@
 import BaseLayout from './BaseLayout.astro'
 import Avatar from '../components/Avatar.astro'
 import Clopotel from '../components/Clopotel.astro'
-import { ECRANE } from '../lib/navigare'
+import Erou from '../components/Erou.astro'
+import { SCREENS } from '../lib/navigation'
 import { currentYearLabel } from '../lib/years'
 import { hasApprovedRequest } from '../lib/repo'
 
 interface Props {
   title: string
-  /** Titlul din bara browserului, când cel din pagină nu e bun de semn de carte. */
+  /** The title in the browser bar, when the one in the page is no good as a
+   * bookmark. */
   docTitle?: string
   description?: string
   active?: string
+  /** The sentence under the title, on the banner. One sentence, not a paragraph. */
+  lede?: string
+  /** The way back, when the screen has a parent worth naming. */
+  inapoi?: { href: string; text: string }
+  /**
+   * The banner at the top of the screen.
+   *
+   * Every screen carries one, because the faculty's own site does and the two
+   * are read as one place. `amplu` is for the screens somebody arrives at —
+   * home, the guide; `fara` is for the ones that write their own opening, like
+   * a public profile.
+   */
+  erou?: 'compact' | 'amplu' | 'fara'
 }
 
-const { title, docTitle, description, active } = Astro.props
+const { title, docTitle, description, active, lede, inapoi, erou = 'compact' } = Astro.props
 const u = Astro.locals.user
-const sesiune = await currentYearLabel()
+const yearLabel = await currentYearLabel()
 
-const areLucrare = u?.role === 'student' && (await hasApprovedRequest(u.id))
+const hasThesis = u?.role === 'student' && (await hasApprovedRequest(u.id))
 
-/* Un vizitator primea în bară patru legături care îl trimiteau direct în ecranul
- * de autentificare — inclusiv „Cererile Mele”, care pentru el nu înseamnă nimic.
- * Tot ce cere sesiune stă acum într-un singur loc, în spatele lui `u`.
+/* Every screen in the bar is behind the session gate now, so with no session
+ * there is nothing to put in it: the only page this layout still renders for a
+ * signed-out visitor is the privacy notice, and there a row of links that all
+ * bounce off the gate is seven ways of saying „autentifică-te”. The one way in
+ * stays as the button on the right.
  *
- * Iar odată ce cererea e aprobată, pagina nu mai este despre cereri: este despre
- * lucrare, și se numește așa. */
-const linkuri = [
-  { href: '/', text: ECRANE['/'], cheie: 'acasa' },
-  { href: '/coordonatori', text: ECRANE['/coordonatori'], cheie: 'coordonatori' },
-  ...(u
-    ? [
-        {
-          href: '/cererile-mele',
-          text: areLucrare ? 'Lucrarea mea' : ECRANE['/cererile-mele'],
-          cheie: 'cereri',
-        },
-        { href: '/mesaje', text: ECRANE['/mesaje'], cheie: 'mesaje' },
-        { href: '/consultatii', text: ECRANE['/consultatii'], cheie: 'consultatii' },
-        { href: '/arhiva', text: ECRANE['/arhiva'], cheie: 'arhiva' },
-      ]
-    : []),
-  { href: '/ghid', text: ECRANE['/ghid'], cheie: 'ghid' },
-]
+ * And once the request is approved, the page is no longer about requests: it is
+ * about the thesis, and it is named that way. */
+const navLinks = u
+  ? [
+      { href: '/', text: SCREENS['/'], key: 'acasa' },
+      { href: '/coordonatori', text: SCREENS['/coordonatori'], key: 'coordonatori' },
+      {
+        href: '/lucrarea-mea',
+        text: hasThesis ? SCREENS['/lucrarea-mea'] : 'Cererea mea',
+        key: 'cereri',
+      },
+      { href: '/mesaje', text: SCREENS['/mesaje'], key: 'mesaje' },
+      { href: '/consultatii', text: SCREENS['/consultatii'], key: 'consultatii' },
+      { href: '/arhiva', text: SCREENS['/arhiva'], key: 'arhiva' },
+      { href: '/ghid', text: SCREENS['/ghid'], key: 'ghid' },
+    ]
+  : []
 
-/* Doar în meniul de telefon: pe ecran mic avatarul se pierde ușor, iar el este
- * singurul drum către cont și deconectare. Butonul „Zona cadrelor didactice” nu
- * încape în bară alături de marcă și de meniu — un cadru didactic care deschidea
- * o pagină de student pe telefon împingea antetul cu 89px în afara ecranului. */
-const linkuriCont = [
+/* Only in the phone menu: on a small screen the avatar is easily lost, and it
+ * is the only road to the account and to signing out. The „Zona cadrelor
+ * didactice” button does not fit in the bar beside the mark and the menu — a
+ * teacher who opened a student page on a phone pushed the header 89px off the
+ * screen. */
+const accountLinks = [
   ...(u && u.role !== 'student'
-    ? [{ href: '/profesor', text: 'Zona cadrelor didactice', cheie: 'profesor' }]
+    ? [{ href: '/profesor', text: 'Zona cadrelor didactice', key: 'profesor' }]
     : []),
-  { href: '/contul-meu', text: ECRANE['/contul-meu'], cheie: 'cont' },
+  { href: '/contul-meu', text: SCREENS['/contul-meu'], key: 'cont' },
 ]
 ---
 
@@ -69,11 +85,11 @@ const linkuriCont = [
 
       <nav class="nav" aria-label="Navigație principală">
         {
-          linkuri.map((l) => (
+          navLinks.map((l) => (
             <a
               href={l.href}
-              class:list={['nav__link', { 'is-active': active === l.cheie }]}
-              aria-current={active === l.cheie ? 'page' : undefined}
+              class:list={['nav__link', { 'is-active': active === l.key }]}
+              aria-current={active === l.key ? 'page' : undefined}
             >
               {l.text}
             </a>
@@ -90,12 +106,12 @@ const linkuriCont = [
                   Zona cadrelor didactice
                 </a>
               )}
-              <Clopotel baseMesaje="/mesaje" />
+              <Clopotel messagesBase="/mesaje" />
 
-              {/* Avatarul era un link de 34px, fără nume și fără etichetă, iar
-                  deconectarea nu exista nicăieri pe desktop: se ajungea la ea
-                  doar prin pagina contului. Aceeași mecanică de `<details>` ca
-                  la selectorul de an — fără JavaScript. */}
+              {/* The avatar was a 34px link, with no name and no label, and
+                  signing out existed nowhere on desktop: it was reached only
+                  through the account page. The same `<details>` mechanics as
+                  at the year picker — without JavaScript. */}
               <details class="cont">
                 <summary class="cont__buton" aria-label={`Meniul contului, ${u.name}`}>
                   <Avatar name={u.name} src={u.avatar_path} />
@@ -109,9 +125,10 @@ const linkuriCont = [
                     <strong>{u.name}</strong>
                     <small>{u.email}</small>
                   </p>
-                  {/* Ctrl+K nu se descoperă singur, iar bara de sus nu are loc
-                      pentru încă un buton: intră în meniul contului, unde se
-                      caută oricum lucrurile care nu sunt navigație. */}
+                  {/* Ctrl+K is not discovered on its own, and the top bar has
+                      no room for one more button: it goes into the account
+                      menu, where the things that are not navigation are looked
+                      for anyway. */}
                   <button class="cont__optiune" type="button" data-paleta>
                     Mergi la… <kbd class="cont__scurtatura">⌘K</kbd>
                   </button>
@@ -131,37 +148,58 @@ const linkuriCont = [
             </a>
           )
         }
-        <button class="hamburger" aria-label="Deschide meniul" aria-expanded="false" aria-controls="meniu-mobil">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-            ><path d="M3 6h18M3 12h18M3 18h18"></path></svg
-          >
-        </button>
+        {/* With no session the drawer has nothing in it: the button opened an
+            empty panel over the page. */}
+        {u && (
+          <button class="hamburger" aria-label="Deschide meniul" aria-expanded="false" aria-controls="meniu-mobil">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M3 6h18M3 12h18M3 18h18" />
+            </svg>
+          </button>
+        )}
       </div>
     </div>
-
-    <nav class="meniu-mobil" id="meniu-mobil" aria-label="Navigație mobilă" hidden>
-      {
-        [...linkuri, ...(u ? linkuriCont : [])].map((l) => (
-          <a
-            href={l.href}
-            class:list={['meniu-mobil__link', { 'is-active': active === l.cheie }]}
-            aria-current={active === l.cheie ? 'page' : undefined}
-          >
-            {l.text}
-          </a>
-        ))
-      }
-      {/* Deconectarea trebuie să existe și aici: pe telefon meniul este singurul
-          loc în care se ajunge la ea. */}
-      {u && (
-        <form method="POST" action="/api/deconectare">
-          <button class="meniu-mobil__link meniu-mobil__iesire" type="submit">Deconectare</button>
-        </form>
-      )}
-    </nav>
   </header>
 
-  <main id="continut">
+  {/* The drawer is a sibling of the bar, not a child of it, and that is the
+      whole of a bug that made the phone menu useless: `.topbar` is
+      `position: sticky` with a `z-index`, so it opens a stacking context, and
+      the curtain the menu script appends to `<body>` sits above everything
+      inside it — including a drawer that asks for a higher layer. Every tap on
+      a link landed on the curtain, whose only listener closes the menu, so the
+      menu shut and the page never changed. The teacher sidebar never had the
+      bug because it hangs off the shell, not off the bar. Moving it out also
+      takes a `position: fixed` element out from under `view-transition-name`,
+      which suppresses fixed positioning while a transition runs. */}
+  <nav class="meniu-mobil" id="meniu-mobil" aria-label="Navigație mobilă" hidden>
+    {
+      [...navLinks, ...(u ? accountLinks : [])].map((l) => (
+        <a
+          href={l.href}
+          class:list={['meniu-mobil__link', { 'is-active': active === l.key }]}
+          aria-current={active === l.key ? 'page' : undefined}
+        >
+          {l.text}
+        </a>
+      ))
+    }
+    {/* Signing out has to exist here as well: on a phone the menu is the
+        only place from which it is reached. */}
+    {u && (
+      <form method="POST" action="/api/deconectare">
+        <button class="meniu-mobil__link meniu-mobil__iesire" type="submit">Deconectare</button>
+      </form>
+    )}
+  </nav>
+
+  <main id="continut" class:list={{ 'main--erou': erou !== 'fara' }}>
+    {
+      erou !== 'fara' && (
+        <Erou titlu={title} lede={lede} inapoi={inapoi} supratitlu={`Sesiunea de Finalizare a Studiilor ${yearLabel}`} variant={erou} incadrat>
+          <slot name="actiuni" slot="actiuni" />
+        </Erou>
+      )
+    }
     <slot />
   </main>
 
@@ -171,19 +209,19 @@ const linkuriCont = [
         Academia de Studii Economice din București · Facultatea de Marketing
       </p>
       <p class="muted text-sm">
-        Sesiunea de Finalizare a Studiilor {sesiune}
+        Sesiunea de Finalizare a Studiilor {yearLabel}
       </p>
-      {/* Nota de informare trebuie să fie găsibilă de pe orice pagină. */}
+      {/* The privacy notice has to be findable from any page. */}
       <a class="muted text-sm link" href="/confidentialitate">Confidențialitate</a>
     </div>
   </footer>
 </BaseLayout>
 
 <script>
-  import { porneste, panouri } from '../scripts/meniu'
+  import { start, panels } from '../scripts/menu'
 
-  porneste({ buton: '.hamburger', panou: '#meniu-mobil' })
-  panouri('details.cont')
+  start({ button: '.hamburger', panel: '#meniu-mobil' })
+  panels('details.cont')
 </script>
 
 <style>
@@ -208,8 +246,8 @@ const linkuriCont = [
     gap: var(--s-3);
     text-decoration: none;
     color: var(--ink);
-    /* `flex: none` pe ambele capete însemna că bara nu putea scădea sub suma
-       lor: pe telefon depășea ecranul în loc să se strângă. */
+    /* `flex: none` on both ends meant the bar could not shrink below their
+       sum: on a phone it overflowed the screen instead of tightening up. */
     min-width: 0;
   }
   .brand__text strong,
@@ -267,7 +305,7 @@ const linkuriCont = [
     color: var(--ink);
   }
 
-  /* Starea curentă este marcată cu roșu — sigiliul, nu decor. */
+  /* The current state is marked in red — the seal, not decoration. */
   .nav__link.is-active {
     color: var(--red);
     font-weight: 600;
@@ -281,7 +319,7 @@ const linkuriCont = [
     flex: none;
   }
 
-  /* --- meniul contului ----------------------------------------------------- */
+  /* --- the account menu --------------------------------------------------- */
 
   .cont {
     position: relative;
@@ -391,7 +429,8 @@ const linkuriCont = [
     height: 18px;
   }
 
-  /* Un panou care intră dinspre margine, nu o listă care apare brusc sub bară. */
+  /* A panel that comes in from the edge, not a list that appears abruptly
+     under the bar. */
   .meniu-mobil {
     display: none;
     flex-direction: column;
@@ -455,10 +494,33 @@ const linkuriCont = [
     padding-block: var(--s-6) var(--s-7);
   }
 
+  /* Banda începe lipită de bară — ea este antetul paginii, nu primul element
+     din conținut. Aerul de sub ea îl ține banda însăși. */
+  .main--erou {
+    padding-top: 0;
+  }
+  .main--erou :global(.erou) {
+    margin-bottom: var(--s-6);
+  }
+
+  /* Subsolul este banda închisă de pe mk.ase.ro: aceeași culoare cu care se
+     termină site-ul facultății, ca portalul să se închidă la fel cum se
+     deschide — cu titlul pe fundal închis, sus. */
   .footer {
-    border-top: 1px solid var(--border);
-    background: var(--surface);
+    background: var(--hero-ground);
     padding-block: var(--s-5);
+    /* Roșul pe fundalul închis dă 1.9:1: inelul de focus se moștenește alb,
+       exact ca în bara laterală. */
+    --focus: #fff;
+  }
+  .footer :global(.muted) {
+    color: var(--dark-ink-muted);
+  }
+  .footer :global(a.link) {
+    color: var(--dark-ink-soft);
+  }
+  .footer :global(a.link:hover) {
+    color: #fff;
   }
 
   @media (max-width: 900px) {
@@ -474,8 +536,9 @@ const linkuriCont = [
     .brand__text small {
       display: none;
     }
-    /* „Zona cadrelor didactice” trece în meniu: alături de marcă, avatar și
-       hamburger nu încăpea, și împingea antetul în afara ecranului. */
+    /* „Zona cadrelor didactice” moves into the menu: beside the mark, the
+       avatar and the hamburger it did not fit, and it pushed the header off
+       the screen. */
     .topbar__end .btn--secondary {
       display: none;
     }

@@ -2,12 +2,13 @@
 import Avatar from '../../components/Avatar.astro'
 import ProfesorLayout from '../../layouts/ProfesorLayout.astro'
 import StudentLayout from '../../layouts/StudentLayout.astro'
-import { numeleEcranului } from '../../lib/navigare'
+import { screenName } from '../../lib/navigation'
 import { internalPath } from '../../lib/http'
 import { ROLE_LABELS } from '../../lib/auth'
 import { queryOne, query } from '../../lib/db'
 import { id as routeId } from '../../lib/ids'
 import { formatDate, studentRequests, teacherSeats } from '../../lib/repo'
+import { officialName } from '../../lib/text'
 import { groupLabel, languageLabel, levelLabel } from '../../lib/years'
 
 /**
@@ -41,15 +42,17 @@ const person = await queryOne<{
   interests: string | null
   website: string | null
   student_number: string | null
+  father_initial: string | null
   program: string | null
   specialization: string | null
   study_language: string
   study_group: string | null
+  study_series: string | null
   study_year: number | null
 }>(
   `SELECT id, name, email, role, academic_title, department, office, bio, avatar_path,
-          interests, website, student_number, program, specialization,
-          study_language, study_group, study_year
+          interests, website, student_number, father_initial, program, specialization,
+          study_language, study_group, study_series, study_year
      FROM users WHERE id = $1`,
   [id],
 )
@@ -61,18 +64,27 @@ const isMe = person.id === me.id
 
 const seats = isTeacherProfile ? await teacherSeats(person.id) : null
 
-// Un student cu o cerere în lucru nu poate depune alta; butonul trebuie să știe.
-const areCerereActiva =
+// A student with a request under way cannot submit another; the button has to
+// know that.
+const hasActiveRequest =
   me.role === 'student' &&
   (await studentRequests(me.id)).some((c) => c.status === 'pending' || c.status === 'approved')
 
 const topics = isTeacherProfile
-  ? await query<{ id: string; title: string; level: string; language: string; methods: string | null }>(
-      `SELECT id, title, level, language, methods
-         FROM topics
-        WHERE teacher_id = $1 AND is_active
-          AND academic_year_id = (SELECT id FROM academic_years WHERE is_current)
-        ORDER BY title`,
+  ? await query<{
+      id: string
+      title: string
+      level: string
+      language: string
+      domain: string | null
+      programme_name: string | null
+    }>(
+      `SELECT t.id, t.title, t.level, t.language, t.domain, p.name AS programme_name
+         FROM topics t
+         LEFT JOIN study_programmes p ON p.id = t.programme_id
+        WHERE t.teacher_id = $1 AND t.is_active
+          AND t.academic_year_id = (SELECT id FROM academic_years WHERE is_current)
+        ORDER BY t.title`,
       [person.id],
     )
   : []
@@ -103,66 +115,73 @@ const coordination = !isTeacherProfile
     )
   : null
 
-const editHref = isTeacherProfile ? '/profesor/arhiva' : '/contul-meu'
+/* Both roles edit their profile in the same place now. It used to send a
+ * coordinator into „Arhivă & Profil”, where the form was the last of six
+ * sections — the button said „Editează profilul” and delivered an archive. */
+const editHref = '/contul-meu'
 
-/* Pagina se randează în carcasa celui care o citește.
+/* The page renders in the shell of whoever is reading it.
  *
- * Era mereu layout-ul de student, deci un cadru didactic care deschidea profilul
- * unui student din coada de cereri își pierdea bara laterală și nu mai avea drum
- * înapoi — pagina arăta ca alt portal.
+ * It was always the student layout, so a teacher who opened a student's profile
+ * from the request queue lost their sidebar and had no way back — the page
+ * looked like a different portal.
  *
- * `?de_la=` poartă drumul de întoarcere, trecut prin `internalPath` ca o adresă
- * externă strecurată acolo să nu poată scoate pe nimeni din portal. */
-const Carcasa = me.role === 'student' ? StudentLayout : ProfesorLayout
+ * `?de_la=` carries the way back, passed through `internalPath` so that an
+ * external address slipped in there cannot take anyone out of the portal. */
+const Shell = me.role === 'student' ? StudentLayout : ProfesorLayout
 
-/* Drumul înapoi, chiar și când cel care a trimis aici a uitat să îl scrie.
+/* The way back, even when whoever sent you here forgot to write it.
  *
- * `?de_la=` există, dar dintre cele opt legături către profil îl puneau două,
- * așa că butonul „Înapoi” lipsea de pe majoritatea drumurilor — inclusiv de pe
- * cel din coada de cereri, unde tocmai el trebuie. Când parametrul nu e dat, se
- * ia din `Referer`, dacă e o pagină a portalului: același lucru pe care l-ar fi
- * scris apelantul, doar că nu mai depinde de el să și-l amintească.
+ * `?de_la=` exists, but out of the eight links to a profile only two set it, so
+ * the „Înapoi” button was missing from most of the routes — including the one
+ * from the request queue, where it is exactly the one that is needed. When the
+ * parameter is not given, it is taken from `Referer`, if that is a page of the
+ * portal: the same thing the caller would have written, only it no longer
+ * depends on the caller to remember it.
  *
- * Tot prin `internalPath`, tot cu aceeași rezervă: un `Referer` este text
- * controlat de client. Nu se acceptă întoarcerea la profilul curent — ar fi un
- * buton care nu face nimic. */
-const deLa = Astro.url.searchParams.get('de_la')
-const trimisDe = (() => {
-  if (deLa) return internalPath(deLa, '')
+ * Through `internalPath` as well, with the same reservation: a `Referer` is
+ * text controlled by the client. A return to the current profile is not
+ * accepted — it would be a button that does nothing. */
+const fromParam = Astro.url.searchParams.get('de_la')
+const referrerPath = (() => {
+  if (fromParam) return internalPath(fromParam, '')
   const referer = Astro.request.headers.get('referer')
   if (!referer) return ''
   try {
-    const adresa = new URL(referer)
-    if (adresa.origin !== Astro.url.origin) return ''
-    if (adresa.pathname === Astro.url.pathname) return ''
-    return internalPath(adresa.pathname + adresa.search, '')
+    const refererUrl = new URL(referer)
+    if (refererUrl.origin !== Astro.url.origin) return ''
+    if (refererUrl.pathname === Astro.url.pathname) return ''
+    return internalPath(refererUrl.pathname + refererUrl.search, '')
   } catch {
     return ''
   }
 })()
-const inapoi = trimisDe
+/* The way back knows where it leads, so it says so: „Înapoi” on its own asks
+ * you to remember where you came from, which is exactly what you do not do
+ * after three profiles opened. It rides on the banner now, next to the title,
+ * instead of being the first line of the page body. */
+const inapoi = referrerPath
 
-// Pagina depinde de antetul de la care a venit, deci intră în cheia de cache.
+// The page depends on the header it came from, so that header enters the cache
+// key.
 Astro.response.headers.set('vary', 'referer')
 ---
 
-<Carcasa title={person.name} description={`Profilul ${person.name}`} lede={undefined}>
+<Shell
+  title={officialName(person)}
+  docTitle={person.name}
+  description={`Profilul ${person.name}`}
+  lede={ROLE_LABELS[person.role] + (person.department ? ` · ${person.department}` : '')}
+  inapoi={inapoi ? { href: inapoi, text: screenName(inapoi) ? `Înapoi la ${screenName(inapoi)}` : 'Înapoi' } : undefined}
+>
   <div class="container stack stack--loose">
-    {inapoi && (
-      <a class="inapoi" href={inapoi}>
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-          <path d="M19 12H5M12 19l-7-7 7-7" />
-        </svg>
-        {/* Butonul știe unde duce, deci o spune: „Înapoi” singur cere să ții minte
-            de unde ai venit, exact ce nu faci după trei profiluri deschise. */}
-        {numeleEcranului(inapoi) ? `Înapoi la ${numeleEcranului(inapoi)}` : 'Înapoi'}
-      </a>
-    )}
     <section class="panel">
       <div class="panel__body identitate">
         <Avatar name={person.name} src={person.avatar_path} size="lg" />
         <div class="stack stack--tight" style="gap:4px;flex:1;min-width:0">
-          <h1 class="identitate__nume">{person.name}</h1>
+          {/* A student's own official name, the one the register carries; a
+              teacher has no initial on record, so this is their plain name. */}
+          <p class="identitate__nume">{officialName(person)}</p>
           <p class="muted">
             {ROLE_LABELS[person.role]}
             {person.department ? ` · ${person.department}` : ''}
@@ -187,12 +206,12 @@ Astro.response.headers.set('vary', 'referer')
 
         <div class="row row--wrap" style="gap:var(--s-2)">
           {isMe && <a class="btn btn--secondary btn--sm" href={editHref}>Editează profilul</a>}
-          {/* Butonul nu ținea cont de faptul că studentul are deja o cerere:
-              cel mai vizibil control al paginii ducea într-un formular care
-              rămânea ascuns, fără niciun mesaj. */}
+          {/* The button took no account of the student already having a
+              request: the most visible control on the page led to a form that
+              stayed hidden, with no message at all. */}
           {
             !isMe && me.role === 'student' && isTeacherProfile && (
-              areCerereActiva ? (
+              hasActiveRequest ? (
                 <span class="hint">
                   Ai deja o cerere activă. Poți depune alta doar după ce o retragi sau primești o
                   decizie.
@@ -202,7 +221,7 @@ Astro.response.headers.set('vary', 'referer')
                   {person.name} nu mai are locuri libere în această sesiune.
                 </span>
               ) : (
-                <a class="btn btn--primary btn--sm" href={`/cererile-mele?coordonator=${person.id}`}>
+                <a class="btn btn--primary btn--sm" href={`/lucrarea-mea?coordonator=${person.id}`}>
                   Depune cerere
                 </a>
               )
@@ -211,7 +230,7 @@ Astro.response.headers.set('vary', 'referer')
         </div>
       </div>
 
-      <dl class="detalii">
+      <dl class="details">
         <div>
           <dt>Email instituțional</dt>
           <dd><a href={`mailto:${person.email}`}>{person.email}</a></dd>
@@ -253,7 +272,7 @@ Astro.response.headers.set('vary', 'referer')
           <div class="panel__header">
             <h2 class="section-title">Despre</h2>
           </div>
-          <p class="panel__body descriere">{person.bio}</p>
+          <p class="panel__body description">{person.bio}</p>
         </section>
       )
     }
@@ -266,12 +285,12 @@ Astro.response.headers.set('vary', 'referer')
               {isTeacherProfile ? 'Direcții de cercetare' : 'Domenii de interes'}
             </h2>
           </div>
-          <p class="panel__body descriere">{person.interests}</p>
+          <p class="panel__body description">{person.interests}</p>
         </section>
       )
     }
 
-    {/* --------------------------------------------------- cadru didactic */}
+    {/* ---------------------------------------------------------- teacher */}
     {
       isTeacherProfile && (
         <section class="panel">
@@ -295,8 +314,11 @@ Astro.response.headers.set('vary', 'referer')
                 <li>
                   <div class="stack stack--tight" style="gap:2px">
                     <strong>{t.title}</strong>
-                    {t.methods && (
-                      <span class="muted text-xs">Metode: {t.methods}</span>
+                    {t.domain && t.domain !== '—' && (
+                      <span class="muted text-xs">Domeniu: {t.domain}</span>
+                    )}
+                    {t.programme_name && (
+                      <span class="muted text-xs">{t.programme_name}</span>
                     )}
                   </div>
                   <span class="badge badge--taxon">
@@ -369,29 +391,9 @@ Astro.response.headers.set('vary', 'referer')
       )
     }
   </div>
-</Carcasa>
+</Shell>
 
 <style>
-  /* Drumul înapoi, când pagina a fost deschisă din altă parte a portalului. */
-  .inapoi {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--s-2);
-    align-self: flex-start;
-    min-height: var(--tap);
-    font-size: var(--t-sm);
-    font-weight: 500;
-    color: var(--ink-soft);
-    text-decoration: none;
-  }
-  .inapoi:hover {
-    color: var(--red);
-  }
-  .inapoi svg {
-    width: 15px;
-    height: 15px;
-  }
-
   .identitate {
     display: flex;
     align-items: center;
@@ -406,25 +408,25 @@ Astro.response.headers.set('vary', 'referer')
     line-height: 1.2;
   }
 
-  .detalii {
+  .details {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
     gap: var(--s-4);
     margin: 0;
     padding: 0 var(--s-5) var(--s-5);
   }
-  .detalii dt {
+  .details dt {
     font-size: var(--t-xs);
     color: var(--ink-muted);
   }
-  .detalii dd {
+  .details dd {
     margin: 0;
     font-size: var(--t-sm);
     font-weight: 500;
     overflow-wrap: anywhere;
   }
 
-  .descriere {
+  .description {
     font-size: var(--t-sm);
     color: var(--ink-soft);
     white-space: pre-wrap;

@@ -8,10 +8,21 @@ import { redirectWithNotice, sessionExpired } from '../../lib/http'
 import { formAction } from '../../lib/forms'
 import { id as formId } from '../../lib/ids'
 
-/** Rezervarea și anularea unui interval de consultație, cu invitație în calendar. */
+/** Booking and cancelling a consultation slot, with a calendar invitation. */
 export const POST: APIRoute = async ({ request, locals, url }) => {
   const u = locals.user
   if (!u) return sessionExpired()
+  /* Consultation places are for students. Until public hours existed the
+   * statement below said so by itself — it asked for an approved request — but
+   * a public hour has no such condition, and „Prof. Ionescu a rezervat ora
+   * dumneavoastră” is not a row anybody wants to read. */
+  if (u.role !== 'student') {
+    return redirectWithNotice(
+      '/profesor/consultatii',
+      'Locurile la consultații se rezervă de către studenți.',
+      true,
+    )
+  }
 
   const form = await request.formData()
   const action = formAction(form) || 'rezerva'
@@ -21,20 +32,20 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
   const back = (message: string, isError = false) =>
     redirectWithNotice('/consultatii', message, isError)
 
-  // Un id absent nu s-ar potrivi cu niciun rând oricum; refuzat aici, mesajul
-  // este despre ce s-a întâmplat, nu „intervalul nu mai este disponibil”.
-  if (!slotId) return back('Intervalul nu a fost identificat.', true)
+  // A missing id would not match any row anyway; refused here, the message is
+  // about what happened, not "the slot is no longer available".
+  if (!slotId) return back('Ora de consultație nu a fost identificată. Reîncarcă pagina.', true)
 
   if (action === 'anuleaza') {
-    /* Anularea trebuie să ajungă și la coordonator.
+    /* The cancellation has to reach the coordinator as well.
      *
-     * Dialogul de confirmare îi spunea studentului, negru pe alb, că
-     * „coordonatorul vede anularea”. Codul făcea un singur UPDATE și se
-     * întorcea: niciun email, niciun eveniment în fir, nicio anulare în
-     * calendar — deși `ics.ts` are `METHOD:CANCEL` scris de la început și
-     * nimeni nu i-l cerea vreodată. Ora rămânea în calendarul cadrului
-     * didactic pentru totdeauna. */
-    const anulata = await queryOne<{
+     * The confirmation dialog told the student, in black and white, that "the
+     * coordinator sees the cancellation". The code did a single UPDATE and
+     * returned: no email, no event in the thread, no cancellation in the
+     * calendar — even though `ics.ts` has had `METHOD:CANCEL` written in it
+     * from the start and nobody ever asked it for one. The hour stayed in the
+     * teacher's calendar forever. */
+    const cancelled = await queryOne<{
       starts_at: string
       ends_at: string
       mode: string
@@ -56,32 +67,38 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
       [u.id, slotId],
     )
 
-    if (!anulata) return back('Rezervarea nu a fost găsită.', true)
+    if (!cancelled) return back('Rezervarea nu a fost găsită. Reîncarcă pagina — s-ar putea să fie deja anulată.', true)
 
-    const cand = `${formatDate(anulata.starts_at)}, ${formatTime(anulata.starts_at)}–${formatTime(anulata.ends_at)}`
+    const when = `${formatDate(cancelled.starts_at)}, ${formatTime(cancelled.starts_at)}–${formatTime(cancelled.ends_at)}`
 
     await postEvent({
       studentId: u.id,
-      teacherId: anulata.teacher_id,
+      teacherId: cancelled.teacher_id,
       senderId: u.id,
       eventType: 'consultation_cancelled',
-      body: `${anulata.student_name} a anulat consultația din ${cand}. Locul este din nou liber.`,
+      body: `${cancelled.student_name} a anulat consultația din ${when}. Locul este din nou liber.`,
       createConversation: false,
       subjectKind: 'slot',
       subjectId: slotId,
     })
 
-    // Anularea din calendar: același UID, `SEQUENCE` mai mare, `METHOD:CANCEL`.
+    /* The calendar cancellation: the same UID, a higher `SEQUENCE`,
+     * `METHOD:CANCEL` — and the same SUMMARY the invitation carried. Both
+     * calendars hold this event under the title the booking gave it, so a
+     * cancellation announcing a differently-named meeting reads, to whoever
+     * opens it, as a message about something else. */
     const anulare = buildIcs({
       uid: consultationUid(slotId, u.id),
-      title: `Consultație cu ${anulata.student_name}`,
-      location: anulata.mode === 'online' ? (anulata.meeting_url ?? 'Online') : (anulata.location ?? 'Cabinet'),
-      start: new Date(anulata.starts_at),
-      end: new Date(anulata.ends_at),
-      organizerName: anulata.teacher_name,
-      organizerEmail: anulata.teacher_email,
-      attendeeName: anulata.student_name,
-      attendeeEmail: anulata.student_email,
+      title: `Consultație — ${cancelled.teacher_name}`,
+      description: 'Consultație anulată de student.',
+      location: cancelled.mode === 'online' ? (cancelled.meeting_url ?? 'Online') : (cancelled.location ?? 'Cabinet'),
+      meetingUrl: cancelled.meeting_url ?? undefined,
+      start: new Date(cancelled.starts_at),
+      end: new Date(cancelled.ends_at),
+      organizerName: cancelled.teacher_name,
+      organizerEmail: cancelled.teacher_email,
+      attendeeName: cancelled.student_name,
+      attendeeEmail: cancelled.student_email,
       cancelled: true,
     })
 
@@ -90,36 +107,37 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
     ]
 
     void sendEmail({
-      to: anulata.teacher_email,
-      subject: `Consultație anulată — ${cand}`,
+      to: cancelled.teacher_email,
+      subject: `Consultație anulată — ${when}`,
       html: template(
         'O consultație a fost anulată',
-        html`<p><strong>${anulata.student_name}</strong> a anulat consultația din ${cand}.</p>
-         <p>Intervalul este din nou disponibil pentru ceilalți studenți pe care îi coordonezi.</p>`,
+        html`<p><strong>${cancelled.student_name}</strong> a anulat consultația din ${when}.</p>
+         <p>Ora este din nou liberă pentru ceilalți studenți pe care îi coordonezi.</p>`,
         { text: 'Vezi programul', url: `${process.env.APP_BASE_URL ?? url.origin}/profesor/consultatii` },
       ),
       attachments: atasament,
     }).catch((err) => console.error('[rezervari] anularea nu a fost anunțată', err))
 
-    /* Și către cel care a anulat.
+    /* And to the one who cancelled.
      *
-     * Rezervarea trimite invitația în calendar amândurora; anularea o retrăgea
-     * doar de la coordonator. Studentul care își anula propria consultație rămânea
-     * cu evenimentul acceptat în calendarul lui, pentru totdeauna — știa că a
-     * anulat, dar calendarul lui nu, și tocmai calendarul îl anunță marți la 14:00.
+     * Booking sends the calendar invitation to both of them; cancelling withdrew
+     * it only from the coordinator. The student who cancelled their own
+     * consultation was left with the accepted event in their calendar, forever —
+     * they knew they had cancelled, but their calendar did not, and it is the
+     * calendar that reminds them on Tuesday at 14:00.
      *
-     * Același UID și același `SEQUENCE`, deci este exact evenimentul lui, retras. */
+     * The same UID and the same `SEQUENCE`, so it is exactly their event, withdrawn. */
     void sendEmail({
-      to: anulata.student_email,
-      subject: `Consultația din ${cand} a fost anulată`,
+      to: cancelled.student_email,
+      subject: `Consultația din ${when} a fost anulată`,
       html: template(
         'Consultația a fost anulată',
         html`<p>
-           Bună, ${anulata.student_name.split(' ')[0]}. Ai anulat consultația din ${cand} cu
-           <strong>${anulata.teacher_name}</strong>.
+           Bună, ${cancelled.student_name.split(' ')[0]}. Ai anulat consultația din ${when} cu
+           <strong>${cancelled.teacher_name}</strong>.
          </p>
-         <p>Am retras și invitația din calendar. Poți rezerva un alt interval oricând.</p>`,
-        { text: 'Vezi intervalele libere', url: `${process.env.APP_BASE_URL ?? url.origin}/consultatii` },
+         <p>Am retras și invitația din calendar. Poți rezerva altă oră oricând.</p>`,
+        { text: 'Vezi orele libere', url: `${process.env.APP_BASE_URL ?? url.origin}/consultatii` },
       ),
       attachments: atasament,
     }).catch((err) => console.error('[rezervari] confirmarea anulării nu a plecat', err))
@@ -127,15 +145,17 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
     return back('Rezervarea a fost anulată. Coordonatorul a fost anunțat.')
   }
 
-  /* Slotul trebuie să fie liber, viitor, neanulat — și al coordonatorului tău.
+  /* The slot must be free, in the future, not cancelled — and your own
+   * coordinator's.
    *
-   * Ultimele două condiții lipseau: pagina arăta doar intervalele coordonatorului
-   * propriu, dar interfața nu este o autorizare. Cu un `slot_id` obținut oricum,
-   * oricine autentificat putea rezerva la orice cadru didactic, inclusiv un
-   * interval rezervat prin `student_id` pentru un student anume.
+   * The last two conditions were missing: the page showed only the slots of the
+   * student's own coordinator, but the interface is not an authorization. With a
+   * `slot_id` obtained some other way, anyone authenticated could book with any
+   * teacher, including a slot reserved through `student_id` for one particular
+   * student.
    *
-   * Toate condițiile stau în INSERT, deci două cereri simultane nu pot ocupa
-   * amândouă ultimul loc. */
+   * All the conditions sit in the INSERT, so two simultaneous requests cannot
+   * both take the last seat. */
   const booking = await queryOne<{ id: string }>(
     `INSERT INTO bookings (slot_id, student_id, subject)
      SELECT s.id, $1, NULLIF($3, '')
@@ -144,17 +164,29 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
         AND s.is_cancelled = false
         AND s.starts_at > now()
         AND (s.student_id IS NULL OR s.student_id = $1)
-        AND EXISTS (
-          SELECT 1 FROM requests r
-           WHERE r.student_id = $1 AND r.teacher_id = s.teacher_id AND r.status = 'approved'
+        /* A public hour is for anyone signed in as a student; one for the
+           coordinator's own students asks for the approved request that makes
+           somebody one of them. The condition is here and not on the page,
+           because the page is not an authorization. */
+        AND (
+          s.audience = 'public'
+          OR EXISTS (
+            SELECT 1 FROM requests r
+             WHERE r.student_id = $1 AND r.teacher_id = s.teacher_id AND r.status = 'approved'
+          )
         )
+        /* A summoned meeting is not on offer: its places belong to the students
+           named in it, who are booked into it the moment it is created. Without
+           this, a supervised student holding the id could take the spare seat of
+           a meeting arranged with somebody else. */
+        AND (s.kind = 'open' OR s.student_id = $1)
         AND (SELECT count(*) FROM bookings r WHERE r.slot_id = s.id AND r.status = 'booked') < s.capacity
      ON CONFLICT (slot_id, student_id) DO UPDATE SET status = 'booked'
      RETURNING id`,
     [u.id, slotId, subject],
   )
 
-  if (!booking) return back('Intervalul nu mai este disponibil.', true)
+  if (!booking) return back('Ora nu mai este liberă — cineva a luat locul înaintea ta. Alege altă oră din listă.', true)
 
   const slot = await queryOne<{
     starts_at: string
@@ -211,12 +243,12 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
         subject: `Rezervare consultație — ${u.name}`,
         html: template(
           'Un student ți-a rezervat o consultație',
-          html`<p><strong>${u.name}</strong> (${u.student_number ?? '—'}) a rezervat intervalul:</p>${body}`,
+          html`<p><strong>${u.name}</strong> (${u.student_number ?? '—'}) a rezervat ora:</p>${body}`,
         ),
         attachments: attachment,
       }),
     ])
   }
 
-  return back('Consultație rezervată. Invitația a fost trimisă pe email.')
+  return back('Oră rezervată. Invitația de calendar a plecat pe email.')
 }

@@ -17,14 +17,14 @@ export { escapeHtml, html, joinHtml, trusted }
 export type { SafeHtml }
 
 /**
- * Textul dintr-un HTML, pentru clienții care nu îl randează.
+ * The text inside an HTML message, for clients that do not render it.
  *
- * Nu e un parser: e o reducere suficient de bună pentru mesajele noastre, care
- * au o structură cunoscută. Butonul devine „Etichetă: adresă”, ca legătura să
- * rămână utilizabilă.
+ * Not a parser: a reduction good enough for these messages, which have a known
+ * structure. The button becomes "label: address", so that the link stays
+ * usable.
  */
-function textDinHtml(htmlSursa: string): string {
-  return htmlSursa
+function textFromHtml(htmlSource: string): string {
+  return htmlSource
     .replace(/<head[\s\S]*?<\/head>/gi, '')
     .replace(/<style[\s\S]*?<\/style>/gi, '')
     .replace(/<a\b[^>]*href="([^"]*)"[^>]*>([\s\S]*?)<\/a>/gi, (_m, href, text) => {
@@ -49,12 +49,13 @@ function textDinHtml(htmlSursa: string): string {
 }
 
 export function sendEmail(mail: MailMessage): Promise<MailResult> {
-  /* Nicio expediere fără parte text.
+  /* Nothing goes out without a text part.
    *
-   * `MailMessage.text` exista de la început și niciunul dintre cele optsprezece
-   * apeluri nu îl completa. Se derivă aici, o dată, în loc să fie scris de mână
-   * în fiecare loc — și rămâne posibil să fie dat explicit, când merită. */
-  return mailer.send(mail.text ? mail : { ...mail, text: textDinHtml(mail.html) })
+   * `MailMessage.text` existed from the start and none of the eighteen call
+   * sites filled it in. It is derived here, once, instead of being written by
+   * hand in every place — and it can still be given explicitly, when that is
+   * worth it. */
+  return mailer.send(mail.text ? mail : { ...mail, text: textFromHtml(mail.html) })
 }
 
 /* --- templates ------------------------------------------------------------- */
@@ -62,16 +63,16 @@ export function sendEmail(mail: MailMessage): Promise<MailResult> {
 const BRAND = '#990000'
 
 /**
- * Un email al portalului.
+ * An email from the portal.
  *
- * Construit pe tabel, nu pe `div`: motorul de randare Word din Outlook ignoră
- * `max-width` pe un bloc, așa că mesajul se întindea pe toată lățimea ferestrei
- * acolo unde citește jumătate din corpul didactic. Lățimea stă pe `<table>`,
- * unde o respectă toată lumea.
+ * Built on a table, not on a `div`: the Word rendering engine in Outlook
+ * ignores `max-width` on a block, so the message stretched across the whole
+ * width of the window where half the teaching staff reads it. The width sits
+ * on the `<table>`, where everyone honours it.
  *
- * `preheader` este linia de previzualizare din inbox. Fără ea, clientul de mail
- * arăta antetul — „Portal Studenți · Facultatea de Marketing” — la fiecare
- * mesaj, deci lista de emailuri era o coloană cu același rând repetat.
+ * `preheader` is the preview line in the inbox. Without it, the mail client
+ * showed the header — „Portal Studenți · Facultatea de Marketing” — on every
+ * message, so the list of emails was one column with the same row repeated.
  */
 export function template(
   title: string,
@@ -117,11 +118,11 @@ ${preheader ? html`<div style="display:none;max-height:0;overflow:hidden;opacity
 }
 
 /**
- * Varianta text a aceluiași mesaj.
+ * The text version of the same message.
  *
- * Toate cele optsprezece locuri care trimiteau email trimiteau doar HTML, deși
- * portul îl accepta de la început. Un mesaj fără parte text primește un scor de
- * spam mai prost și nu se poate citi deloc într-un client text.
+ * All eighteen places that sent email sent HTML only, although the port
+ * accepted it from the start. A message without a text part gets a worse spam
+ * score and cannot be read at all in a text client.
  */
 export function plainText(title: string, body: string, action?: { text: string; url: string }): string {
   return [

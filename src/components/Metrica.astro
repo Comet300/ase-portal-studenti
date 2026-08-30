@@ -1,31 +1,31 @@
 ---
 /**
- * O cifră cu numele ei.
+ * A figure with its name.
  *
- * Aceeași casetă era scrisă de mână pe cinci ecrane, cu cinci variante de
- * spațiere și trei feluri de a marca starea de alertă. Când ceva se schimbă la
- * ea — și s-a schimbat, de două ori în auditul acesta — trebuie schimbat o
- * singură dată.
+ * The same box was written by hand on five screens, with five variants of
+ * spacing and three ways of marking the alert state. When something about it
+ * changes — and it did change, twice in this audit — it has to be changed in a
+ * single place.
  */
 interface Props {
-  valoare: string | number
-  eticheta: string
-  /** Un rând sub etichetă: contextul care face cifra utilă. */
-  nota?: string
-  /** Marchează cifra ca fiind cea care cere atenție. */
+  value: string | number
+  label: string
+  /** One line under the label: the context that makes the figure useful. */
+  note?: string
+  /** Marks the figure as the one that asks for attention. */
   alerta?: boolean
-  /** Când e dată, toată caseta devine o legătură. */
+  /** When it is given, the whole box becomes a link. */
   href?: string
 }
 
-const { valoare, eticheta, nota, alerta = false, href } = Astro.props
+const { value, label, note, alerta = false, href } = Astro.props
 const Tag = href ? 'a' : 'div'
 ---
 
 <Tag class:list={['metrica', { 'metrica--alerta': alerta, 'metrica--link': href }]} href={href}>
-  <span class="metrica__valoare numeric">{valoare}</span>
-  <span class="metrica__eticheta">{eticheta}</span>
-  {nota && <span class="metrica__nota">{nota}</span>}
+  <span class="metrica__valoare numeric">{value}</span>
+  <span class="metrica__eticheta">{label}</span>
+  {note && <span class="metrica__nota">{note}</span>}
 </Tag>
 
 <style>
@@ -42,7 +42,7 @@ const Tag = href ? 'a' : 'div'
     text-decoration: none;
   }
 
-  /* Elevația marchează ce răspunde la atingere. */
+  /* The elevation marks what responds to touch. */
   .metrica--link {
     transition:
       box-shadow var(--fast) var(--ease),
@@ -56,9 +56,10 @@ const Tag = href ? 'a' : 'div'
     transform: scale(0.99);
   }
 
-  /* Alerta colorează cifra, nu toată caseta: un card roșu întreg strigă mai tare
-     decât merită un număr. Ambru, nu roșu — toate cifrele care se marchează așa
-     („fără cerere depusă”, „locuri epuizate”) cer atenție, niciuna nu e o eroare. */
+  /* The alert colours the figure, not the whole box: a card red all over shouts
+     louder than a number deserves. Amber, not red — every figure marked this way
+     („fără cerere depusă”, „locuri epuizate”) asks for attention, none of them is
+     an error. */
   .metrica--alerta .metrica__valoare {
     color: var(--warn);
   }

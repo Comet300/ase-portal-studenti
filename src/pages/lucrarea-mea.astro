@@ -1,0 +1,1780 @@
+---
+import Avatar from '../components/Avatar.astro'
+import StudentLayout from '../layouts/StudentLayout.astro'
+import { query } from '../lib/db'
+import { DECLARATION_ACCEPT, THESIS_ACCEPT, THESIS_MAX_BYTES } from '../lib/files'
+import { studentInvitations } from '../lib/lifecycle'
+import {
+  BUCKET_LABELS,
+  dueBucket,
+  dueHint,
+  groupMilestones,
+  localDay,
+  MILESTONE_STATE_CLASS,
+  MILESTONE_STATE_LABELS,
+  milestoneState,
+  STATUS_CLASS,
+  STATUS_LABELS,
+  studentRequests,
+  supervisors,
+  formatDate,
+  studentMilestones,
+  studentTitleChanges,
+  publicTopics,
+} from '../lib/repo'
+import { numar, officialName } from '../lib/text'
+import { LEVEL_LABELS, groupLabel, languageLabel } from '../lib/years'
+import {
+  CHANGE_STATUS_CLASS,
+  CHANGE_STATUS_LABELS,
+  thesisDiff,
+} from '../lib/title-changes.ts'
+
+const u = Astro.locals.user!
+
+// A member of the teaching staff who lands here sees their own requests (they
+// have none), so they are sent to their own area instead of a meaningless empty
+// screen.
+if (u.role !== 'student') return Astro.redirect('/profesor', 302)
+
+/**
+ * Where the request stands in the week of waiting.
+ *
+ * The window is not written in code here: it is measured between submission and
+ * expiry, so that it stays true if `DECISION_WINDOW_DAYS` ever changes.
+ */
+/**
+ * How much is left until a deadline, as a state.
+ *
+ * The coordinator's queue already had this count; the side that waits — the
+ * student — got only a calendar date.
+ */
+function timeRemaining(expiresAt: string | null | undefined) {
+  if (!expiresAt) return null
+  const zile = Math.ceil((new Date(expiresAt).getTime() - Date.now()) / 86_400_000)
+  if (zile < 0) return null
+  return {
+    text: zile === 0 ? 'expiră astăzi' : zile === 1 ? '1 zi rămasă' : `${zile} zile rămase`,
+    badgeClass: zile <= 2 ? 'badge--urgent' : 'badge--asteptare',
+  }
+}
+
+function asteptare(submittedAt: string | null, expiresAt: string | null) {
+  if (!submittedAt || !expiresAt) return null
+
+  const start = new Date(submittedAt).getTime()
+  const end = new Date(expiresAt).getTime()
+  const total = Math.max(1, Math.round((end - start) / 86_400_000))
+  const elapsed = (Date.now() - start) / 86_400_000
+
+  return { total, zi: Math.min(total, Math.max(1, Math.ceil(elapsed))) }
+}
+
+const [requests, milestones, teachers, topics, invitations, titleChanges] = await Promise.all([
+  studentRequests(u.id),
+  studentMilestones(u.id),
+  supervisors(),
+  publicTopics(),
+  studentInvitations(u.id),
+  studentTitleChanges(u.id),
+])
+
+/* The thesis as a file: every version, newest first.
+ *
+ * Read here rather than through `repo.ts` because every other read of `files`
+ * is also at its call site — the table is joined differently by each of the
+ * four screens that touch it, and a shared helper would be one signature with
+ * four optional halves. Ownership is inside the statement, as everywhere. */
+const documents = await query<{
+  id: string
+  kind: 'thesis' | 'declaration'
+  original_name: string
+  size_bytes: string | null
+  created_at: string
+}>(
+  `SELECT f.id, f.kind, f.original_name, f.size_bytes, f.created_at::text
+     FROM files f
+     JOIN requests r ON r.id = f.request_id
+    WHERE r.student_id = $1 AND f.kind <> 'attachment'
+    ORDER BY f.created_at DESC`,
+  [u.id],
+)
+
+const thesisFiles = documents.filter((d) => d.kind === 'thesis')
+const declarationFiles = documents.filter((d) => d.kind === 'declaration')
+const thesis = thesisFiles[0] ?? null
+const declaration = declarationFiles[0] ?? null
+
+const kb = (bytes: string | null) =>
+  bytes == null ? '' : `${Math.max(1, Math.round(Number(bytes) / 1024))} KB`
+
+const preselectedTeacher = Astro.url.searchParams.get('coordonator') ?? ''
+const preselectedTopic = Astro.url.searchParams.get('tema') ?? ''
+const hasActiveRequest = requests.some((c) => c.status === 'pending' || c.status === 'approved')
+const approvedRequest = requests.find((c) => c.status === 'approved')
+
+const pendingInvitations = invitations.filter((i) => i.status === 'pending')
+
+/* A change to the agreed thesis.
+ *
+ * The supervision stays „aprobată” the whole time one is open — the seat, the
+ * conversation and the printable request do not move — so the pending change is
+ * a block on the request rather than a state of it. */
+const openChange = titleChanges.find((c) => c.status === 'pending')
+const decidedChanges = titleChanges.filter((c) => c.status !== 'pending')
+
+/**
+ * An accepted invitation the student has not yet turned into a request.
+ *
+ * This is what makes the form below an approval rather than a submission: the
+ * coordinator already said yes, so the request is created approved. Carried in
+ * the URL after accepting, and re-validated server-side when the form posts.
+ */
+const acceptedInvitationId = Astro.url.searchParams.get('invitatie') ?? ''
+const acceptedInvitation = acceptedInvitationId
+  ? invitations.find((i) => i.id === acceptedInvitationId && i.status === 'accepted')
+  : invitations.find((i) => i.status === 'accepted' && !hasActiveRequest)
+
+const openWith = acceptedInvitation
+  ? { teacher: acceptedInvitation.teacher_id, topic: acceptedInvitation.topic_id ?? '' }
+  : { teacher: preselectedTeacher, topic: preselectedTopic }
+
+const shouldOpenForm = Boolean(openWith.teacher) && !hasActiveRequest
+
+/* The same three piles the coordinator sees, in the same order, with the same
+ * words. The two screens were one visual language kept in step by hand, and the
+ * badge was already the place where they disagreed: the student read „Termen
+ * depășit” where the coordinator read „Planificat”. */
+const today = localDay(new Date())
+const grouped = groupMilestones(milestones, today)
+const overdueCount = grouped.overdue.length
+
+const withBuckets = (items: typeof milestones, showBuckets: boolean) =>
+  items.map((m, i, all) => ({
+    m,
+    bucket: dueBucket(m.due_on, today),
+    opensBucket:
+      showBuckets &&
+      (i === 0 || dueBucket(all[i - 1].due_on, today) !== dueBucket(m.due_on, today)),
+  }))
+
+const deadlineGroups = [
+  { key: 'overdue', title: 'Depășite', rows: withBuckets(grouped.overdue, false), open: true },
+  { key: 'upcoming', title: 'Următoarele', rows: withBuckets(grouped.upcoming, true), open: true },
+  { key: 'done', title: 'Finalizate', rows: withBuckets(grouped.done, false), open: false },
+]
+---
+
+<StudentLayout
+  title={approvedRequest ? 'Lucrarea mea' : 'Cererea mea'}
+  docTitle="Lucrarea mea"
+  active="cereri"
+  lede={
+    approvedRequest
+      ? 'Titlul, termenele și forma finală a lucrării tale — tot ce ai de predat, într-un loc.'
+      : 'Cererea de coordonare, decizia coordonatorului și termenele lucrării tale.'
+  }
+>
+  {
+    !hasActiveRequest && (
+      <button class="btn btn--primary" type="button" id="deschide-cerere" slot="actiuni">
+        Depune cerere nouă
+      </button>
+    )
+  }
+  {/* Cele două lucruri pe care le face un student cu lucrarea aprobată: predă
+      forma finală și schimbă titlul. Amândouă erau îngropate sub cererea de
+      acum șase luni; de aici pornesc. */}
+  {
+    approvedRequest && (
+      <button class="btn btn--primary" type="button" data-incarca-lucrare slot="actiuni">
+        {thesis ? 'Încarcă o versiune nouă' : 'Încarcă lucrarea'}
+      </button>
+    )
+  }
+  {
+    approvedRequest && !openChange && (
+      <button
+        class="btn btn--secondary"
+        type="button"
+        data-cere-modificare={approvedRequest.id}
+        data-titlu-ro={approvedRequest.title_ro}
+        data-titlu-en={approvedRequest.title_en ?? ''}
+        data-obiective={approvedRequest.objectives}
+        slot="actiuni"
+      >
+        Cere o modificare
+      </button>
+    )
+  }
+
+  <div class="container stack stack--loose">
+
+    {/* --------------------------------------------------- proposals received */}
+    {
+      pendingInvitations.map((i) => (
+        <section class="propunere">
+          <div class="propunere__cap">
+            <Avatar name={i.teacher_name} size="md" href={`/profil/${i.teacher_id}`} />
+            <div class="stack stack--tight" style="gap:2px">
+              <strong class="propunere__titlu">
+                {i.teacher_name} îți propune să îți coordoneze lucrarea
+              </strong>
+              {/* An expiry date is a piece of information; how many days are
+                  left is a reason to answer. */}
+              <span class="muted text-xs">
+                Propunere primită {formatDate(i.created_at)}
+              </span>
+              {(() => {
+                const t = timeRemaining(i.expires_at)
+                return t ? (
+                  <span class:list={['badge', t.badgeClass]} style="align-self:flex-start">
+                    {t.text}
+                  </span>
+                ) : null
+              })()}
+            </div>
+          </div>
+
+          {i.topic_title && (
+            <p class="propunere__tema">
+              <span class="muted">Temă propusă:</span> <strong>{i.topic_title}</strong>
+            </p>
+          )}
+
+          <p class="propunere__mesaj">{i.message}</p>
+
+          <p class="hint">
+            Dacă accepți, completezi aceeași cerere ca oricare alta — titlul, obiectivele și
+            motivația rămân necesare — dar este aprobată direct, fără să mai aștepți o decizie.
+          </p>
+
+          <div class="row row--wrap" style="gap:var(--s-2)">
+            <form method="POST" action="/api/invitatii">
+              <input type="hidden" name="actiune" value="raspunde" />
+              <input type="hidden" name="invitatie_id" value={i.id} />
+              <input type="hidden" name="raspuns" value="accepted" />
+              <button class="btn btn--primary btn--sm" type="submit" disabled={hasActiveRequest}>
+                Acceptă propunerea
+              </button>
+            </form>
+            <button
+              class="btn btn--danger btn--sm"
+              type="button"
+              data-refuza={i.id}
+              data-nume={i.teacher_name}
+            >
+              Refuză
+            </button>
+            <a class="btn btn--ghost btn--sm" href={`/profil/${i.teacher_id}`}>
+              Vezi profilul coordonatorului
+            </a>
+          </div>
+
+          {hasActiveRequest && (
+            <p class="hint">
+              Ai deja o cerere activă. Retrage-o sau așteaptă decizia înainte de a accepta
+              propunerea.
+            </p>
+          )}
+        </section>
+      ))
+    }
+
+    {
+      requests.length === 0 ? (
+        <section class="panel">
+          <div class="empty">
+            <p class="empty__title">Nu ai depus încă nicio cerere</p>
+            <p class="empty__text">
+              Alege un coordonator din catalog și depune cererea de coordonare. Vei primi un email
+              când primești un răspuns, iar termenele lucrării apar tot aici.
+            </p>
+            <div class="row" style="gap:var(--s-2)">
+              <a href="/coordonatori" class="btn btn--secondary btn--sm">Vezi coordonatorii</a>
+              <button class="btn btn--primary btn--sm" type="button" id="deschide-cerere-gol">
+                Depune cerere
+              </button>
+            </div>
+          </div>
+        </section>
+      ) : (
+        <section class="panel">
+          <div class="panel__header">
+            <h2 class="section-title">Cereri depuse</h2>
+          </div>
+          <ul class="cereri">
+            {requests.map((c) => (
+              <li class="cerere" id={`cerere-${c.id}`} tabindex="-1">
+                <div class="row row--between row--wrap" style="gap:var(--s-3)">
+                  <span class="numeric muted text-xs">
+                    {c.number} · depusă {formatDate(c.submitted_at)}
+                  </span>
+                  <span class:list={['badge', STATUS_CLASS[c.status]]}>{STATUS_LABELS[c.status]}</span>
+                </div>
+
+                <h3 class="cerere__titlu">{c.title_ro}</h3>
+                {c.title_en && <p class="cerere__en">{c.title_en}</p>}
+
+                <p class="muted text-sm">
+                  Coordonator: <a href={`/profil/${c.teacher_id}`}>{c.teacher_name}</a>
+                </p>
+
+                {c.status === 'pending' && (
+                  <>
+                    {/* The week of waiting is the stretch in which the student
+                        opens the portal most often, and found a single sentence
+                        with a date. It shows where they stand in it, what
+                        happens at the end and what they can do meanwhile. */}
+                    {(() => {
+                      const a = asteptare(c.submitted_at, c.expires_at)
+                      return a ? (
+                        <div class="asteptare">
+                          <div class="asteptare__bara" role="img"
+                            aria-label={`Ziua ${a.zi} din ${a.total} de așteptare`}>
+                            {Array.from({ length: a.total }, (_, i) => (
+                              <span class:list={['asteptare__zi', { 'is-trecuta': i < a.zi }]} />
+                            ))}
+                          </div>
+                          <p class="asteptare__linie">
+                            <strong>Ziua {a.zi} din {a.total}</strong>
+                            <span class="muted"> · răspuns așteptat până {formatDate(c.expires_at)}</span>
+                          </p>
+                          <p class="hint">
+                            Dacă nu răspunde până atunci, cererea se închide automat și poți depune
+                            alta imediat.
+                          </p>
+                        </div>
+                      ) : null
+                    })()}
+
+                    <div class="row row--wrap" style="gap:var(--s-2)">
+                      <a class="btn btn--secondary btn--sm" href="/mesaje">
+                        Scrie-i coordonatorului
+                      </a>
+                      <button class="btn btn--ghost btn--sm" type="button" data-retrage={c.id}>
+                        Retrage cererea
+                      </button>
+                    </div>
+
+                    <form
+                      method="POST"
+                      action="/api/cereri/retrage"
+                      class="retragere"
+                      id={`retragere-${c.id}`}
+                      hidden
+                    >
+                      <input type="hidden" name="cerere_id" value={c.id} />
+                      <div class="field">
+                        <label class="label" for={`motiv-${c.id}`}>
+                          De ce retragi cererea? <span class="muted">(opțional, ajunge la coordonator)</span>
+                        </label>
+                        <input class="input" id={`motiv-${c.id}`} name="motiv"
+                          placeholder="Ex: am găsit o temă mai potrivită la alt coordonator." />
+                      </div>
+                      <div class="row" style="gap:var(--s-2)">
+                        <button class="btn btn--danger btn--sm" type="submit">
+                          Confirmă retragerea
+                        </button>
+                        <button class="btn btn--ghost btn--sm" type="button" data-anuleaza-retragerea={c.id}>
+                          Renunț
+                        </button>
+                      </div>
+                    </form>
+                  </>
+                )}
+
+                {c.status === 'approved' && c.decision_note && (
+                  <div class="mesaj-decizie">
+                    <strong>Mesaj de la coordonator</strong>
+                    <p>{c.decision_note}</p>
+                  </div>
+                )}
+
+                {/* A withdrawn request stayed a shell with no explanation and
+                    no way out, even though withdrawal is exactly the state
+                    after which a new request almost always follows. */}
+                {(c.status === 'rejected' || c.status === 'expired' || c.status === 'withdrawn') && (
+                  <div class="motiv">
+                    <strong>
+                      {c.status === 'expired'
+                        ? 'De ce s-a închis cererea'
+                        : c.status === 'withdrawn'
+                          ? 'Ai retras această cerere'
+                          : 'Motivul respingerii'}
+                    </strong>
+                    {c.rejection_reason ? (
+                      <p>{c.rejection_reason}</p>
+                    ) : (
+                      c.status === 'withdrawn' && (
+                        <p class="muted">Locul pe care îl ținea la coordonator s-a eliberat.</p>
+                      )
+                    )}
+                    <a href="/coordonatori" class="btn btn--secondary btn--sm">Depune o cerere nouă</a>
+                  </div>
+                )}
+
+                {/* The text the student agreed to was on no screen of theirs:
+                    `objectives` was shown only in the coordinator's queue and in
+                    the printed document. Asking somebody to edit something they
+                    cannot read is not a form, it is a guess. */}
+                {(c.status === 'approved' || c.status === 'defended') && (
+                  <div class="lucrare">
+                    <strong class="lucrare__eticheta">Scopul și obiectivele lucrării</strong>
+                    <p class="lucrare__text">{c.objectives}</p>
+                  </div>
+                )}
+
+                {c.status === 'approved' && openChange && openChange.request_id === c.id && (
+                  <div class="modificare">
+                    <div class="row row--between row--wrap" style="gap:var(--s-2)">
+                      <strong class="modificare__titlu">Ai cerut o modificare</strong>
+                      <span class:list={['badge', CHANGE_STATUS_CLASS[openChange.status]]}>
+                        {CHANGE_STATUS_LABELS[openChange.status]}
+                      </span>
+                    </div>
+                    <p class="muted text-xs">Trimisă {formatDate(openChange.created_at)}</p>
+
+                    <dl class="diferenta">
+                      {thesisDiff(
+                        {
+                          title_ro: openChange.old_title_ro,
+                          title_en: openChange.old_title_en,
+                          objectives: openChange.old_objectives,
+                        },
+                        {
+                          title_ro: openChange.new_title_ro,
+                          title_en: openChange.new_title_en,
+                          objectives: openChange.new_objectives,
+                        },
+                      ).map((d) => (
+                        <div class="diferenta__camp">
+                          <dt>{d.label}</dt>
+                          <dd>
+                            <span class="diferenta__vechi">{d.from}</span>
+                            <span class="diferenta__nou">{d.to}</span>
+                          </dd>
+                        </div>
+                      ))}
+                    </dl>
+
+                    <p class="hint">
+                      Lucrarea rămâne cu textul de dinainte până când coordonatorul răspunde.
+                      Termenele, conversația și cererea tipăribilă merg mai departe neschimbate.
+                    </p>
+
+                    <form method="POST" action="/api/modificari" class="row" style="gap:var(--s-2)">
+                      <input type="hidden" name="actiune" value="retrage" />
+                      <input type="hidden" name="modificare_id" value={openChange.id} />
+                      <button class="btn btn--ghost btn--sm" type="submit">
+                        Retrage cererea de modificare
+                      </button>
+                    </form>
+                  </div>
+                )}
+
+                {c.status === 'approved' && (
+                  <div class="row row--wrap" style="gap:var(--s-2)">
+                    <a class="btn btn--secondary btn--sm" href={`/documente/cerere/${c.id}`} target="_blank">
+                      Descarcă cererea semnabilă
+                    </a>
+                    {!openChange && (
+                      <button
+                        class="btn btn--secondary btn--sm"
+                        type="button"
+                        data-cere-modificare={c.id}
+                        data-titlu-ro={c.title_ro}
+                        data-titlu-en={c.title_en ?? ''}
+                        data-obiective={c.objectives}
+                      >
+                        Cere o modificare
+                      </button>
+                    )}
+                    <a class="btn btn--secondary btn--sm" href="/mesaje">Scrie coordonatorului</a>
+                    <a class="btn btn--secondary btn--sm" href="/consultatii">Programează o consultație</a>
+                  </div>
+                )}
+
+                {/* Every change ever applied, the coordinator's own included:
+                    „de ce se numește altfel decât în cererea pe care am semnat-o”
+                    has an answer here rather than in a memory. */}
+                {c.status !== 'pending' && decidedChanges.filter((h) => h.request_id === c.id).length > 0 && (
+                  <details class="istoric">
+                    <summary>
+                      Istoricul titlului ({decidedChanges.filter((h) => h.request_id === c.id).length})
+                    </summary>
+                    <ul class="istoric__lista">
+                      {decidedChanges
+                        .filter((h) => h.request_id === c.id)
+                        .map((h) => (
+                          <li>
+                            <div class="row row--between row--wrap" style="gap:var(--s-2)">
+                              <span class="text-sm">
+                                {h.by_teacher ? `${h.requester_name} a modificat` : 'Ai cerut o modificare'}
+                              </span>
+                              <span class:list={['badge', CHANGE_STATUS_CLASS[h.status]]}>
+                                {CHANGE_STATUS_LABELS[h.status]}
+                              </span>
+                            </div>
+                            <p class="muted text-xs">{formatDate(h.decided_at ?? h.created_at)}</p>
+                            <p class="istoric__titlu">
+                              <span class="diferenta__vechi">{h.old_title_ro}</span>
+                              <span class="diferenta__nou">{h.new_title_ro}</span>
+                            </p>
+                            {h.decision_note && (
+                              <p class="istoric__nota">
+                                <strong>Mesaj de la coordonator:</strong> {h.decision_note}
+                              </p>
+                            )}
+                          </li>
+                        ))}
+                    </ul>
+                  </details>
+                )}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )
+    }
+
+    {/* ------------------------------------------------------ the thesis itself */}
+    {
+      approvedRequest && (
+        <section class="panel" id="lucrare">
+          <div class="panel__header">
+            <h2 class="section-title">Forma finală</h2>
+            <span class="muted text-sm">
+              {thesis ? `încărcată ${formatDate(thesis.created_at)}` : 'PDF, cel mult 40 MB'}
+            </span>
+          </div>
+
+          <div class="panel__body stack">
+            {thesis ? (
+              <div class="document">
+                <span class="document__semn" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                    <path d="M14 2v6h6" />
+                  </svg>
+                </span>
+                <div class="stack stack--tight" style="gap:2px;flex:1;min-width:0">
+                  <strong class="document__nume">{thesis.original_name}</strong>
+                  <span class="muted text-sm">
+                    {kb(thesis.size_bytes)} · încărcată {formatDate(thesis.created_at)}
+                    {thesisFiles.length > 1 && ` · versiunea ${thesisFiles.length}`}
+                  </span>
+                  <span class="muted text-xs">
+                    O vede coordonatorul tău și, în arhiva sesiunii, directorul de departament.
+                  </span>
+                </div>
+                <div class="row row--wrap" style="gap:var(--s-2)">
+                  <a class="btn btn--secondary btn--sm" href={`/fisiere/${thesis.id}?inline=1`} target="_blank" rel="noopener">
+                    Deschide
+                  </a>
+                  <button class="btn btn--ghost btn--sm" type="button" data-incarca-lucrare>
+                    Înlocuiește
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div class="empty">
+                <p class="empty__title">Lucrarea nu este încărcată</p>
+                <p class="empty__text">
+                  Forma finală se predă aici, în PDF, împreună cu declarația de originalitate
+                  semnată. Coordonatorul este anunțat pe loc, iar lucrarea intră în arhiva
+                  sesiunii. O poți înlocui oricând până la susținere — versiunile rămân.
+                </p>
+                <button class="btn btn--primary btn--sm" type="button" data-incarca-lucrare>
+                  Încarcă lucrarea
+                </button>
+              </div>
+            )}
+
+            {/* Declarația este a doua jumătate a predării, nu un fișier
+                oarecare: fără ea, lucrarea nu intră în antiplagiat. */}
+            <div class="document document--mic">
+              <div class="stack stack--tight" style="gap:2px;flex:1;min-width:0">
+                <strong>Declarația de originalitate</strong>
+                <span class="muted text-sm">
+                  {declaration
+                    ? `${declaration.original_name} · ${kb(declaration.size_bytes)} · ${formatDate(declaration.created_at)}`
+                    : 'Semnată, scanată sau fotografiată — PDF, JPG sau PNG.'}
+                </span>
+              </div>
+              <div class="row row--wrap" style="gap:var(--s-2)">
+                {declaration && (
+                  <a class="btn btn--ghost btn--sm" href={`/fisiere/${declaration.id}?inline=1`} target="_blank" rel="noopener">
+                    Deschide
+                  </a>
+                )}
+                <button class="btn btn--secondary btn--sm" type="button" data-incarca-declaratie>
+                  {declaration ? 'Înlocuiește' : 'Încarcă declarația'}
+                </button>
+              </div>
+            </div>
+
+            {documents.length > 1 && (
+              <details class="istoric">
+                <summary>Versiunile încărcate ({documents.length})</summary>
+                <ul class="istoric__lista">
+                  {documents.map((d) => (
+                    <li>
+                      <a href={`/fisiere/${d.id}`}>{d.original_name}</a>
+                      <span class="muted text-xs">
+                        {d.kind === 'thesis' ? 'lucrare' : 'declarație'} · {kb(d.size_bytes)} ·{' '}
+                        {formatDate(d.created_at)}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </details>
+            )}
+          </div>
+        </section>
+      )
+    }
+
+    {
+      approvedRequest && milestones.length > 0 && (
+        <section class="panel">
+          <div class="panel__header">
+            <h2 class="section-title">Termenele lucrării</h2>
+            <span class="muted text-sm">
+              {milestones.filter((j) => j.status === 'done').length} din {milestones.length} finalizate
+            </span>
+            {overdueCount > 0 && (
+              <span class="badge badge--respinsa">
+                {numar(overdueCount, 'termen depășit', 'termene depășite')}
+              </span>
+            )}
+          </div>
+
+          {/* Who marks a deadline finished was nowhere on this screen, and the
+              reminder email told the student to do it themselves. It is the
+              coordinator's to set, so the screen says so once, here. */}
+          <p class="termene__nota">
+            Termenele le stabilește și le marchează coordonatorul. Când ai încheiat unul,{' '}
+            <a href="/mesaje">spune-i în conversație</a>.
+          </p>
+
+          <div class="grupe">
+            {deadlineGroups
+              .filter((g) => g.rows.length > 0)
+              .map((g) => (
+                <details class:list={['grupa', `grupa--${g.key}`]} open={g.open}>
+                  <summary class="grupa__cap">
+                    <span class="grupa__titlu">{g.title}</span>
+                    <span class="grupa__contor numeric">{g.rows.length}</span>
+                  </summary>
+
+                  <ol class="termene">
+                    {g.rows.map(({ m, bucket, opensBucket }) => {
+                      const stare = milestoneState(m.status, m.due_on, today)
+                      const hint = dueHint(m.due_on, today)
+                      return (
+                        <>
+                          {opensBucket && (
+                            <li class="termene__sectiune" role="presentation">
+                              {BUCKET_LABELS[bucket]}
+                            </li>
+                          )}
+                          <li class:list={['termen', `termen--${stare}`]}>
+                            <span class="jalon__punct" aria-hidden="true" />
+                            <div class="jalon__corp">
+                              <div class="row row--between row--wrap" style="gap:var(--s-2)">
+                                <strong class="jalon__titlu">{m.title}</strong>
+                                <span class:list={['badge', MILESTONE_STATE_CLASS[stare]]}>
+                                  {MILESTONE_STATE_LABELS[stare]}
+                                </span>
+                              </div>
+                              <span class="muted text-xs">
+                                {m.due_on ? `Termen: ${formatDate(m.due_on)}` : 'Termen nestabilit'}
+                                {hint && stare !== 'done' ? ` · ${hint}` : ''}
+                              </span>
+                              {m.description && <p class="jalon__descriere">{m.description}</p>}
+                            </div>
+                          </li>
+                        </>
+                      )
+                    })}
+                  </ol>
+                </details>
+              ))}
+          </div>
+        </section>
+      )
+    }
+  </div>
+
+  <dialog id="dialog-cerere" aria-labelledby="titlu-cerere" data-deschide-imediat={shouldOpenForm ? '' : undefined}>
+    <form method="POST" action="/api/cereri/depune" class="formular" id="formular-cerere">
+      <div class="formular__cap">
+        <h2 id="titlu-cerere" class="section-title">Cerere de coordonare</h2>
+        <button class="btn btn--ghost btn--sm" type="button" data-inchide aria-label="Închide">✕</button>
+      </div>
+
+      {
+        acceptedInvitation && (
+          <p class="formular__nota">
+            Completezi cererea pe baza propunerii acceptate de la{' '}
+            <strong>{acceptedInvitation.teacher_name}</strong>. La depunere este aprobată automat.
+          </p>
+        )
+      }
+      <input type="hidden" name="invitatie_id" value={acceptedInvitation?.id ?? ''} />
+
+      <div class="pas" data-pas="1">
+        <div class="field">
+          <label class="label" for="profesor_id">Coordonator științific</label>
+          <select
+            class="select"
+            id="profesor_id"
+            name="profesor_id"
+            required
+            disabled={Boolean(acceptedInvitation)}
+          >
+            <option value="">Alege un cadru didactic…</option>
+            {
+              teachers.map((p) => (
+                <option value={p.id} selected={p.id === openWith.teacher} disabled={p.is_full}>
+                  {p.name}
+                  {p.is_full ? ' — fără locuri disponibile' : ''}
+                </option>
+              ))
+            }
+          </select>
+          {
+            acceptedInvitation && (
+              <input type="hidden" name="profesor_id" value={acceptedInvitation.teacher_id} />
+            )
+          }
+        </div>
+
+        <div class="field">
+          <label class="label" for="tema_id">Temă din catalog <span class="muted">(opțional)</span></label>
+          <select class="select" id="tema_id" name="tema_id">
+            <option value="">Propun o temă proprie</option>
+            {
+              topics.map((t) => (
+                <option
+                  value={t.id}
+                  data-profesor={t.teacher_id}
+                  data-title={t.title}
+                  selected={t.id === openWith.topic}
+                >
+                  {t.title} — {LEVEL_LABELS[t.level]}
+                  {t.language !== 'ro' ? ` · ${languageLabel(t.language)}` : ''}
+                </option>
+              ))
+            }
+          </select>
+          <span class="hint">Dacă alegi o temă, titlul se completează automat și îl poți ajusta.</span>
+        </div>
+
+        <div class="field">
+          <label class="label" for="titlu_ro">Titlul lucrării (română)</label>
+          <input
+            class="input"
+            id="titlu_ro"
+            name="titlu_ro"
+            required
+            maxlength="200"
+            placeholder="Ex: Impactul inteligenței artificiale în strategiile de personalizare"
+          />
+        </div>
+
+        <div class="field">
+          {/* „Opțional” belongs to the label, not to the placeholder: a
+              placeholder disappears at the first keystroke, and whoever comes
+              back to the field has no way left to know whether it is required. */}
+          <label class="label" for="titlu_en">
+            Titlul lucrării în engleză <span class="muted">(opțional)</span>
+          </label>
+          <input class="input" id="titlu_en" name="titlu_en" maxlength="200"
+            placeholder="Ex: The impact of video reviews on purchase intent" />
+        </div>
+
+        <div class="field">
+          <label class="label" for="scop_obiective">Scopul și obiectivele lucrării</label>
+          <textarea
+            class="textarea"
+            id="scop_obiective"
+            name="scop_obiective"
+            required
+            minlength="40"
+            placeholder="Descrie direcția generală a cercetării, problema abordată și minimum 3 obiective urmărite…"
+          data-autogrow />
+          <span class="hint"><span id="contor-scop">0</span> caractere · minimum 40</span>
+        </div>
+
+        {/* The objectives describe the thesis; the motivation describes the choice.
+            The coordinator decides on both, and the second was the one missing. */}
+        <div class="field">
+          <label class="label" for="motivatie">De ce ai ales această temă</label>
+          <textarea
+            class="textarea"
+            id="motivatie"
+            name="motivatie"
+            required
+            minlength="40"
+            placeholder="Ce te leagă de subiect: un curs, un stagiu, acces la date, planuri pentru master…"
+          data-autogrow />
+          <span class="hint">
+            <span id="contor-motivatie">0</span> caractere · minimum 40. Ajunge la coordonator
+            odată cu cererea și rămâne în documentul tipărit.
+          </span>
+        </div>
+
+        <div class="row" style="justify-content:flex-end;gap:var(--s-2)">
+          <button class="btn btn--secondary" type="button" data-inchide>Renunță</button>
+          <button class="btn btn--primary" type="button" id="spre-pas-2">Continuă</button>
+        </div>
+      </div>
+
+      <div class="pas" data-pas="2" hidden>
+        <p class="muted text-sm">
+          Verifică datele. După depunere, cererea ajunge la coordonator și nu mai poate fi
+          modificată — doar retrasă.
+        </p>
+
+        <dl class="previzualizare">
+          <dt>Student</dt>
+          {/* The same name the printed cerere will carry, initial included:
+              this is the last screen before the request is filed, and the two
+              must not disagree. */}
+          <dd>{officialName(u)} · {u.student_number} · {groupLabel(u)}</dd>
+          <dt>Coordonator</dt>
+          <dd id="pv-profesor">—</dd>
+          <dt>Titlul lucrării</dt>
+          <dd id="pv-title">—</dd>
+          <dt>Scop și obiective</dt>
+          <dd id="pv-scop">—</dd>
+          <dt>Motivația alegerii</dt>
+          <dd id="pv-motivatie">—</dd>
+        </dl>
+
+        <div class="row" style="justify-content:flex-end;gap:var(--s-2)">
+          <button class="btn btn--secondary" type="button" id="inapoi-pas-1">Înapoi</button>
+          <button class="btn btn--primary" type="submit">
+            {acceptedInvitation ? 'Depune și confirmă coordonarea' : 'Depune cererea'}
+          </button>
+        </div>
+      </div>
+    </form>
+  </dialog>
+
+  {/* Asking to change the agreed thesis. The same three fields as the
+      submission form, pre-filled with what is actually stored — the coordinator
+      decides on a difference, so there has to be something to differ from. */}
+  <dialog id="dialog-modificare" aria-labelledby="titlu-modificare">
+    <form method="POST" action="/api/modificari" class="formular">
+      <div class="formular__cap">
+        <h2 id="titlu-modificare" class="section-title">Cere o modificare</h2>
+        <button class="btn btn--ghost btn--sm" type="button" data-inchide-modificare aria-label="Închide">✕</button>
+      </div>
+
+      <input type="hidden" name="actiune" value="cere" />
+      <input type="hidden" name="cerere_id" id="modificare-cerere" />
+
+      <p class="muted text-sm" style="margin-bottom:var(--s-4)">
+        Coordonatorul decide. Până atunci lucrarea rămâne așa cum este acum: locul, termenele,
+        conversația și cererea tipăribilă nu se schimbă.
+      </p>
+
+      <div class="pas">
+        <div class="field">
+          <label class="label" for="mod-titlu-ro">
+            Titlul lucrării (română) <span class="label__req" aria-hidden="true">*</span>
+          </label>
+          <input class="input" id="mod-titlu-ro" name="titlu_ro" required maxlength="200" />
+        </div>
+
+        <div class="field">
+          <label class="label" for="mod-titlu-en">
+            Titlul lucrării în engleză <span class="muted">(opțional)</span>
+          </label>
+          <input class="input" id="mod-titlu-en" name="titlu_en" maxlength="200" />
+        </div>
+
+        <div class="field">
+          <label class="label" for="mod-obiective">
+            Scopul și obiectivele lucrării <span class="label__req" aria-hidden="true">*</span>
+          </label>
+          <textarea
+            class="textarea"
+            id="mod-obiective"
+            name="scop_obiective"
+            required
+            minlength="40"
+            data-autogrow
+          />
+          <span class="hint"><span id="contor-mod">0</span> caractere · minimum 40</span>
+        </div>
+
+        <div class="field">
+          <label class="label" for="mod-motiv">
+            De ce ceri modificarea <span class="muted">(opțional)</span>
+          </label>
+          <textarea
+            class="textarea"
+            id="mod-motiv"
+            name="motiv"
+            rows="3"
+            placeholder="Ex: după prima colectare de date, componenta empirică s-a mutat pe comerțul online."
+            data-autogrow
+          />
+          <span class="hint">Ajunge la coordonator odată cu cererea și rămâne în istoric.</span>
+        </div>
+
+        <div class="row row--end" style="gap:var(--s-2)">
+          <button class="btn btn--secondary" type="button" data-inchide-modificare>Renunță</button>
+          <button class="btn btn--primary" type="submit">Trimite cererea de modificare</button>
+        </div>
+      </div>
+    </form>
+  </dialog>
+
+  {/* Handing in the thesis is a deliberate act with a consequence — the
+      coordinator is told, and the file enters the session's archive — so it
+      asks for a confirmation of its own rather than being a file field left
+      lying on the page. */}
+  <dialog id="dialog-lucrare" aria-labelledby="titlu-lucrare">
+    <form method="POST" action="/api/lucrare" class="formular" enctype="multipart/form-data">
+      <div class="formular__cap">
+        <h2 id="titlu-lucrare" class="section-title" data-titlu-lucrare>Încarcă lucrarea</h2>
+        <button class="btn btn--ghost btn--sm" type="button" data-inchide-lucrare aria-label="Închide">✕</button>
+      </div>
+
+      <input type="hidden" name="actiune" value="lucrare" data-actiune-lucrare />
+
+      <p class="muted text-sm" data-explicatie-lucrare>
+        Forma finală, în PDF, cel mult {Math.round(THESIS_MAX_BYTES / (1024 * 1024))} MB.
+        Coordonatorul este anunțat imediat, iar lucrarea apare în arhiva sesiunii. Poți încărca
+        o versiune nouă oricând până la susținere — cele dinainte rămân în istoric.
+      </p>
+
+      <div class="field">
+        <label class="label" for="lucrare-fisier">Fișierul</label>
+        <input
+          class="input"
+          id="lucrare-fisier"
+          name="fisier"
+          type="file"
+          accept={THESIS_ACCEPT}
+          data-camp-lucrare
+          required
+        />
+        <span class="hint" data-hint-lucrare>Un singur fișier. Numele lui rămâne așa cum este.</span>
+      </div>
+
+      <div class="row row--end" style="gap:var(--s-2)">
+        <button class="btn btn--secondary" type="button" data-inchide-lucrare>Renunță</button>
+        <button class="btn btn--primary" type="submit">Încarcă</button>
+      </div>
+    </form>
+  </dialog>
+
+  {/* Declining asks for a reason: the coordinator wrote a personal proposal and
+      deserves to know why it did not fit. */}
+  <dialog id="dialog-refuz" aria-labelledby="titlu-refuz">
+    <form method="POST" action="/api/invitatii" class="formular">
+      <div class="formular__cap">
+        <h2 id="titlu-refuz" class="section-title">Refuză propunerea</h2>
+        <button class="btn btn--ghost btn--sm" type="button" data-inchide-refuz aria-label="Închide">✕</button>
+      </div>
+      <input type="hidden" name="actiune" value="raspunde" />
+      <input type="hidden" name="raspuns" value="declined" />
+      <input type="hidden" name="invitatie_id" id="refuz-id" />
+
+      <p class="muted text-sm">
+        Motivul ajunge la <strong id="refuz-nume">coordonator</strong> prin email și în conversație.
+      </p>
+
+      <div class="field">
+        <label class="label" for="motiv-refuz">Motivul refuzului</label>
+        <textarea
+          class="textarea"
+          id="motiv-refuz"
+          name="motiv"
+          required
+          minlength="10"
+          placeholder="Ex: Mulțumesc pentru propunere, dar am depus deja o cerere pe o temă de marketing digital."
+        data-autogrow />
+      </div>
+
+      <div class="row" style="justify-content:flex-end;gap:var(--s-2)">
+        <button class="btn btn--secondary" type="button" data-inchide-refuz>Renunță</button>
+        <button class="btn btn--primary" type="submit">Trimite refuzul</button>
+      </div>
+    </form>
+  </dialog>
+</StudentLayout>
+
+<script>
+  const dialog = document.getElementById('dialog-cerere') as HTMLDialogElement | null
+  const form = document.getElementById('formular-cerere') as HTMLFormElement | null
+
+  const openDialog = () => dialog?.showModal()
+  document.getElementById('deschide-cerere')?.addEventListener('click', openDialog)
+  document.getElementById('deschide-cerere-gol')?.addEventListener('click', openDialog)
+  dialog
+    ?.querySelectorAll('[data-inchide]')
+    .forEach((b) => b.addEventListener('click', () => dialog.close()))
+
+  const step1 = dialog?.querySelector<HTMLElement>('[data-pas="1"]')
+  const step2 = dialog?.querySelector<HTMLElement>('[data-pas="2"]')
+  const teacherSelect = document.getElementById('profesor_id') as HTMLSelectElement
+  const topicSelect = document.getElementById('tema_id') as HTMLSelectElement
+  const title = document.getElementById('titlu_ro') as HTMLInputElement
+  const objectivesField = document.getElementById('scop_obiective') as HTMLTextAreaElement
+  const motivationField = document.getElementById('motivatie') as HTMLTextAreaElement
+
+  const count = (field: HTMLTextAreaElement | null, id: string) => {
+    const el = document.getElementById(id)
+    field?.addEventListener('input', () => {
+      if (el) el.textContent = String(field.value.length)
+    })
+  }
+  count(objectivesField, 'contor-scop')
+  count(motivationField, 'contor-motivatie')
+
+  // The topics narrow to the chosen coordinator, so that a topic belonging to
+  // someone else cannot be requested.
+  function syncTopics() {
+    const chosen = teacherSelect?.value
+    for (const o of [...topicSelect.options]) {
+      if (!o.value) continue
+      o.hidden = Boolean(chosen) && o.dataset.profesor !== chosen
+    }
+    if (topicSelect.selectedOptions[0]?.hidden) topicSelect.value = ''
+  }
+
+  teacherSelect?.addEventListener('change', () => {
+    syncTopics()
+    // Changing the coordinator invalidates the chosen topic, and so the title taken from it.
+    fillTitleFromTopic()
+  })
+  syncTopics()
+
+  /* The title follows the chosen topic, in both directions.
+   *
+   * It filled only the empty field, so a second choice changed nothing and
+   * „propun o temă proprie" left the title of the discarded topic on screen. It
+   * is rewritten on every change, unless the student has already written
+   * something by hand. */
+  let titleFromTopic = ''
+
+  const fillTitleFromTopic = () => {
+    const ales = topicSelect.selectedOptions[0]?.dataset.title ?? ''
+    const writtenByHand = title.value.trim() !== '' && title.value !== titleFromTopic
+    if (writtenByHand) return
+
+    title.value = ales
+    titleFromTopic = ales
+  }
+  topicSelect?.addEventListener('change', fillTitleFromTopic)
+
+  // Arriving from the catalogue with a coordinator (and perhaps a topic)
+  // already chosen, the form opens straight away and with the title filled in.
+  if (dialog?.hasAttribute('data-deschide-imediat')) {
+    fillTitleFromTopic()
+    openDialog()
+  }
+
+  document.getElementById('spre-pas-2')?.addEventListener('click', () => {
+    // Native validation runs before the preview.
+    if (
+      !title.value ||
+      objectivesField.value.length < 40 ||
+      motivationField.value.length < 40 ||
+      (!teacherSelect.disabled && !teacherSelect.value)
+    ) {
+      form?.reportValidity()
+      return
+    }
+    const set = (id: string, val: string) => {
+      const el = document.getElementById(id)
+      if (el) el.textContent = val
+    }
+    set('pv-profesor', teacherSelect.selectedOptions[0]?.textContent?.trim() ?? '—')
+    set('pv-title', title.value)
+    set('pv-scop', objectivesField.value)
+    set('pv-motivatie', motivationField.value)
+    if (step1) step1.hidden = true
+    if (step2) step2.hidden = false
+  })
+
+  document.getElementById('inapoi-pas-1')?.addEventListener('click', () => {
+    if (step1) step1.hidden = false
+    if (step2) step2.hidden = true
+  })
+
+  /* --- declining a proposal --------------------------------------------- */
+
+  const refuz = document.getElementById('dialog-refuz') as HTMLDialogElement | null
+  document.querySelectorAll<HTMLButtonElement>('[data-refuza]').forEach((b) => {
+    b.addEventListener('click', () => {
+      const invitationIdField = document.getElementById('refuz-id') as HTMLInputElement | null
+      const nume = document.getElementById('refuz-nume')
+      if (invitationIdField) invitationIdField.value = b.dataset.refuza ?? ''
+      if (nume) nume.textContent = b.dataset.nume ?? 'coordonator'
+      refuz?.showModal()
+    })
+  })
+  refuz
+    ?.querySelectorAll('[data-inchide-refuz]')
+    .forEach((b) => b.addEventListener('click', () => refuz.close()))
+
+  /* --- handing in the thesis ---------------------------------------------
+   *
+   * One dialog for both documents: the difference between them is three
+   * strings and the list of accepted types, and two nearly identical forms on
+   * the same page drift apart the first time one of them is corrected. */
+  const uploadDialog = document.getElementById('dialog-lucrare') as HTMLDialogElement | null
+
+  const uploadKinds = {
+    lucrare: {
+      titlu: 'Încarcă lucrarea',
+      actiune: 'lucrare',
+      accept: '.pdf',
+      hint: 'Un singur fișier PDF. Numele lui rămâne așa cum este.',
+    },
+    declaratie: {
+      titlu: 'Încarcă declarația de originalitate',
+      actiune: 'declaratie',
+      accept: '.pdf,.jpg,.jpeg,.png',
+      hint: 'Pagina semnată: PDF, sau o fotografie clară (JPG, PNG).',
+    },
+  }
+
+  const openUpload = (kind: keyof typeof uploadKinds) => {
+    if (!uploadDialog) return
+    const cfg = uploadKinds[kind]
+    const set = (selector: string, apply: (el: HTMLElement) => void) => {
+      const el = uploadDialog.querySelector<HTMLElement>(selector)
+      if (el) apply(el)
+    }
+    set('[data-titlu-lucrare]', (el) => (el.textContent = cfg.titlu))
+    set('[data-actiune-lucrare]', (el) => ((el as HTMLInputElement).value = cfg.actiune))
+    set('[data-camp-lucrare]', (el) => {
+      const input = el as HTMLInputElement
+      input.accept = cfg.accept
+      input.value = ''
+    })
+    set('[data-hint-lucrare]', (el) => (el.textContent = cfg.hint))
+    set('[data-explicatie-lucrare]', (el) => {
+      el.hidden = kind === 'declaratie'
+    })
+
+    uploadDialog.showModal()
+    uploadDialog.querySelector<HTMLInputElement>('[data-camp-lucrare]')?.focus()
+  }
+
+  document
+    .querySelectorAll<HTMLButtonElement>('[data-incarca-lucrare]')
+    .forEach((b) => b.addEventListener('click', () => openUpload('lucrare')))
+  document
+    .querySelectorAll<HTMLButtonElement>('[data-incarca-declaratie]')
+    .forEach((b) => b.addEventListener('click', () => openUpload('declaratie')))
+
+  uploadDialog
+    ?.querySelectorAll('[data-inchide-lucrare]')
+    .forEach((b) => b.addEventListener('click', () => uploadDialog.close()))
+
+  /* --- asking for a change to the agreed thesis --------------------------- */
+  const changeDialog = document.getElementById('dialog-modificare') as HTMLDialogElement | null
+  const changeObjectives = document.getElementById('mod-obiective') as HTMLTextAreaElement | null
+  count(changeObjectives, 'contor-mod')
+
+  document.querySelectorAll<HTMLButtonElement>('[data-cere-modificare]').forEach((b) => {
+    b.addEventListener('click', () => {
+      const fill = (id: string, value: string) => {
+        const el = document.getElementById(id) as HTMLInputElement | HTMLTextAreaElement | null
+        if (el) el.value = value
+      }
+      fill('modificare-cerere', b.dataset.cereModificare ?? '')
+      fill('mod-titlu-ro', b.dataset.titluRo ?? '')
+      fill('mod-titlu-en', b.dataset.titluEn ?? '')
+      fill('mod-obiective', b.dataset.obiective ?? '')
+      fill('mod-motiv', '')
+
+      const counter = document.getElementById('contor-mod')
+      if (counter) counter.textContent = String((b.dataset.obiective ?? '').length)
+
+      changeDialog?.showModal()
+      document.getElementById('mod-titlu-ro')?.focus()
+    })
+  })
+
+  /* „Modifică titlul” on the catalogue screen leads here with `?modificare=1`:
+     one form, two doors, rather than the same dialog written twice. */
+  if (new URLSearchParams(location.search).get('modificare') === '1') {
+    document.querySelector<HTMLButtonElement>('[data-cere-modificare]')?.click()
+  }
+
+  changeDialog
+    ?.querySelectorAll('[data-inchide-modificare]')
+    .forEach((b) => b.addEventListener('click', () => changeDialog.close()))
+
+  /* --- withdrawing the request --------------------------------------------
+   *
+   * Withdrawal was a field and a red button permanently in view, next to the
+   * rest of the request: it could be pressed by mistake, and the action cannot
+   * be undone. Now it is asked for twice. */
+  document.querySelectorAll<HTMLButtonElement>('[data-retrage]').forEach((b) => {
+    b.addEventListener('click', () => {
+      const form = document.getElementById(`retragere-${b.dataset.retrage}`)
+      if (!form) return
+      form.hidden = false
+      b.hidden = true
+      form.querySelector<HTMLInputElement>('input[name="motiv"]')?.focus()
+    })
+  })
+
+  document.querySelectorAll<HTMLButtonElement>('[data-anuleaza-retragerea]').forEach((b) => {
+    b.addEventListener('click', () => {
+      const id = b.dataset.anulezaRetragerea ?? b.dataset.anuleazaRetragerea
+      const form = document.getElementById(`retragere-${id}`)
+      const trigger = document.querySelector<HTMLElement>(`[data-retrage="${id}"]`)
+      if (form) form.hidden = true
+      if (trigger) {
+        trigger.hidden = false
+        trigger.focus()
+      }
+    })
+  })
+</script>
+
+<style>
+  /* Documentul predat: un rând, nu un card — este un singur obiect, iar cardul
+     l-ar face să pară o listă cu un element. */
+  .document {
+    display: flex;
+    align-items: center;
+    gap: var(--s-4);
+    flex-wrap: wrap;
+    padding: var(--s-4);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--r-md);
+    background: var(--surface);
+  }
+
+  .document--mic {
+    border-color: var(--border);
+    background: var(--surface-sunken);
+  }
+
+  .document__semn {
+    display: grid;
+    place-items: center;
+    width: 44px;
+    height: 44px;
+    flex: none;
+    border-radius: var(--r-md);
+    background: var(--red-tint);
+    color: var(--red);
+  }
+  .document__semn svg {
+    width: 22px;
+    height: 22px;
+  }
+
+  /* Numele unui fișier nu se taie: pe hârtie și pe telefon deopotrivă, „…” în
+     mijlocul lui înseamnă că nu mai știi ce ai predat. */
+  .document__nume {
+    overflow-wrap: anywhere;
+  }
+
+  .istoric summary {
+    cursor: pointer;
+    font-size: var(--t-sm);
+    font-weight: 600;
+    color: var(--ink-soft);
+  }
+
+  .istoric__lista {
+    list-style: none;
+    margin: var(--s-3) 0 0;
+    padding: 0;
+    display: grid;
+    gap: var(--s-2);
+  }
+  .istoric__lista li {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--s-2) var(--s-3);
+    align-items: baseline;
+    padding-bottom: var(--s-2);
+    border-bottom: 1px solid var(--border);
+  }
+
+  /* The week of waiting, as a length on screen. Seven segments, one per day. */
+  .asteptare {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-2);
+    padding: var(--s-3) var(--s-4);
+    background: var(--surface-sunken);
+    border-radius: var(--r-md);
+  }
+
+  .asteptare__bara {
+    display: flex;
+    gap: 3px;
+  }
+
+  .asteptare__zi {
+    flex: 1;
+    height: 6px;
+    border-radius: 999px;
+    background: var(--border-strong);
+    opacity: 0.4;
+  }
+  .asteptare__zi.is-trecuta {
+    background: var(--warn);
+    opacity: 1;
+  }
+
+  .asteptare__linie {
+    font-size: var(--t-sm);
+  }
+
+  .retragere {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-3);
+    padding: var(--s-4);
+    border: 1px solid var(--danger);
+    border-radius: var(--r-md);
+    background: var(--danger-tint);
+  }
+
+  .fara-locuri {
+    margin: 0 var(--s-5) var(--s-4);
+    padding: var(--s-3) var(--s-4);
+    background: var(--warn-tint);
+    color: var(--warn);
+    border-radius: var(--r-md);
+    font-size: var(--t-sm);
+  }
+  /* A proposal is not a notification: it is a decision waiting for the student,
+     so it sits above the list and carries the red seal. */
+  .propunere {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-3);
+    padding: var(--s-5);
+    background: var(--surface);
+    border: 1px solid var(--red);
+    border-left-width: 3px;
+    border-radius: var(--r-lg);
+  }
+
+  .propunere__cap {
+    display: flex;
+    align-items: center;
+    gap: var(--s-3);
+  }
+
+  .propunere__titlu {
+    font-family: var(--serif);
+    font-size: var(--t-md);
+  }
+
+  .propunere__tema {
+    font-size: var(--t-sm);
+  }
+
+  .propunere__mesaj {
+    padding: var(--s-4);
+    background: var(--surface-sunken);
+    border-radius: var(--r-md);
+    font-size: var(--t-sm);
+    white-space: pre-wrap;
+    text-wrap: pretty;
+    max-width: 76ch;
+  }
+
+  .cereri {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  .cerere {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-2);
+    padding: var(--s-5);
+    border-bottom: 1px solid var(--border);
+  }
+  .cerere:last-child {
+    border-bottom: 0;
+  }
+
+  .cerere__titlu {
+    font-family: var(--serif);
+    font-size: var(--t-lg);
+    font-weight: 600;
+    text-wrap: pretty;
+  }
+
+  .cerere__en {
+    font-size: var(--t-sm);
+    color: var(--ink-muted);
+    font-style: italic;
+    margin-top: -4px;
+  }
+
+  .motiv {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-2);
+    align-items: flex-start;
+    padding: var(--s-4);
+    background: var(--danger-tint);
+    border-radius: var(--r-md);
+    font-size: var(--t-sm);
+  }
+  .motiv strong {
+    color: var(--danger);
+  }
+
+  /* The text of the thesis, on the student's own screen at last. */
+  .lucrare {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-1);
+    padding: var(--s-4);
+    background: var(--surface-sunken);
+    border-radius: var(--r-md);
+    max-width: 76ch;
+  }
+  .lucrare__eticheta {
+    font-size: var(--t-xs);
+    color: var(--ink-muted);
+    font-weight: 600;
+  }
+  .lucrare__text {
+    font-size: var(--t-sm);
+    color: var(--ink-soft);
+    white-space: pre-wrap;
+    text-wrap: pretty;
+  }
+
+  /* A pending change is a block on the request, not a state of it: the
+     supervision stays „aprobată” the whole time, so the badge on the request
+     must not move. */
+  .modificare {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-2);
+    padding: var(--s-4);
+    background: var(--surface);
+    border: 1px solid var(--border-strong);
+    border-left: 3px solid var(--warn);
+    border-radius: 0 var(--r-md) var(--r-md) 0;
+    max-width: 76ch;
+  }
+
+  .modificare__titlu {
+    font-size: var(--t-sm);
+  }
+
+  .diferenta {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-3);
+    margin: 0;
+  }
+
+  .diferenta__camp {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-1);
+  }
+
+  .diferenta dt {
+    font-size: var(--t-xs);
+    font-weight: 600;
+    color: var(--ink-muted);
+  }
+
+  .diferenta dd {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin: 0;
+    font-size: var(--t-sm);
+  }
+
+  .diferenta__vechi {
+    padding: var(--s-2) var(--s-3);
+    background: var(--surface-sunken);
+    border-radius: var(--r-sm);
+    color: var(--ink-muted);
+    text-decoration: line-through;
+    white-space: pre-wrap;
+    text-wrap: pretty;
+  }
+
+  .diferenta__nou {
+    padding: var(--s-2) var(--s-3);
+    background: var(--surface-sunken);
+    border-left: 2px solid var(--red);
+    border-radius: 0 var(--r-sm) var(--r-sm) 0;
+    font-weight: 600;
+    white-space: pre-wrap;
+    text-wrap: pretty;
+  }
+
+  .istoric {
+    font-size: var(--t-sm);
+    max-width: 76ch;
+  }
+  .istoric summary {
+    cursor: pointer;
+    color: var(--ink-muted);
+    padding: var(--s-2) 0;
+  }
+
+  .istoric__lista {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-4);
+  }
+  .istoric__lista li {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-1);
+    padding-left: var(--s-3);
+    border-left: 1px solid var(--border);
+  }
+
+  .istoric__titlu {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .istoric__nota {
+    font-size: var(--t-sm);
+    color: var(--ink-soft);
+    text-wrap: pretty;
+  }
+
+  .mesaj-decizie {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-1);
+    padding: var(--s-4);
+    background: var(--surface-sunken);
+    border-left: 2px solid var(--ok);
+    border-radius: 0 var(--r-md) var(--r-md) 0;
+    font-size: var(--t-sm);
+    max-width: 76ch;
+  }
+  .mesaj-decizie strong {
+    font-size: var(--t-xs);
+    color: var(--ink-muted);
+  }
+  .mesaj-decizie p {
+    white-space: pre-wrap;
+    text-wrap: pretty;
+  }
+
+  /* --- the deadlines, in the three piles the coordinator sees --------------
+     The two screens are one visual language: the same groups, the same order,
+     the same words on the badge. They used to differ exactly where it mattered
+     — the coordinator's timeline had no „Termen depășit” at all. */
+  .termene__nota {
+    padding: 0 var(--s-5);
+    font-size: var(--t-sm);
+    color: var(--ink-soft);
+    max-width: 76ch;
+  }
+
+  .grupe {
+    display: flex;
+    flex-direction: column;
+    margin-top: var(--s-4);
+  }
+
+  .grupa {
+    border-top: 1px solid var(--border);
+  }
+
+  .grupa__cap {
+    display: flex;
+    align-items: center;
+    gap: var(--s-3);
+    padding: var(--s-4) var(--s-5);
+    cursor: pointer;
+    list-style: none;
+  }
+  .grupa__cap::-webkit-details-marker {
+    display: none;
+  }
+  .grupa__cap:hover {
+    background: var(--surface-sunken);
+  }
+
+  .grupa__titlu {
+    font-size: var(--t-sm);
+    font-weight: 600;
+  }
+
+  .grupa__contor {
+    min-width: 22px;
+    padding: 1px 6px;
+    border-radius: 999px;
+    background: var(--surface-sunken);
+    font-size: var(--t-xs);
+    font-weight: 600;
+    color: var(--ink-soft);
+    text-align: center;
+  }
+
+  .grupa--overdue .grupa__cap {
+    border-left: 3px solid var(--danger);
+  }
+  .grupa--overdue .grupa__contor {
+    background: var(--danger-tint);
+    color: var(--danger);
+  }
+  .grupa--done .grupa__titlu {
+    color: var(--ink-muted);
+  }
+
+  .termene {
+    list-style: none;
+    margin: 0;
+    padding: 0 var(--s-5) var(--s-4);
+  }
+
+  .termene__sectiune {
+    padding: var(--s-4) 0 var(--s-2) 27px;
+    font-size: var(--t-xs);
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    color: var(--ink-muted);
+    text-transform: uppercase;
+  }
+
+  .termen {
+    display: flex;
+    gap: var(--s-4);
+    padding-block: var(--s-3);
+    position: relative;
+  }
+
+  .termen:not(:last-child)::before {
+    content: '';
+    position: absolute;
+    left: 5px;
+    top: 24px;
+    bottom: -6px;
+    width: 1px;
+    background: var(--border-strong);
+  }
+
+  .jalon__punct {
+    width: 11px;
+    height: 11px;
+    margin-top: 6px;
+    border-radius: 50%;
+    border: 2px solid var(--border-strong);
+    background: var(--surface);
+    flex: none;
+    z-index: 1;
+  }
+  .termen--done .jalon__punct {
+    background: var(--ok);
+    border-color: var(--ok);
+  }
+  .termen--in_progress .jalon__punct {
+    background: var(--info);
+    border-color: var(--info);
+  }
+  .termen--overdue .jalon__punct {
+    background: var(--danger);
+    border-color: var(--danger);
+  }
+
+  .jalon__corp {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    flex: 1;
+    min-width: 0;
+  }
+
+  .jalon__titlu {
+    font-size: var(--t-sm);
+    font-weight: 600;
+    text-wrap: pretty;
+  }
+  .termen--done .jalon__titlu {
+    color: var(--ink-muted);
+  }
+
+  .jalon__descriere {
+    font-size: var(--t-sm);
+    color: var(--ink-soft);
+    margin-top: var(--s-1);
+    max-width: 70ch;
+    text-wrap: pretty;
+  }
+
+  .formular {
+    display: flex;
+    flex-direction: column;
+    padding: var(--s-5);
+  }
+
+  .formular__cap {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--s-3);
+    margin-bottom: var(--s-4);
+  }
+
+  .formular__nota {
+    padding: var(--s-3) var(--s-4);
+    background: var(--red-tint);
+    color: var(--red);
+    border-radius: var(--r-md);
+    font-size: var(--t-sm);
+    margin-bottom: var(--s-4);
+  }
+
+  .pas {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-4);
+  }
+
+  .previzualizare {
+    display: grid;
+    grid-template-columns: minmax(120px, auto) 1fr;
+    gap: var(--s-2) var(--s-4);
+    padding: var(--s-4);
+    background: var(--surface-sunken);
+    border-radius: var(--r-md);
+    font-size: var(--t-sm);
+    margin: 0;
+  }
+  .previzualizare dt {
+    color: var(--ink-muted);
+    font-size: var(--t-xs);
+  }
+  .previzualizare dd {
+    margin: 0;
+    text-wrap: pretty;
+  }
+</style>

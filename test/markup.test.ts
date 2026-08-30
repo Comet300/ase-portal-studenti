@@ -3,12 +3,13 @@ import assert from 'node:assert/strict'
 import { escapeHtml, html, joinHtml, trusted } from '../src/lib/markup.ts'
 
 /**
- * Marcajul din emailuri.
+ * The markup in the emails.
  *
- * Aici se scapă textul scris de oameni înainte să intre într-un mail HTML:
- * motivarea unei cereri, motivul unei respingeri, numele unui fișier. Este
- * singura barieră dintre ce tastează un student și ce se randează în inboxul
- * coordonatorului, deci testele sunt despre ce *nu* trebuie să treacă.
+ * This is where text written by people is escaped before it goes into an HTML
+ * mail: the justification of a request, the reason for a rejection, the name of
+ * a file. It is the only barrier between what a student types and what gets
+ * rendered in the coordinator's inbox, so the tests are about what must *not*
+ * get through.
  */
 
 describe('escapeHtml', () => {
@@ -40,8 +41,8 @@ describe('html', () => {
   })
 
   it('acceptă marcaj deja sigur fără să îl scape a doua oară', () => {
-    const interior = html`<strong>Ana</strong>`
-    const out = html`<p>${interior}</p>`.toString()
+    const inner = html`<strong>Ana</strong>`
+    const out = html`<p>${inner}</p>`.toString()
     assert.equal(out, '<p><strong>Ana</strong></p>')
   })
 
@@ -50,8 +51,8 @@ describe('html', () => {
   })
 
   it('un student care își numește lucrarea cu marcaj nu poate injecta nimic', () => {
-    const titlu = '</p><script>fetch("//evil")</script><p>'
-    const out = html`<p>${titlu}</p>`.toString()
+    const title = '</p><script>fetch("//evil")</script><p>'
+    const out = html`<p>${title}</p>`.toString()
     assert.ok(!out.includes('<script'), 'nicio etichetă de script')
     assert.ok(!out.includes('</p><'), 'nu se poate ieși din paragraf')
   })

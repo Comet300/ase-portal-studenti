@@ -1,4 +1,5 @@
 ---
+import AlegeData from '../../components/AlegeData.astro'
 import ProfesorLayout from '../../layouts/ProfesorLayout.astro'
 import { query } from '../../lib/db'
 import { formatDate } from '../../lib/repo'
@@ -104,17 +105,28 @@ const byLevel = {
 
         <div class="row row--wrap" style="gap:var(--s-3)">
           <div class="field" style="flex:1;min-width:160px">
-            <label class="label" for="eticheta">Denumire</label>
+            <label class="label" for="eticheta">
+              Denumire <span class="label__req" aria-hidden="true">*</span>
+            </label>
             <input class="input" id="eticheta" name="eticheta" value={suggested.label} required />
           </div>
-          <div class="field" style="flex:1;min-width:170px">
-            <label class="label" for="inceput">Începe</label>
-            <input class="input" id="inceput" name="inceput" type="date" value={suggested.startsOn} required />
-          </div>
-          <div class="field" style="flex:1;min-width:170px">
-            <label class="label" for="sfarsit">Se încheie</label>
-            <input class="input" id="sfarsit" name="sfarsit" type="date" value={suggested.endsOn} required />
-          </div>
+          <AlegeData
+            id="inceput"
+            name="inceput"
+            label="Începe"
+            value={suggested.startsOn}
+            required
+            style="flex:1;min-width:240px"
+          />
+          <AlegeData
+            id="sfarsit"
+            name="sfarsit"
+            label="Se încheie"
+            value={suggested.endsOn}
+            required
+            pereche="inceput"
+            style="flex:1;min-width:240px"
+          />
         </div>
 
         <fieldset class="preia">
@@ -126,10 +138,10 @@ const byLevel = {
               <small>Aceleași specializări, limbi și durate. Aproape întotdeauna corect.</small>
             </span>
           </label>
-          {/* Alocările de locuri sunt capacitatea reală a fiecărui cadru
-              didactic și nu se schimbă aproape niciodată de la un an la altul —
-              dar porneau la zero, deci primul lucru de făcut într-un an nou era
-              să reintroduci patruzeci de numere pe care portalul le știa. */}
+          {/* Seat allocations are the real capacity of each member of the
+              teaching staff and hardly ever change from one year to the next —
+              but they started at zero, so the first thing to do in a new year
+              was to key in forty numbers the portal already knew. */}
           <label class="check">
             <input type="checkbox" name="preia_locuri" value="da" checked />
             <span>
@@ -155,10 +167,11 @@ const byLevel = {
           </label>
         </fieldset>
 
-        {/* Un formular deschis pe ecran, cu un buton care arhivează o promoție
-            întreagă. Confirmarea este denumirea anului care se închide, scrisă de
-            mână: o casetă de bifat se bifează din reflex, un nume nu se scrie din
-            reflex. Serverul o compară cu anul curent din baza de date. */}
+        {/* A form left open on the screen, with a button that archives a whole
+            cohort. The confirmation is the name of the year being closed,
+            written by hand: a checkbox gets ticked out of reflex, a name does
+            not get written out of reflex. The server compares it against the
+            current year in the database. */}
         <div class="field confirmare">
           <label class="label" for="confirmare">
             Scrie <strong>{current?.label}</strong> ca să confirmi închiderea sesiunii în curs
@@ -184,6 +197,20 @@ const byLevel = {
           </button>
         </div>
       </form>
+
+      {/* Opening a year carries forward the people who already exist; a new
+          cohort appears from nowhere. The next step is named here, not repeated
+          here: the import writes into `users`, while „Importă” further down this
+          same screen writes into the archive — two buttons with one name and
+          different destination tables on one page is a mistake waiting to
+          happen. */}
+      <div class="panel__footer">
+        <p class="hint" style="margin:0">
+          Anul nou preia oamenii care sunt deja în portal. Promoția care intră acum în anul I
+          se adaugă din <a href="/profesor/conturi?sectiune=import">Conturi → Importă o promoție</a>,
+          din fișierul de la secretariat.
+        </p>
+      </div>
     </section>
 
     <section class="panel">
@@ -308,11 +335,12 @@ Ana Petre;MK-2021-0142;Marketing strategic;master;ro;Conf. univ. dr. Cristian Va
           </span>
         </div>
 
-        {/* Previzualizarea, înainte de a scrie în arhiva publică.
-            Se lipesc patruzeci de rânduri dintr-un fișier de evidență ținut de
-            mână de mai multe persoane: două vor avea coloanele inversate, una data
-            scrisă „iulie 2022”. Până acum se afla după import, dintr-un mesaj care
-            spunea „37 importate, 3 respinse” — cu arhiva deja modificată. */}
+        {/* The preview, before anything is written into the public archive.
+            Forty rows get pasted in out of a record kept by hand by several
+            people: two of them will have the columns swapped, one the date
+            written as „iulie 2022”. Until now you found out after the import,
+            from a message saying „37 importate, 3 respinse” — with the archive
+            already changed. */}
         <div id="previzualizare" hidden>
           <div class="row row--between row--wrap" style="gap:var(--s-3);align-items:baseline">
             <h3 class="section-title" style="font-size:var(--t-md)">Ce se va importa</h3>
@@ -328,8 +356,8 @@ Ana Petre;MK-2021-0142;Marketing strategic;master;ro;Conf. univ. dr. Cristian Va
             </table>
           </div>
 
-          {/* Rândurile respinse se pot corecta pe loc: altfel trebuie găsite în
-              caseta de text, printre celelalte treizeci și nouă. */}
+          {/* Rejected rows can be corrected on the spot: otherwise they have
+              to be found in the text box, among the other thirty-nine. */}
           <div id="respinse" hidden>
             <p class="respinse__titlu">Rânduri care nu se pot citi</p>
             <ul class="respinse__lista" id="respinse-lista"></ul>
@@ -348,67 +376,68 @@ Ana Petre;MK-2021-0142;Marketing strategic;master;ro;Conf. univ. dr. Cristian Va
 </ProfesorLayout>
 
 <script>
-  import { COLOANE_ARHIVA, citesteRanduriArhiva, nivelArhiva } from '../../lib/arhiva'
+  import { ARCHIVE_COLUMNS, parseArchiveRows, parseArchiveLevel } from '../../lib/archive'
 
-  /* --- previzualizarea importului -------------------------------------------
+  /* --- the import preview ---------------------------------------------------
    *
-   * Aceeași funcție care citește rândurile în rută le citește și aici, deci
-   * tabelul arătat și cel importat nu pot să difere. Ce se trimite rămâne textul
-   * din casetă: previzualizarea nu este o sursă de date, este o oglindă.
+   * The same function that reads the rows in the route reads them here too, so
+   * the table that is shown and the one that gets imported cannot differ. What
+   * is submitted is still the text in the box: the preview is not a source of
+   * data, it is a mirror.
    *
-   * Celulele sunt editabile, iar o modificare se scrie înapoi în casetă — acolo
-   * unde ruta va citi oricum. Așa se corectează rândul al treizeci și șaptelea
-   * fără să fie găsit printre celelalte.
+   * The cells are editable, and an edit is written back into the box — where
+   * the route is going to read from anyway. That is how the thirty-seventh row
+   * gets corrected without having to be found among the others.
    */
-  const caseta = document.getElementById('randuri') as HTMLTextAreaElement | null
-  const zona = document.getElementById('previzualizare')
+  const textarea = document.getElementById('randuri') as HTMLTextAreaElement | null
+  const previewArea = document.getElementById('previzualizare')
   const cap = document.getElementById('previzualizare-cap')
   const corp = document.getElementById('previzualizare-corp')
   const sumar = document.getElementById('previzualizare-sumar')
-  const zonaRespinse = document.getElementById('respinse')
-  const listaRespinse = document.getElementById('respinse-lista')
+  const rejectedArea = document.getElementById('respinse')
+  const rejectedList = document.getElementById('respinse-lista')
 
-  if (caseta && zona && cap && corp && sumar && zonaRespinse && listaRespinse) {
-    /** Rândurile, ca matrice de celule — forma în care se scriu înapoi în casetă. */
-    let celule: string[][] = []
+  if (textarea && previewArea && cap && corp && sumar && rejectedArea && rejectedList) {
+    /** The rows, as a matrix of cells — the shape written back into the box. */
+    let cellRows: string[][] = []
 
-    /* Funcție-expresie, nu declarație: o declarație se ridică în afara blocului
-     * în care TypeScript a stabilit că elementele nu sunt null, iar tot ce e
-     * dinăuntru redevine „posibil null”. */
-    const deseneaza = () => {
-      const { bune, respinse } = citesteRanduriArhiva(caseta.value)
-      celule = caseta.value
+    /* A function expression, not a declaration: a declaration hoists out of the
+     * block in which TypeScript established that the elements are not null, and
+     * everything inside it becomes „possibly null” again. */
+    const render = () => {
+      const { accepted, rejected } = parseArchiveRows(textarea.value)
+      cellRows = textarea.value
         .split('\n')
         .map((l) => l.trim())
         .filter(Boolean)
         .map((l) => l.split(';').map((c) => c.trim()))
 
-      zona.hidden = celule.length === 0
+      previewArea.hidden = cellRows.length === 0
 
       cap.textContent = ''
-      for (const nume of COLOANE_ARHIVA) {
+      for (const columnName of ARCHIVE_COLUMNS) {
         const th = document.createElement('th')
         th.scope = 'col'
-        th.textContent = nume
+        th.textContent = columnName
         cap.appendChild(th)
       }
 
       corp.textContent = ''
-      celule.forEach((rand, i) => {
+      cellRows.forEach((rand, i) => {
         const tr = document.createElement('tr')
-        // Un rând respins se marchează, nu se ascunde: el este cel de corectat.
-        const respins = respinse.find((r) => r.numar === i + 1)
+        // A rejected row gets marked, not hidden: it is the one to correct.
+        const respins = rejected.find((r) => r.numar === i + 1)
         if (respins) tr.className = 'rand-respins'
 
-        COLOANE_ARHIVA.forEach((nume, col) => {
+        ARCHIVE_COLUMNS.forEach((columnName, col) => {
           const td = document.createElement('td')
           const camp = document.createElement('input')
           camp.className = 'input input--celula'
           camp.value = rand[col] ?? ''
-          camp.setAttribute('aria-label', `${nume}, rândul ${i + 1}`)
+          camp.setAttribute('aria-label', `${columnName}, rândul ${i + 1}`)
           camp.addEventListener('change', () => {
-            celule[i][col] = camp.value.trim()
-            scrieCaseta()
+            cellRows[i][col] = camp.value.trim()
+            writeTextarea()
           })
           td.appendChild(camp)
           tr.appendChild(td)
@@ -416,51 +445,52 @@ Ana Petre;MK-2021-0142;Marketing strategic;master;ro;Conf. univ. dr. Cristian Va
         corp.appendChild(tr)
       })
 
-      const n = bune.length
+      const n = accepted.length
       sumar.textContent =
         `${n} ${n === 1 ? 'rând se importă' : 'rânduri se importă'}` +
-        (respinse.length > 0 ? ` · ${respinse.length} de corectat` : '') +
-        (n > 0 ? ` · ${bune.filter((b) => nivelArhiva(b.level) === 'master').length} la master` : '')
+        (rejected.length > 0 ? ` · ${rejected.length} de corectat` : '') +
+        (n > 0 ? ` · ${accepted.filter((b) => parseArchiveLevel(b.level) === 'master').length} la master` : '')
 
-      zonaRespinse.hidden = respinse.length === 0
-      listaRespinse.textContent = ''
-      for (const r of respinse) {
+      rejectedArea.hidden = rejected.length === 0
+      rejectedList.textContent = ''
+      for (const r of rejected) {
         const li = document.createElement('li')
-        li.textContent = `Rândul ${r.numar}: ${r.motiv}`
-        listaRespinse.appendChild(li)
+        li.textContent = `Rândul ${r.numar}: ${r.reason}`
+        rejectedList.appendChild(li)
       }
     }
 
-    const scrieCaseta = () => {
-      caseta.value = celule.map((r) => r.join(';')).join('\n')
-      deseneaza()
+    const writeTextarea = () => {
+      textarea.value = cellRows.map((r) => r.join(';')).join('\n')
+      render()
     }
 
-    document.getElementById('verifica-randuri')?.addEventListener('click', deseneaza)
-    // Se redesenează la lipire, care este felul obișnuit în care ajung datele.
-    caseta.addEventListener('paste', () => setTimeout(deseneaza, 0))
+    document.getElementById('verifica-randuri')?.addEventListener('click', render)
+    // It redraws on paste, which is the usual way the data arrives.
+    textarea.addEventListener('paste', () => setTimeout(render, 0))
   }
 
-  /* Butonul rămâne închis până confirmarea e scrisă exact.
+  /* The button stays shut until the confirmation is written out exactly.
    *
-   * Verificarea adevărată este pe server, comparată cu anul curent din baza de
-   * date — asta e doar ca butonul să nu arate apăsabil cât încă nu e. Fără
-   * JavaScript butonul pornește activ (`disabled` se scoate la încărcare), pentru
-   * că altfel formularul ar deveni imposibil de trimis. */
+   * The real check is on the server, compared against the current year in the
+   * database — this is only so the button does not look pressable while it is
+   * not yet. Without JavaScript the button starts enabled (`disabled` is taken
+   * off on load), because otherwise the form would become impossible to
+   * submit. */
   const camp = document.querySelector<HTMLInputElement>('[data-confirma]')
-  const buton = document.getElementById('deschide-an') as HTMLButtonElement | null
+  const openYearButton = document.getElementById('deschide-an') as HTMLButtonElement | null
 
-  if (camp && buton) {
-    // Aceeași toleranță ca pe server: liniuța en nu este pe tastatură.
-    const fara = (t: string) => t.replace(/[\u2010-\u2015]/g, '-')
-    const cerut = fara(camp.dataset.confirma ?? '')
+  if (camp && openYearButton) {
+    // The same tolerance as on the server: the en dash is not on the keyboard.
+    const normalizeDashes = (t: string) => t.replace(/[\u2010-\u2015]/g, '-')
+    const expected = normalizeDashes(camp.dataset.confirma ?? '')
     const verifica = () => {
-      buton.disabled = fara(camp.value.trim()) !== cerut
+      openYearButton.disabled = normalizeDashes(camp.value.trim()) !== expected
     }
     camp.addEventListener('input', verifica)
     verifica()
-  } else if (buton) {
-    buton.disabled = false
+  } else if (openYearButton) {
+    openYearButton.disabled = false
   }
 </script>
 
@@ -518,8 +548,8 @@ Ana Petre;MK-2021-0142;Marketing strategic;master;ro;Conf. univ. dr. Cristian Va
     padding: 0;
   }
 
-  /* Celulele de previzualizare sunt câmpuri, dar nu trebuie să arate ca un
-     formular de completat: fără chenar până la focus, doar text într-un tabel. */
+  /* The preview cells are fields, but they must not look like a form to fill
+     in: no border until focus, just text inside a table. */
   .input--celula {
     min-width: 8ch;
     padding: var(--s-1) var(--s-2);
@@ -548,8 +578,8 @@ Ana Petre;MK-2021-0142;Marketing strategic;master;ro;Conf. univ. dr. Cristian Va
     color: var(--ink-soft);
   }
 
-  /* Confirmarea stă despărțită de restul formularului: nu este un câmp printre
-     altele, este pasul care hotărăște. */
+  /* The confirmation sits apart from the rest of the form: it is not one field
+     among others, it is the step that decides. */
   .confirmare {
     padding: var(--s-4);
     border: 1px solid var(--warn);

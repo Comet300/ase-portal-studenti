@@ -1,14 +1,14 @@
--- Câte linkuri de autentificare s-au cerut, și de unde.
+-- How many sign-in links have been asked for, and from where.
 --
--- Formularul nu avea nicio limită: fiecare apăsare trimitea un email nou și
--- crea un token nou. Cu adresa altcuiva, oricine putea umple o cutie poștală
--- instituțională; fără intenție rea, un utilizator nerăbdător făcea același
--- lucru la scară mică și primea cinci mesaje identice.
+-- The form had no limit at all: every press sent a new email and created a new
+-- token. With somebody else's address, anyone could fill an institutional
+-- mailbox; with no ill intent, an impatient user did the same thing on a small
+-- scale and received five identical messages.
 --
--- Se păstrează și IP-ul, ca o singură sursă să nu poată încerca adresă după
--- adresă. Rândurile se șterg la o zi — este o limită de debit, nu un jurnal de
--- audit, iar un portal public de universitate nu are motiv să țină IP-uri mai
--- mult decât îi trebuie.
+-- The IP is kept as well, so that a single source cannot try address after
+-- address. The rows are deleted after one day — this is a rate limit, not an
+-- audit log, and a public university portal has no reason to hold on to IP
+-- addresses longer than it needs to.
 
 CREATE TABLE login_attempts (
   id         bigserial   PRIMARY KEY,

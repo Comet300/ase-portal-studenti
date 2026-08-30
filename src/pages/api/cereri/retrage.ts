@@ -43,7 +43,7 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
 
   if (!withdrawn) {
     return redirectWithNotice(
-      '/cererile-mele',
+      '/lucrarea-mea',
       'Cererea nu mai poate fi retrasă — a primit deja un răspuns.',
       true,
     )
@@ -75,7 +75,7 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
   })
 
   return redirectWithNotice(
-    '/cererile-mele',
+    '/lucrarea-mea',
     'Cererea a fost retrasă. Poți depune una nouă către alt coordonator.',
   )
 }

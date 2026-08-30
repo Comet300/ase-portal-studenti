@@ -3,13 +3,14 @@ import Chat from '../../components/Chat.astro'
 import ProfesorLayout from '../../layouts/ProfesorLayout.astro'
 import {
   conversationMessages,
-  MESAJE_PE_PAGINA,
+  MESSAGES_PER_PAGE,
   markRead,
   myConversation,
   myConversations,
 } from '../../lib/chat'
 import { query, queryOne } from '../../lib/db'
 import { MILESTONE_LABELS, formatDate, timeAgo } from '../../lib/repo'
+import { officialName } from '../../lib/text'
 import { groupLabel } from '../../lib/years'
 
 const u = Astro.locals.user!
@@ -39,20 +40,21 @@ const requested =
 const active = requested ? await myConversation(u.id, requested) : (conversations[0] ?? null)
 
 if (active) await markRead(u.id, active.id)
-/* Câte mesaje se cer.
+/* How many messages get asked for.
  *
- * Firul se deschide pe ultimele; „mai vechi” dublează fereastra și ancorează la
- * mesajul care era primul, ca să nu se piardă locul din citire. Plafonat, ca un
- * parametru scris de mână să nu poată cere toată baza. */
-const cerute = Number(Astro.url.searchParams.get('mesaje') ?? '')
-const cateMesaje = Number.isFinite(cerute)
-  ? Math.min(Math.max(cerute, MESAJE_PE_PAGINA), MESAJE_PE_PAGINA * 16)
-  : MESAJE_PE_PAGINA
+ * The thread opens on the most recent ones; „mai vechi” doubles the window and
+ * anchors on the message that used to be the first, so the place reached in the
+ * reading is not lost. Capped, so that a hand-written parameter cannot ask for
+ * the whole database. */
+const requestedCount = Number(Astro.url.searchParams.get('mesaje') ?? '')
+const pageSize = Number.isFinite(requestedCount)
+  ? Math.min(Math.max(requestedCount, MESSAGES_PER_PAGE), MESSAGES_PER_PAGE * 16)
+  : MESSAGES_PER_PAGE
 
-const fir = active
-  ? await conversationMessages(u.id, active.id, cateMesaje)
-  : { mesaje: [], maiVechi: 0 }
-const messages = fir.mesaje
+const thread = active
+  ? await conversationMessages(u.id, active.id, pageSize)
+  : { mesaje: [], olderCount: 0 }
+const messages = thread.mesaje
 
 /**
  * The context column.
@@ -67,18 +69,22 @@ const student = active
       id: string
       name: string
       student_number: string | null
+      father_initial: string | null
       email: string
       program: string | null
       specialization: string | null
       study_language: string
       study_year: number | null
+      study_series: string | null
+      study_group: string | null
       title_ro: string
       number: string
       decided_at: string | null
       request_id: string
     }>(
-      `SELECT s.id, s.name, s.student_number, s.email, s.program, s.specialization,
-              s.study_language, s.study_year,
+      `SELECT s.id, s.name, s.student_number, s.father_initial, s.email,
+              s.program, s.specialization,
+              s.study_language, s.study_year, s.study_series, s.study_group,
               r.title_ro, r.number, r.decided_at, r.id AS request_id
          FROM users s
          JOIN requests r ON r.student_id = s.id
@@ -134,8 +140,8 @@ function fileSize(bytes: string | null): string {
     conversations={conversations}
     active={active}
     messages={messages}
-    maiVechi={fir.maiVechi}
-    cateMesaje={cateMesaje}
+    olderCount={thread.olderCount}
+    pageSize={pageSize}
     userId={u.id}
     base="/profesor/mesaje"
     files={files.map((f) => ({ ...f, size_label: fileSize(f.size_bytes) }))}
@@ -147,7 +153,7 @@ function fileSize(bytes: string | null): string {
         student ? (
           <>
             <section class="context__bloc">
-              <h2 class="context__titlu">{student.name}</h2>
+              <h2 class="context__titlu">{officialName(student)}</h2>
               <dl class="context__date">
                 <div>
                   <dt>Număr matricol</dt>
@@ -156,6 +162,10 @@ function fileSize(bytes: string | null): string {
                 <div>
                   <dt>Program</dt>
                   <dd>{groupLabel(student)}</dd>
+                </div>
+                <div>
+                  <dt>Grupa</dt>
+                  <dd>{student.study_group ?? '—'}</dd>
                 </div>
                 <div>
                   <dt>Email</dt>
@@ -209,8 +219,16 @@ function fileSize(bytes: string | null): string {
           </>
         ) : (
           <section class="context__bloc">
+            {/* This panel used to be the only place in the portal that said
+                anything at all about a thread with nobody on the other end of
+                it — „Conversație fără o coordonare activă”, in a column that
+                collapses into a drawer below 1200px and that a student never
+                sees. The thread itself now carries the record, and names which
+                of the ways the pairing ended actually happened. What is left
+                here is what this panel is for: why the thesis is missing. */}
             <p class="context__gol">
-              Conversație fără o coordonare activă în sesiunea curentă.
+              Nicio lucrare în coordonare cu această persoană în sesiunea curentă. Titlul și
+              termenele apar aici după ce accepți o cerere.
             </p>
           </section>
         )

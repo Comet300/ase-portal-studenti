@@ -1,14 +1,14 @@
--- Ordinea atașamentelor unui mesaj.
+-- The order of a message's attachments.
 --
--- De când un mesaj poate purta mai multe fișiere, ele se scriu în aceeași
--- tranzacție — iar `now()` este fix pe toată durata ei, deci toate trei au exact
--- același `created_at`. Sortarea cădea pe `id`, care este un uuid aleatoriu:
--- „capitolul 1, chestionarul, datele” se afișa în orice ordine, alta la fiecare
--- mesaj.
+-- Ever since a message can carry several files, they are written in the same
+-- transaction — and `now()` is fixed for the whole of it, so all three get
+-- exactly the same `created_at`. Sorting fell back on `id`, which is a random
+-- uuid: „capitolul 1, chestionarul, datele” came out in any order, a different
+-- one for every message.
 --
--- Ordinea în care cineva își atașează fișierele este o informație — capitolul
--- întâi, anexele după — deci se păstrează, nu se reconstruiește din ceas.
+-- The order in which someone attaches their files is information — the chapter
+-- first, the annexes after — so it is kept, not reconstructed from the clock.
 ALTER TABLE files ADD COLUMN IF NOT EXISTS position smallint NOT NULL DEFAULT 0;
 
--- Rândurile existente au cel mult un fișier pe mesaj, deci zero este corect
--- pentru toate.
+-- Existing rows carry at most one file per message, so zero is correct for
+-- every one of them.

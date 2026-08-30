@@ -2,6 +2,7 @@
 import StudentLayout from '../layouts/StudentLayout.astro'
 import { query, queryOne } from '../lib/db'
 import { formatDate, formatTime } from '../lib/repo'
+import { numar } from '../lib/text'
 
 const u = Astro.locals.user!
 if (u.role !== 'student') return Astro.redirect('/profesor/consultatii', 302)
@@ -19,37 +20,71 @@ interface Slot {
   teacher_id: string
   teacher_name: string
   booked_by_me: boolean
+  /** True even after the booking was withdrawn — a cancelled hour is still mine to be told about. */
+  was_mine: boolean
   subject: string | null
   /** Set when the coordinator scheduled this meeting rather than opening it. */
   scheduled_for_me: boolean
+  is_cancelled: boolean
+  cancelled_reason: string | null
+  /** Whom the hour was opened for: the whole faculty, or this coordinator's own. */
+  audience: 'public' | 'thesis'
+  department: string | null
 }
 
 /**
- * Only the coordinator's intervals, and only those meant for this student.
+ * Two kinds of hour, in one query.
  *
- * Consultations are between a student and their own coordinator, not an open
- * catalogue — and an interval the coordinator scheduled with one named student
- * is not on offer to the rest, which is what `student_id` records.
+ * `audience = 'thesis'` is between a student and their own coordinator, and
+ * asks for the approved request that makes somebody one of their students.
+ * `audience = 'public'` is the office hour any member of the teaching staff
+ * holds for the faculty: a student who has not chosen a coordinator yet, or who
+ * has a question for somebody else's, can take a place at one.
+ *
+ * Two further conditions are about a single row rather than a kind:
+ * `student_id` names one invitee, and `kind` says whether the hour was opened
+ * for whoever books first or scheduled with named people. Before `kind`
+ * existed, a meeting the coordinator had scheduled with three students left
+ * `student_id` NULL — so it was offered, as a free hour, to the whole of the
+ * rest of the cohort.
+ *
+ * A cancelled hour stays visible to whoever had booked it, and only to them: it
+ * used to disappear from the screen entirely, so the one place that said what
+ * had happened was an email.
  */
 const slots = await query<Slot>(
   `SELECT s.id, s.starts_at, s.ends_at, s.mode, s.location, s.meeting_url, s.note, s.capacity,
+          s.is_cancelled, s.cancelled_reason, s.audience,
           (SELECT count(*)::int FROM bookings r WHERE r.slot_id = s.id AND r.status = 'booked') AS taken,
-          p.id AS teacher_id, p.name AS teacher_name,
-          (s.student_id = $1) AS scheduled_for_me,
+          p.id AS teacher_id, p.name AS teacher_name, p.department,
+          (s.kind = 'scheduled') AS scheduled_for_me,
           EXISTS (
             SELECT 1 FROM bookings r
              WHERE r.slot_id = s.id AND r.student_id = $1 AND r.status = 'booked'
           ) AS booked_by_me,
+          EXISTS (
+            SELECT 1 FROM bookings r WHERE r.slot_id = s.id AND r.student_id = $1
+          ) AS was_mine,
           (SELECT r.subject FROM bookings r
-            WHERE r.slot_id = s.id AND r.student_id = $1 AND r.status = 'booked') AS subject
+            WHERE r.slot_id = s.id AND r.student_id = $1) AS subject
      FROM consultation_slots s
      JOIN users p ON p.id = s.teacher_id
-    WHERE s.is_cancelled = false
-      AND s.starts_at > now()
+    WHERE s.starts_at > now()
       AND (s.student_id IS NULL OR s.student_id = $1)
-      AND EXISTS (
-        SELECT 1 FROM requests c
-         WHERE c.student_id = $1 AND c.teacher_id = s.teacher_id AND c.status = 'approved'
+      AND (
+        s.kind = 'open'
+        OR EXISTS (SELECT 1 FROM bookings r WHERE r.slot_id = s.id AND r.student_id = $1)
+      )
+      AND (
+        s.is_cancelled = false
+        OR EXISTS (SELECT 1 FROM bookings r WHERE r.slot_id = s.id AND r.student_id = $1)
+      )
+      AND (
+        s.audience = 'public'
+        OR EXISTS (
+          SELECT 1 FROM requests c
+           WHERE c.student_id = $1 AND c.teacher_id = s.teacher_id AND c.status = 'approved'
+        )
       )
     ORDER BY s.starts_at`,
   [u.id],
@@ -64,26 +99,40 @@ const supervisor = await queryOne<{ name: string }>(
   [u.id],
 )
 
-const mine = slots.filter((s) => s.booked_by_me)
-const free = slots.filter((s) => !s.booked_by_me && s.taken < s.capacity)
+const booked = slots.filter((s) => s.booked_by_me && !s.is_cancelled)
+const cancelled = slots.filter((s) => s.is_cancelled && s.was_mine)
+// One list, in time order: a cancelled hour belongs where it was going to be.
+const mine = [...booked, ...cancelled].sort((a, b) => (a.starts_at < b.starts_at ? -1 : 1))
+const free = slots.filter((s) => !s.is_cancelled && !s.booked_by_me && s.taken < s.capacity)
 
-// Grupare pe day, ca lista să fie citibilă când sunt multe intervale.
-const byDay = new Map<string, Slot[]>()
-for (const s of free) {
-  const key = formatDate(s.starts_at)
-  byDay.set(key, [...(byDay.get(key) ?? []), s])
+/* Two lists, because they answer two different questions.
+ *
+ * „Când mă poate primi coordonatorul meu” is asked by somebody in the middle of
+ * a thesis, weekly. „Cine mă poate primi” is asked once, by somebody who does
+ * not have a coordinator yet — and for them the first list is empty, so a
+ * single merged list would read as „no consultations exist”. */
+const freeMine = free.filter((s) => s.audience === 'thesis')
+const freePublic = free.filter((s) => s.audience === 'public')
+
+// Grouped by day, so the list stays readable when there are many hours.
+const groupByDay = (list: Slot[]) => {
+  const byDay = new Map<string, Slot[]>()
+  for (const s of list) {
+    const key = formatDate(s.starts_at)
+    byDay.set(key, [...(byDay.get(key) ?? []), s])
+  }
+  return [...byDay.entries()]
 }
+const zileleMele = groupByDay(freeMine)
+const zilePublice = groupByDay(freePublic)
 ---
 
-<StudentLayout title="Consultații" active="consultatii">
+<StudentLayout
+  title="Consultații"
+  active="consultatii"
+  lede="Rezervă o oră la coordonatorul tău sau la o consultație publică. Invitația în calendar îți vine imediat ce rezervi."
+>
   <div class="container stack stack--loose">
-    <header class="stack stack--tight">
-      <h1 class="page-title">Consultații</h1>
-      <p class="page-lede">
-        Rezervă un interval la coordonatorul tău. Primești un email de fiecare dată când publică
-        intervale noi, și invitația în calendar după ce rezervi.
-      </p>
-    </header>
 
     {
       mine.length > 0 && (
@@ -91,12 +140,13 @@ for (const s of free) {
           <div class="panel__header">
             <h2 class="section-title">Consultațiile mele</h2>
             <span class="muted text-sm">
-              {mine.length} {mine.length === 1 ? 'programare' : 'programări'}
+              {numar(booked.length, 'consultație', 'consultații')}
+              {cancelled.length > 0 && ` · ${numar(cancelled.length, 'anulată', 'anulate')}`}
             </span>
           </div>
           <ul class="sloturi">
             {mine.map((s) => (
-              <li class="slot slot--rezervat">
+              <li class:list={['slot', 'slot--rezervat', { 'slot--anulat': s.is_cancelled }]}>
                 <span class="data-chip">
                   <strong class="numeric">{new Date(s.starts_at).getDate()}</strong>
                   <small>{formatDate(s.starts_at).split(' ')[1]?.slice(0, 3)}</small>
@@ -106,51 +156,75 @@ for (const s of free) {
                     <strong class="numeric">
                       {formatTime(s.starts_at)}–{formatTime(s.ends_at)}
                     </strong>
-                    {/* O consultație programată de coordonator nu este o rezervare
-                        pe care ai făcut-o tu, iar diferența contează când te
-                        gândești să o anulezi. */}
-                    {s.scheduled_for_me && (
+                    {/* A consultation scheduled by the coordinator is not a
+                        booking you made yourself, and the difference matters
+                        when you are thinking of cancelling it. */}
+                    {s.scheduled_for_me && !s.is_cancelled && (
                       <span class="badge badge--asteptare">programată de coordonator</span>
+                    )}
+                    {s.is_cancelled && (
+                      <span class="badge badge--neutru">anulată de coordonator</span>
                     )}
                   </div>
 
                   <span class="muted">{s.teacher_name}</span>
 
-                  {s.mode === 'in_person' && s.location && (
+                  {/* The reason arrives by email as well; it is here so that the
+                      answer to „ce s-a întâmplat marți” does not live only in a
+                      mailbox. */}
+                  {s.is_cancelled && s.cancelled_reason && (
+                    <span class="muted">Motiv: {s.cancelled_reason}</span>
+                  )}
+
+                  {!s.is_cancelled && s.mode === 'in_person' && s.location && (
                     <span class="muted">{s.location}</span>
                   )}
-                  {s.mode === 'online' && !s.meeting_url && <span class="muted">Online</span>}
+                  {!s.is_cancelled && s.mode === 'online' && !s.meeting_url && (
+                    <span class="muted">Online</span>
+                  )}
 
-                  {(s.note ?? s.subject) && (
+                  {!s.is_cancelled && (s.note ?? s.subject) && (
                     <span class="muted">Subiect: {s.note ?? s.subject}</span>
                   )}
 
-                  {s.capacity > 1 && (
+                  {!s.is_cancelled && s.capacity > 1 && (
                     <span class="muted">
                       Consultație de grup · {s.taken} din {s.capacity} locuri ocupate
                     </span>
                   )}
-                </div>
-                <div class="slot__actiuni">
-                  {s.meeting_url && (
-                    <a class="btn btn--primary btn--sm" href={s.meeting_url} target="_blank" rel="noopener">
-                      Intră în întâlnire
-                    </a>
+
+                  {s.is_cancelled && (
+                    <span class="muted">
+                      Locul s-a închis. Rezervă altă oră mai jos sau scrie-i coordonatorului.
+                    </span>
                   )}
-                  {/* Invitația pleca doar prin email; cine o ștergea nu mai avea
-                      de unde să o ia, deși portalul o poate genera oricând. */}
-                  <a class="btn btn--secondary btn--sm" href={`/consultatii/${s.id}.ics`}>
-                    Adaugă în calendar
-                  </a>
-                  <button
-                    class="btn btn--danger btn--sm"
-                    type="button"
-                    data-anuleaza={s.id}
-                    data-cand={`${formatDate(s.starts_at)}, ${formatTime(s.starts_at)}–${formatTime(s.ends_at)}`}
-                  >
-                    Anulează
-                  </button>
                 </div>
+                {/* A cancelled hour carries no controls at all: there is
+                    nothing to join, no invitation left to hand out — that one
+                    was withdrawn — and nothing of yours to cancel. */}
+                {!s.is_cancelled && (
+                  <div class="slot__actiuni">
+                    {s.meeting_url && (
+                      <a class="btn btn--primary btn--sm" href={s.meeting_url} target="_blank" rel="noopener">
+                        Intră în întâlnire
+                      </a>
+                    )}
+                    {/* The invitation went out only by email; whoever deleted it
+                        had nowhere left to get it from, although the portal can
+                        generate it at any time. */}
+                    <a class="btn btn--secondary btn--sm" href={`/consultatii/${s.id}.ics`}>
+                      Adaugă în calendar
+                    </a>
+                    <button
+                      class="btn btn--danger btn--sm"
+                      type="button"
+                      data-anuleaza={s.id}
+                      data-cand={`${formatDate(s.starts_at)}, ${formatTime(s.starts_at)}–${formatTime(s.ends_at)}`}
+                    >
+                      Anulează
+                    </button>
+                  </div>
+                )}
               </li>
             ))}
           </ul>
@@ -160,20 +234,23 @@ for (const s of free) {
 
     <section class="panel">
       <div class="panel__header">
-        <h2 class="section-title">Intervale disponibile</h2>
+        <h2 class="section-title">Orele coordonatorului tău</h2>
+        {freeMine.length > 0 && (
+          <span class="muted text-sm">{numar(freeMine.length, 'oră liberă', 'ore libere')}</span>
+        )}
       </div>
 
       {
-        free.length === 0 ? (
+        freeMine.length === 0 ? (
           <div class="empty">
             <p class="empty__title">
-              {supervisor ? 'Niciun interval disponibil' : 'Nu ai încă un coordonator'}
+              {supervisor ? 'Nicio oră liberă' : 'Nu ai încă un coordonator'}
             </p>
             <p class="empty__text">
               {
                 supervisor
-                  ? `${supervisor.name} nu are momentan intervale libere publicate. Îi poți scrie direct din secțiunea Mesaje ca să stabiliți o întâlnire.`
-                  : 'Consultațiile se programează cu coordonatorul lucrării. Alege un cadru didactic din catalog și depune cererea de coordonare — intervalele lui apar aici imediat ce cererea este aprobată.'
+                  ? `${supervisor.name} nu are momentan ore de consultație deschise. Îi poți scrie direct din secțiunea Mesaje ca să stabiliți o întâlnire.`
+                  : 'Orele de aici sunt ale coordonatorului lucrării tale. Până alegi unul, mai jos sunt consultațiile publice — deschise oricărui student din facultate.'
               }
             </p>
             {
@@ -186,7 +263,7 @@ for (const s of free) {
           </div>
         ) : (
           <div class="zile">
-            {[...byDay.entries()].map(([dayLabel, daySlots]: [string, Slot[]]) => (
+            {zileleMele.map(([dayLabel, daySlots]: [string, Slot[]]) => (
               <section class="zi">
                 <h3 class="zi__titlu">{dayLabel}</h3>
                 <ul class="sloturi">
@@ -199,18 +276,85 @@ for (const s of free) {
                         <span class="muted">
                           {s.mode === 'online' ? 'Online' : (s.location ?? 'Cabinet')} · {s.teacher_name}
                         </span>
-                        {/* Un interval de grup nu arată ca unul individual: câte
-                            locuri au mai rămas schimbă decizia de a rezerva. */}
+                        {/* A group hour does not read like an individual one:
+                            how many seats are left changes the decision to
+                            book. */}
                         {s.capacity > 1 && (
                           <span class="muted">
                             {s.capacity - s.taken} din {s.capacity} locuri libere
                           </span>
                         )}
-                        {/* Linkul apare abia după rezervare — până atunci nu ești
-                            invitat la nimic. */}
+                        {/* The link appears only after booking — until then you
+                            are not invited to anything. */}
                       </div>
                       <button class="btn btn--primary btn--sm" type="button" data-rezerva={s.id}>
-                        Rezervă
+                        Rezervă ora
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            ))}
+          </div>
+        )
+      }
+    </section>
+
+    {/* Consultațiile publice: ale întregii facultăți, nu ale coordonatorului.
+        Stau după ale lui, pentru că un student cu lucrare în lucru vine aici
+        pentru el — dar înaintea oricărui alt lucru de pe ecran, pentru că
+        studentul fără coordonator nu are altceva pe pagina asta. */}
+    <section class="panel" id="publice">
+      <div class="panel__header">
+        <h2 class="section-title">Consultații publice</h2>
+        <span class="muted text-sm">
+          {freePublic.length > 0
+            ? `${numar(freePublic.length, 'oră liberă', 'ore libere')} · deschise oricărui student`
+            : 'deschise oricărui student din facultate'}
+        </span>
+      </div>
+
+      {
+        freePublic.length === 0 ? (
+          <div class="empty">
+            <p class="empty__title">Nicio oră publică deocamdată</p>
+            <p class="empty__text">
+              Aici apar orele pe care cadrele didactice le deschid pentru toată facultatea —
+              pentru o întrebare despre lucrare, despre o direcție de cercetare sau despre
+              coordonare. Poți scrie oricui de pe profilul lui.
+            </p>
+            <a href="/coordonatori" class="btn btn--secondary btn--sm">Vezi cadrele didactice</a>
+          </div>
+        ) : (
+          <div class="zile">
+            {zilePublice.map(([dayLabel, daySlots]: [string, Slot[]]) => (
+              <section class="zi">
+                <h3 class="zi__titlu">{dayLabel}</h3>
+                <ul class="sloturi">
+                  {daySlots.map((s) => (
+                    <li class="slot">
+                      <div class="slot__corp">
+                        <strong class="numeric">
+                          {formatTime(s.starts_at)}–{formatTime(s.ends_at)}
+                        </strong>
+                        {/* Aici numele contează mai mult decât ora: la o oră
+                            publică alegi persoana, nu intervalul. */}
+                        {/* Numele, așa cum îl scrie portalul peste tot: titlul
+                            didactic este deja în el, iar adăugat încă o dată
+                            ieșea „Prof. univ. dr. Prof. univ. dr. Ionescu”. */}
+                        <a class="slot__cine" href={`/profil/${s.teacher_id}`}>{s.teacher_name}</a>
+                        <span class="muted">
+                          {s.mode === 'online' ? 'Online' : (s.location ?? 'Cabinet')}
+                          {s.department ? ` · ${s.department}` : ''}
+                        </span>
+                        {s.capacity > 1 && (
+                          <span class="muted">
+                            {s.capacity - s.taken} din {s.capacity} locuri libere
+                          </span>
+                        )}
+                      </div>
+                      <button class="btn btn--primary btn--sm" type="button" data-rezerva={s.id}>
+                        Rezervă ora
                       </button>
                     </li>
                   ))}
@@ -223,19 +367,19 @@ for (const s of free) {
     </section>
   </div>
 
-  {/* Anularea eliberează locul și anunță coordonatorul; nu este o acțiune de
-      apăsat din greșeală în drum spre butonul de alături. */}
+  {/* Cancelling frees the seat and tells the coordinator; it is not an action to
+      be pressed by mistake on the way to the button next to it. */}
   <dialog id="dialog-anulare" aria-labelledby="titlu-anulare">
     <form method="POST" action="/api/rezervari" class="dialog">
       <h2 id="titlu-anulare" class="section-title">Anulezi consultația?</h2>
       <p class="muted text-sm">
         <span id="anulare-cand"></span> — locul se eliberează pentru alt student, iar
-        coordonatorul vede anularea. Poți rezerva din nou dacă intervalul rămâne liber.
+        coordonatorul vede anularea. Poți rezerva din nou dacă ora rămâne liberă.
       </p>
       <input type="hidden" name="actiune" value="anuleaza" />
       <input type="hidden" name="slot_id" id="anulare-slot" />
       <div class="row" style="justify-content:flex-end;gap:var(--s-2)">
-        <button class="btn btn--secondary" type="button" data-inchide-anulare>Păstrează</button>
+        <button class="btn btn--secondary" type="button" data-inchide-anulare>Păstrează ora</button>
         <button class="btn btn--danger" type="submit">Anulează consultația</button>
       </div>
     </form>
@@ -243,7 +387,7 @@ for (const s of free) {
 
   <dialog id="dialog-rezerva" aria-labelledby="titlu-rezerva">
     <form method="POST" action="/api/rezervari" class="dialog">
-      <h2 id="titlu-rezerva" class="section-title">Rezervă consultația</h2>
+      <h2 id="titlu-rezerva" class="section-title">Rezervi ora de consultație</h2>
       <input type="hidden" name="slot_id" id="dialog-slot" />
       <div class="field">
         <label class="label" for="subiect">Despre ce vrei să discuți? <span class="muted">(opțional)</span></label>
@@ -329,6 +473,32 @@ for (const s of free) {
     border-bottom: 0;
   }
 
+  /* A cancelled hour is a record, not an offer: it keeps its place in the list
+     so the day still reads correctly, and stops looking like something you can
+     act on. */
+  .slot--anulat .data-chip {
+    background: var(--surface-sunken);
+  }
+  .slot--anulat .data-chip strong,
+  .slot--anulat .data-chip small {
+    color: var(--ink-muted);
+  }
+  .slot--anulat .slot__corp strong {
+    text-decoration: line-through;
+    color: var(--ink-muted);
+  }
+
+  /* Numele cadrului didactic este o legătură către profilul lui: la o oră
+     publică, primul lucru pe care îl verifici este cine o ține. */
+  .slot__cine {
+    font-weight: 600;
+    color: var(--ink);
+    text-decoration: none;
+  }
+  .slot__cine:hover {
+    color: var(--red);
+  }
+
   .slot__corp {
     display: flex;
     flex-direction: column;
@@ -376,9 +546,9 @@ for (const s of free) {
     padding: var(--s-5);
   }
 
-  /* Pe telefon, rândul rămânea orizontal: butoanele își păstrau lățimea, iar
-     coloana cu text se strângea la câțiva pixeli, scriind numele coordonatorului
-     câte un cuvânt pe rând. */
+  /* On a phone the row stayed horizontal: the buttons kept their width, and the
+     text column shrank to a few pixels, writing the coordinator's name one word
+     per line. */
   @media (max-width: 640px) {
     .slot {
       flex-wrap: wrap;

@@ -1,31 +1,31 @@
 import type { APIRoute } from 'astro'
-import { noteazaAcces } from '../../../lib/audit'
+import { recordAccess } from '../../../lib/audit'
 import { query, queryOne } from '../../../lib/db'
 import { openFile } from '../../../lib/files'
 import { id as routeId } from '../../../lib/ids'
-import { construiesteZip } from '../../../lib/zip'
+import { buildZip } from '../../../lib/zip'
 
 /**
- * Toate fișierele unei conversații, într-o arhivă.
+ * All the files of a conversation, in one archive.
  *
- * La final de sesiune un coordonator are de strâns capitolele, chestionarul și
- * fișierul de date ale fiecărui student — pentru dosar, pentru comisie, pentru
- * verificarea antiplagiat. Sertarul de fișiere le arăta pe toate și cerea un clic
- * pentru fiecare, cu un „Salvează ca” după el; la nouă fișiere ori doisprezece
- * studenți, aceasta este singura parte a portalului care se face de o sută de ori.
+ * At the end of a session a coordinator has to gather the chapters, the
+ * questionnaire and the data file of every student — for the file, for the
+ * board, for the plagiarism check. The file drawer showed them all and asked for
+ * one click on each, with a „Salvează ca” after it; at nine files times twelve
+ * students, this is the one part of the portal that gets done a hundred times.
  *
- * Apartenența se verifică în aceeași interogare care aduce lista, ca la
- * descărcarea unui singur fișier: nu există parametru cu care cineva să ceară
- * conversația altcuiva.
+ * Ownership is checked in the same query that fetches the list, as when
+ * downloading a single file: there is no parameter with which somebody could ask
+ * for someone else's conversation.
  */
 
-/* Arhiva se construiește în memorie, deci are un plafon.
+/* The archive is built in memory, so it has a ceiling.
  *
- * O conversație ar putea aduna teoretic sute de fișiere de 15 MB; a le ține pe
- * toate deodată în memorie ar dărâma procesul, iar un răspuns 500 este mai rău
- * decât o arhivă parțială cu un antet care spune ce lipsește. În practică o
- * lucrare are zece fișiere. */
-const MAX_ARHIVA = 80 * 1024 * 1024
+ * A conversation could in theory pile up hundreds of 15 MB files; holding them
+ * all in memory at once would bring the process down, and a 500 response is
+ * worse than a partial archive with a header that says what is missing. In
+ * practice a thesis has ten files. */
+const MAX_ARCHIVE_BYTES = 80 * 1024 * 1024
 
 export const GET: APIRoute = async ({ params, locals, request }) => {
   const u = locals.user
@@ -34,7 +34,7 @@ export const GET: APIRoute = async ({ params, locals, request }) => {
   const conversationId = routeId(params.id ?? null)
   if (!conversationId) return new Response('Conversația nu a fost găsită', { status: 404 })
 
-  const conversatie = await queryOne<{ id: string; peer_name: string }>(
+  const conversation = await queryOne<{ id: string; peer_name: string }>(
     `SELECT c.id,
             (SELECT name FROM users
               WHERE id = CASE WHEN c.student_id = $1 THEN c.teacher_id ELSE c.student_id END) AS peer_name
@@ -43,7 +43,7 @@ export const GET: APIRoute = async ({ params, locals, request }) => {
     [u.id, conversationId],
   )
 
-  if (!conversatie) return new Response('Conversația nu a fost găsită', { status: 404 })
+  if (!conversation) return new Response('Conversația nu a fost găsită', { status: 404 })
 
   const fisiere = await query<{
     stored_name: string
@@ -62,69 +62,69 @@ export const GET: APIRoute = async ({ params, locals, request }) => {
     return new Response('Conversația nu are fișiere', { status: 404 })
   }
 
-  const intrari = []
+  const entries = []
   let total = 0
   let omise = 0
 
   for (const f of fisiere) {
-    const stocat = await openFile(conversationId, f.stored_name)
-    // Un rând fără fișier pe disc nu oprește arhiva: se numără și se spune.
-    if (!stocat) {
+    const stored = await openFile(conversationId, f.stored_name)
+    // A row with no file on disk does not stop the archive: it is counted and said.
+    if (!stored) {
       omise += 1
       continue
     }
-    if (total + stocat.size > MAX_ARHIVA) {
+    if (total + stored.size > MAX_ARCHIVE_BYTES) {
       omise += 1
       continue
     }
-    intrari.push({
+    entries.push({
       nume: f.original_name,
-      octeti: Buffer.from(await new Response(stocat.stream).arrayBuffer()),
-      data: new Date(f.created_at),
+      bytes: Buffer.from(await new Response(stored.stream).arrayBuffer()),
+      date: new Date(f.created_at),
     })
-    total += stocat.size
+    total += stored.size
   }
 
-  if (intrari.length === 0) {
+  if (entries.length === 0) {
     return new Response('Fișierele nu au putut fi citite', { status: 404 })
   }
 
-  const arhiva = construiesteZip(intrari)
+  const archive = buildZip(entries)
 
-  await noteazaAcces({
+  await recordAccess({
     userId: u.id,
     action: 'descarca_arhiva',
-    subject: `${conversationId} · ${conversatie.peer_name}`,
-    rowCount: intrari.length,
+    subject: `${conversationId} · ${conversation.peer_name}`,
+    rowCount: entries.length,
     request,
   })
 
-  /* Numele arhivei poartă numele celuilalt din conversație: în Descărcări ajung
-   * douăsprezece arhive, iar „fisiere.zip” de douăsprezece ori nu ajută pe nimeni.
-   * Doar ASCII, ca `filename=` să rămână valid conform RFC 6266. */
-  const cinE = (conversatie.peer_name ?? '')
+  /* The archive's name carries the name of the other person in the conversation:
+   * twelve archives land in Downloads, and „fisiere.zip” twelve times helps
+   * nobody. ASCII only, so that `filename=` stays valid under RFC 6266. */
+  const peerSlug = (conversation.peer_name ?? '')
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     .replace(/[^A-Za-z0-9]+/g, '-')
     .replace(/^-|-$/g, '')
     .toLowerCase()
 
-  /* `Buffer` este un `Uint8Array`, dar tipul lui nu intră în `BodyInit`: se dă
-   * exact felia lui de memorie, fără copie. */
-  const corp = arhiva.buffer.slice(
-    arhiva.byteOffset,
-    arhiva.byteOffset + arhiva.byteLength,
+  /* `Buffer` is a `Uint8Array`, but its type does not fit into `BodyInit`: hand
+   * over exactly its slice of memory, without a copy. */
+  const body = archive.buffer.slice(
+    archive.byteOffset,
+    archive.byteOffset + archive.byteLength,
   ) as ArrayBuffer
 
-  return new Response(corp, {
+  return new Response(body, {
     headers: {
       'content-type': 'application/zip',
-      'content-length': String(arhiva.byteLength),
-      'content-disposition': `attachment; filename="fisiere-${cinE || 'conversatie'}.zip"`,
+      'content-length': String(archive.byteLength),
+      'content-disposition': `attachment; filename="fisiere-${peerSlug || 'conversatie'}.zip"`,
       'cache-control': 'private, no-store',
       'x-content-type-options': 'nosniff',
-      // Câte au intrat și câte nu, pentru cazul în care plafonul a tăiat ceva.
-      'x-fisiere-incluse': String(intrari.length),
+      // How many went in and how many did not, in case the ceiling cut something.
+      'x-fisiere-incluse': String(entries.length),
       ...(omise > 0 ? { 'x-fisiere-omise': String(omise) } : {}),
     },
   })

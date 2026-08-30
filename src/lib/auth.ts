@@ -17,6 +17,12 @@ export interface User {
   programme_id: string | null
   study_language: StudyLanguage
   study_group: string | null
+  /** The series inside a year: programme > year > series > group. */
+  study_series: string | null
+  /** „I.” in „Popescu I. Maria” — part of the name the register carries. */
+  father_initial: string | null
+  /** Written once, on the first sign-in. Never a presence timestamp. */
+  first_login_at: string | null
   academic_title: string | null
   department: string | null
   office: string | null
@@ -34,8 +40,20 @@ const LINK_TTL_MS = 20 * 60 * 1000
 /** Demo mode allows sign-in without email. It is a real authentication bypass. */
 export const DEMO_MODE = process.env.DEMO_MODE === 'true'
 
+/* Now that nothing opens without a session, the sign-in page is the entire
+ * public surface — and the demo buttons on it are one click into every screen.
+ * `DEMO_MODE=true` is in the checked-in `.env`, so it travels into an image by
+ * accident, not by decision. The warning is written at boot, where a deployment
+ * log is read, rather than on a page nobody looks at. */
+if (DEMO_MODE && process.env.NODE_ENV === 'production') {
+  console.warn(
+    'ATENȚIE: DEMO_MODE=true în producție — oricine poate intra în orice cont demonstrativ, fără email.',
+  )
+}
+
 const USER_FIELDS = `id, email, name, role, student_number, program, specialization, study_year,
-                     programme_id, study_language, study_group,
+                     programme_id, study_language, study_group, study_series, father_initial,
+                     first_login_at::text,
                      academic_title, department, office, bio, avatar_path, interests, website, is_demo`
 
 function digest(token: string): string {
@@ -72,7 +90,7 @@ export async function consumeMagicLink(
   if (!row) return null
 
   const user = await queryOne<User>(
-    `SELECT ${USER_FIELDS} FROM users WHERE lower(email) = lower($1)`,
+    `SELECT ${USER_FIELDS} FROM users WHERE lower(email) = lower($1) AND is_active`,
     [row.email],
   )
   if (!user) return null
@@ -87,6 +105,18 @@ export async function createSession(userId: string): Promise<string> {
      VALUES ($1, $2, now() + ($3 || ' milliseconds')::interval)`,
     [id, userId, String(SESSION_TTL_MS)],
   )
+
+  /* The one place an account is marked as ever used.
+   *
+   * Both ways in — the emailed link and demo sign-in — end here, so this is the
+   * only statement that can see every real sign-in. `COALESCE` makes it
+   * write-once: the value has to keep meaning „the first time”, otherwise it
+   * becomes a second `last_seen_at` and the faculty catalogue would be showing
+   * presence, which the privacy notice says it does not. */
+  await execute(`UPDATE users SET first_login_at = COALESCE(first_login_at, now()) WHERE id = $1`, [
+    userId,
+  ])
+
   return id
 }
 
@@ -96,7 +126,7 @@ export function getUserFromSession(sessionId: string | undefined): Promise<User 
     `SELECT ${USER_FIELDS.split(',').map((c) => `u.${c.trim()}`).join(', ')}
        FROM sessions s
        JOIN users u ON u.id = s.user_id
-      WHERE s.id = $1 AND s.expires_at > now()`,
+      WHERE s.id = $1 AND s.expires_at > now() AND u.is_active`,
     [sessionId],
   )
 }
@@ -106,10 +136,19 @@ export async function destroySession(sessionId: string | undefined): Promise<voi
   await execute('DELETE FROM sessions WHERE id = $1', [sessionId])
 }
 
+/**
+ * The account behind an address — only while it is still open.
+ *
+ * A deactivated account receives no sign-in link, and its sessions no longer
+ * validate (see `getUserFromSession`). The sign-in route's answer stays
+ * identical for an unknown address and for a closed one: otherwise the form
+ * would say who was once in the portal.
+ */
 export function findUserByEmail(email: string): Promise<User | null> {
-  return queryOne<User>(`SELECT ${USER_FIELDS} FROM users WHERE lower(email) = lower($1)`, [
-    email.trim(),
-  ])
+  return queryOne<User>(
+    `SELECT ${USER_FIELDS} FROM users WHERE lower(email) = lower($1) AND is_active`,
+    [email.trim()],
+  )
 }
 
 export interface DemoAccount extends User {

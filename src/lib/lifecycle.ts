@@ -1,7 +1,9 @@
 import { query, queryOne, transaction } from './db'
-import { curataJurnalul } from './audit'
+import { purgeAccessLog } from './audit'
 import { postEvent } from './chat'
-import { html, sendEmail, template } from './mail'
+import { localDay, startOfWeek } from './date'
+import { html, joinHtml, sendEmail, template } from './mail'
+import { numar } from './text'
 
 /**
  * The parts of a coordination that happen on a clock or across two inboxes:
@@ -25,6 +27,7 @@ export interface Invitation {
   student_id: string
   student_name: string
   student_number: string | null
+  father_initial: string | null
   topic_id: string | null
   topic_title: string | null
   message: string
@@ -39,7 +42,7 @@ const INVITATION_FIELDS = `
   i.id, i.teacher_id, i.student_id, i.topic_id, i.message, i.status,
   i.response_reason, i.expires_at, i.responded_at, i.created_at,
   t.name AS teacher_name, t.academic_title,
-  s.name AS student_name, s.student_number,
+  s.name AS student_name, s.student_number, s.father_initial,
   tp.title AS topic_title`
 
 const INVITATION_JOINS = `
@@ -85,6 +88,11 @@ export interface SeatRequest {
   teacher_id: string
   teacher_name: string
   level: 'bachelor' | 'master'
+  /* Which study programme the extra seats are asked for. Extras are reserved
+   * to one programme, so an ask that does not name one cannot be granted —
+   * only the requests filed before this release have it empty. */
+  programme_id: string | null
+  programme_name: string | null
   extra_seats: number
   reason: string
   status: 'pending' | 'approved' | 'rejected'
@@ -96,9 +104,11 @@ export interface SeatRequest {
 export function seatRequests(options: { teacherId?: string } = {}): Promise<SeatRequest[]> {
   return query<SeatRequest>(
     `SELECT sr.id, sr.teacher_id, sr.level, sr.extra_seats, sr.reason, sr.status,
-            sr.decision_note, sr.decided_at, sr.created_at, t.name AS teacher_name
+            sr.decision_note, sr.decided_at, sr.created_at, t.name AS teacher_name,
+            sr.programme_id, p.name AS programme_name
        FROM seat_requests sr
        JOIN users t ON t.id = sr.teacher_id
+       LEFT JOIN study_programmes p ON p.id = sr.programme_id
       WHERE ($1::uuid IS NULL OR sr.teacher_id = $1)
         AND sr.academic_year_id = (SELECT id FROM academic_years WHERE is_current)
       ORDER BY CASE sr.status WHEN 'pending' THEN 0 ELSE 1 END, sr.created_at DESC`,
@@ -109,35 +119,54 @@ export function seatRequests(options: { teacherId?: string } = {}): Promise<Seat
 /**
  * Grants the seats and closes the request in one statement.
  *
- * The allocation row and the decision have to move together: a granted request
- * whose seats were never added is the kind of discrepancy nobody notices until a
- * coordinator is turned away from a student they were told they could take.
+ * The ledger row and the decision have to move together: a granted request
+ * whose seats were never added is the kind of discrepancy nobody notices until
+ * a coordinator is turned away from a student they were told they could take.
+ *
+ * The seats no longer land in `seat_allocations`. They used to be added into
+ * the very column the director's form overwrites, so a coordinator at 43 lost
+ * three seats — with a success notice — the next time that row was saved, and
+ * afterwards nothing could say which of their seats were the norm and which
+ * were granted. Extras live in `seat_grants` now, earmarked for the programme
+ * the request named, and the base is a separate column no grant ever touches.
+ *
+ * Returns `null` when the request is no longer pending, and `'no-programme'`
+ * when it predates the earmark and therefore cannot be granted as it stands:
+ * an extra with no programme would be spendable by anyone, which is exactly
+ * what this release removed.
  */
 export async function grantSeats(
   headId: string,
   seatRequestId: string | null,
   note: string,
-): Promise<SeatRequest | null> {
+): Promise<SeatRequest | 'no-programme' | null> {
   return transaction(async (client) => {
-    const { rows } = await client.query<SeatRequest>(
+    const { rows: open } = await client.query<{ programme_id: string | null }>(
+      `SELECT programme_id FROM seat_requests WHERE id = $1 AND status = 'pending'`,
+      [seatRequestId],
+    )
+    if (!open[0]) return null
+    if (!open[0].programme_id) return 'no-programme'
+
+    const { rows } = await client.query<SeatRequest & { academic_year_id: string }>(
       `UPDATE seat_requests
           SET status = 'approved', decision_note = NULLIF($3, ''), decided_by = $1, decided_at = now()
         WHERE id = $2 AND status = 'pending'
-        RETURNING id, teacher_id, academic_year_id, level, extra_seats, reason, status,
-                  decision_note, decided_at, created_at`,
+        RETURNING id, teacher_id, academic_year_id, level, programme_id, extra_seats, reason,
+                  status, decision_note, decided_at, created_at`,
       [headId, seatRequestId, note],
     )
-    const sr = rows[0] as (SeatRequest & { academic_year_id: string }) | undefined
+    const sr = rows[0]
     if (!sr) return null
 
-    const column = sr.level === 'master' ? 'master_seats' : 'bachelor_seats'
     await client.query(
-      `INSERT INTO seat_allocations (teacher_id, academic_year_id, ${column}, set_by)
-       VALUES ($1, $2, $3, $4)
-       ON CONFLICT (teacher_id, academic_year_id)
-       DO UPDATE SET ${column} = seat_allocations.${column} + EXCLUDED.${column},
-                     set_by = EXCLUDED.set_by, updated_at = now()`,
-      [sr.teacher_id, sr.academic_year_id, sr.extra_seats, headId],
+      `INSERT INTO seat_grants (academic_year_id, teacher_id, programme_id, level, seats,
+                                reason, seat_request_id, granted_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+      [
+        sr.academic_year_id, sr.teacher_id, sr.programme_id, sr.level, sr.extra_seats,
+        sr.reason, sr.id, headId,
+      ],
     )
 
     return sr
@@ -149,33 +178,33 @@ export async function grantSeats(
 /**
  * Turns undecided requests and unanswered invitations into decisions.
  *
- * Chemată de un planificator prin `/api/sweep`, și — ca plasă de siguranță — de
- * middleware, limitată la o dată la câteva minute. Legată doar de trafic, o
- * cerere care trebuia închisă vineri seara rămânea deschisă până luni, iar
- * studentul aștepta un termen care trecuse deja.
+ * Called by a scheduler through `/api/sweep`, and — as a safety net — by the
+ * middleware, throttled to once every few minutes. Tied to traffic alone, a
+ * request that had to be closed on Friday evening stayed open until Monday, and
+ * the student waited on a deadline that had already passed.
  *
- * Un lock consultativ în Postgres ține locul unei singure rulări: două apeluri
- * simultane nu au voie să trimită de două ori aceleași emailuri.
+ * An advisory lock in Postgres holds the place of a single run: two simultaneous
+ * calls are not allowed to send the same emails twice.
  *
- * Eșecurile se scriu în jurnal și se înghit — o măturare care nu poate rula nu
- * are voie să doboare o pagină.
+ * Failures are written to the log and swallowed — a sweep that cannot run is not
+ * allowed to bring a page down.
  */
 let lastSweep = 0
 const SWEEP_INTERVAL_MS = 5 * 60 * 1000
 
-/** Când a rulat ultima oară cu succes; `/api/sanatate` o poate raporta. */
+/** When it last ran successfully; `/api/sanatate` can report it. */
 export function lastSweepAt(): string | null {
   return lastSweep ? new Date(lastSweep).toISOString() : null
 }
 
 export async function sweepDeadlines(
   baseUrl: string,
-  { fortat = false }: { fortat?: boolean } = {},
+  { force = false }: { force?: boolean } = {},
 ): Promise<void> {
   const now = Date.now()
-  if (!fortat && now - lastSweep < SWEEP_INTERVAL_MS) return
+  if (!force && now - lastSweep < SWEEP_INTERVAL_MS) return
 
-  // Cheia este arbitrară, dar constantă: identifică *această* sarcină.
+  // The key is arbitrary but constant: it identifies *this* task.
   const lock = await queryOne<{ luat: boolean }>(
     `SELECT pg_try_advisory_lock(hashtext('sweep_deadlines')) AS luat`,
   )
@@ -231,11 +260,12 @@ export async function sweepDeadlines(
       })
     }
 
-    /* Invitațiile expirate se anunțau nimănui.
+    /* Expired invitations were announced to nobody.
      *
-     * Un cadru didactic ținea un loc ocupat pentru un student care nu mai
-     * răspundea, iar studentul nu afla niciodată că propunerea a căzut — starea
-     * se schimba în tăcere, în baza de date. Aceeași buclă ca la cereri. */
+     * A member of the teaching staff kept a seat held for a student who no
+     * longer answered, and the student never found out that the proposal had
+     * lapsed — the status changed silently, in the database. The same loop as
+     * for requests. */
     const lapsed = await query<{
       id: string
       student_id: string
@@ -291,36 +321,37 @@ export async function sweepDeadlines(
       })
     }
 
-    await curataJurnalul()
-    const amintite = await trimiteMementouri(baseUrl)
+    await purgeAccessLog()
+    const remindersSent = await sendReminders(baseUrl)
 
-    if (expired.length || lapsed.length || amintite) {
+    if (expired.length || lapsed.length || remindersSent) {
       console.log(
-        `[sweep] ${expired.length} cereri expirate, ${lapsed.length} invitații expirate, ${amintite} mementouri`,
+        `[sweep] ${expired.length} cereri expirate, ${lapsed.length} invitații expirate, ${remindersSent} mementouri`,
       )
     }
   } catch (err) {
     console.error('[sweep] eșec', err)
   } finally {
-    // Lockul se eliberează chiar dacă măturarea a picat la jumătate; altfel
-    // rularea următoare l-ar găsi ocupat pentru totdeauna.
+    // The lock is released even if the sweep failed halfway through; otherwise
+    // the next run would find it taken forever.
     await queryOne(`SELECT pg_advisory_unlock(hashtext('sweep_deadlines'))`).catch(() => {})
   }
 }
 
-/* --- mementouri înainte de termen ------------------------------------------
+/* --- reminders before the deadline -----------------------------------------
  *
- * Portalul anunța termenele doar după ce treceau: cererea a expirat, invitația
- * a expirat. Anunțul de după constată o pierdere; cel dinainte o poate evita.
+ * The portal announced deadlines only after they had passed: the request has
+ * expired, the invitation has expired. The announcement afterwards records a
+ * loss; the one beforehand can avoid it.
  *
- * Fiecare memento trece printr-o inserare în `notifications_sent` cu
- * `ON CONFLICT DO NOTHING`: dacă rândul exista deja, nu se trimite. Măturarea
- * rulează des și din două locuri, deci fără poarta asta același om ar primi
- * același memento de zece ori pe zi.
+ * Every reminder goes through an insert into `notifications_sent` with
+ * `ON CONFLICT DO NOTHING`: if the row already existed, nothing is sent. The
+ * sweep runs often and from two places, so without this gate the same person
+ * would get the same reminder ten times a day.
  */
 
-/** Poarta: `true` dacă acum îi revine acestui apel să trimită. */
-async function revendica(userId: string, kind: string, refId: string): Promise<boolean> {
+/** The gate: `true` if it now falls to this call to send. */
+async function claimReminder(userId: string, kind: string, refId: string): Promise<boolean> {
   const row = await queryOne<{ ok: boolean }>(
     `INSERT INTO notifications_sent (user_id, kind, ref_id)
      VALUES ($1, $2, $3)
@@ -331,12 +362,39 @@ async function revendica(userId: string, kind: string, refId: string): Promise<b
   return Boolean(row?.ok)
 }
 
-async function trimiteMementouri(baseUrl: string): Promise<number> {
-  let trimise = 0
+/**
+ * The same gate, but without the day in the key.
+ *
+ * `claimReminder` keys on `(user, kind, ref, sent_on)`, which is right for „three
+ * days before” and „on the day”: those are two notices about one deadline, and
+ * next year the same pair comes round legitimately. A weekly digest keyed the
+ * same way would go out again every morning of that week, since `sent_on` moves.
+ * Here the day is carried in `kind` instead, and the row is written only if
+ * nothing with that key exists yet.
+ *
+ * The sweep is serialised by an advisory lock, so two callers cannot reach the
+ * gap between the check and the insert; the primary key still refuses a
+ * same-day repeat if one ever did.
+ */
+async function claimOnce(userId: string, kind: string, refId: string): Promise<boolean> {
+  const row = await queryOne<{ ok: boolean }>(
+    `INSERT INTO notifications_sent (user_id, kind, ref_id)
+     SELECT $1, $2, $3
+      WHERE NOT EXISTS (
+        SELECT 1 FROM notifications_sent
+         WHERE user_id = $1 AND kind = $2 AND ref_id = $3)
+     RETURNING true AS ok`,
+    [userId, kind, refId],
+  )
+  return Boolean(row?.ok)
+}
 
-  /* Coordonatorul, în ziua a cincea din șapte.
+async function sendReminders(baseUrl: string): Promise<number> {
+  let sent = 0
+
+  /* The coordinator, on the fifth day out of seven.
    *
-   * Momentul în care mai poate răspunde fără ca portalul să decidă în locul lui.
+   * The moment when they can still answer without the portal deciding for them.
    */
   const cereri = await query<{
     id: string
@@ -361,7 +419,7 @@ async function trimiteMementouri(baseUrl: string): Promise<number> {
   )
 
   for (const c of cereri) {
-    if (!(await revendica(c.teacher_id, 'cerere_expira', c.id))) continue
+    if (!(await claimReminder(c.teacher_id, 'cerere_expira', c.id))) continue
     const zile = Math.max(1, Math.ceil((new Date(c.expires_at).getTime() - Date.now()) / 86_400_000))
     await sendEmail({
       to: c.teacher_email,
@@ -375,10 +433,10 @@ async function trimiteMementouri(baseUrl: string): Promise<number> {
         { text: 'Deschide cererea', url: `${baseUrl}/profesor/studenti?sectiune=cereri#cerere-${c.id}` },
       ),
     })
-    trimise++
+    sent++
   }
 
-  /* Studentul, cu două zile înainte ca propunerea primită să expire. */
+  /* The student, two days before the proposal received expires. */
   const invitatii = await query<{
     id: string
     expires_at: string
@@ -399,7 +457,7 @@ async function trimiteMementouri(baseUrl: string): Promise<number> {
   )
 
   for (const i of invitatii) {
-    if (!(await revendica(i.student_id, 'invitatie_expira', i.id))) continue
+    if (!(await claimReminder(i.student_id, 'invitatie_expira', i.id))) continue
     await sendEmail({
       to: i.student_email,
       subject: 'Propunerea de coordonare expiră în curând',
@@ -409,14 +467,14 @@ async function trimiteMementouri(baseUrl: string): Promise<number> {
          mai puțin de două zile.</p>
          <p>Dacă o accepți, cererea ta este aprobată direct. Dacă o refuzi, locul se eliberează
          pentru altcineva — iar dacă nu răspunzi deloc, se închide singură.</p>`,
-        { text: 'Vezi propunerea', url: `${baseUrl}/cererile-mele` },
+        { text: 'Vezi propunerea', url: `${baseUrl}/lucrarea-mea` },
       ),
     })
-    trimise++
+    sent++
   }
 
-  /* Studentul, cu trei zile înainte de un termen al lucrării, și în ziua lui. */
-  const termene = await query<{
+  /* The student, three days before a thesis deadline, and on the day itself. */
+  const dueMilestones = await query<{
     id: string
     title: string
     due_on: string
@@ -436,22 +494,85 @@ async function trimiteMementouri(baseUrl: string): Promise<number> {
         AND m.due_on IN (current_date + 3, current_date)`,
   )
 
-  for (const t of termene) {
-    const cheie = t.zile === 0 ? 'termen_azi' : 'termen_3zile'
-    if (!(await revendica(t.student_id, cheie, t.id))) continue
+  for (const t of dueMilestones) {
+    const reminderKind = t.zile === 0 ? 'termen_azi' : 'termen_3zile'
+    if (!(await claimReminder(t.student_id, reminderKind, t.id))) continue
     await sendEmail({
       to: t.student_email,
       subject: t.zile === 0 ? `Astăzi este termenul: ${t.title}` : `Peste 3 zile: ${t.title}`,
+      /* It used to end „marchează-l în portal ca să nu îți mai apară” — an
+       * instruction for something the portal does not allow: the state of a
+       * milestone is the coordinator's, `/api/termene` refuses anyone who is
+       * not a member of staff, and the student's screen has no control at all.
+       * Whoever followed the sentence looked for a button that was never there. */
       html: template(
         t.zile === 0 ? 'Termenul este astăzi' : 'Un termen se apropie',
         html`<p>Bună, ${t.student_name.split(' ')[0]}. Termenul <strong>${t.title}</strong>
          ${t.zile === 0 ? 'este astăzi' : 'este peste 3 zile'}.</p>
-         <p>Dacă l-ai încheiat deja, marchează-l în portal ca să nu îți mai apară.</p>`,
-        { text: 'Vezi termenele', url: `${baseUrl}/cererile-mele` },
+         <p>Dacă l-ai încheiat deja, scrie-i coordonatorului în conversație — el îl marchează
+         ca finalizat.</p>`,
+        { text: 'Vezi termenele', url: `${baseUrl}/lucrarea-mea` },
       ),
     })
-    trimise++
+    sent++
   }
 
-  return trimise
+  /* The coordinator, once a week, about what has been missed.
+   *
+   * Every milestone reminder went to the student and none to the person who
+   * sets them: a coordinator with three students two weeks behind found out by
+   * opening the screen, if they opened it. One message per coordinator, not one
+   * per deadline — twelve late students used to be twelve separate emails in
+   * every design that keyed this on the milestone.
+   */
+  const weekKey = `termene_depasite:${startOfWeek(localDay(new Date()))}`
+
+  const behind = await query<{
+    teacher_id: string
+    teacher_name: string
+    teacher_email: string
+    total: number
+    students: number
+    examples: string[]
+  }>(
+    `SELECT t.id AS teacher_id, t.name AS teacher_name, t.email AS teacher_email,
+            count(*)::int AS total,
+            count(DISTINCT r.student_id)::int AS students,
+            (array_agg(m.title || ' · ' || s.name || ' · ' || to_char(m.due_on, 'DD.MM.YYYY')
+                       ORDER BY m.due_on))[1:5] AS examples
+       FROM milestones m
+       JOIN requests r ON r.id = m.request_id
+       JOIN users s ON s.id = r.student_id
+       JOIN users t ON t.id = r.teacher_id
+      WHERE m.status <> 'done'
+        AND r.status = 'approved'
+        AND m.due_on IS NOT NULL
+        AND m.due_on < current_date
+        AND t.is_active
+      GROUP BY t.id, t.name, t.email`,
+  )
+
+  for (const d of behind) {
+    if (!(await claimOnce(d.teacher_id, weekKey, d.teacher_id))) continue
+    await sendEmail({
+      to: d.teacher_email,
+      subject: `${numar(d.total, 'termen depășit', 'termene depășite')} la studenții tăi`,
+      html: template(
+        'Termene depășite',
+        html`<p>La lucrările pe care le coordonezi sunt
+         <strong>${numar(d.total, 'termen depășit', 'termene depășite')}</strong>, la
+         ${numar(d.students, 'student', 'studenți')}.</p>
+         <ul>${joinHtml(d.examples.map((e) => html`<li>${e}</li>`))}</ul>
+         ${d.total > d.examples.length
+           ? html`<p>Și încă ${numar(d.total - d.examples.length, 'termen', 'termene')}.</p>`
+           : ''}
+         <p>Un termen depășit nu se închide singur: îl muți, îl marchezi finalizat sau îl
+         ștergi — din agenda termenelor.</p>`,
+        { text: 'Deschide agenda termenelor', url: `${baseUrl}/profesor/studenti?sectiune=progres&vedere=toti` },
+      ),
+    })
+    sent++
+  }
+
+  return sent
 }

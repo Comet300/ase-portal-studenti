@@ -1,28 +1,28 @@
--- Cine a citit datele personale ale cohortei.
+-- Who read the cohort's personal data.
 --
--- Portalul păstrează nume, numere matricole, adrese instituționale, titluri de
--- lucrări, motivații scrise de mână, conversații private și documente încărcate,
--- pentru o promoție întreagă. Orice cadru didactic poate descărca tabelul
--- complet al departamentului — `doar_ale_mele` este o opțiune, nu o restricție —
--- și nimic nu înregistra vreodată că a făcut-o.
+-- The portal keeps names, student numbers, institutional addresses, thesis
+-- titles, statements of motivation written by hand, private conversations and
+-- uploaded documents, for a whole cohort. Any member of the teaching staff can
+-- download the department's complete table — `doar_ale_mele` is an option, not
+-- a restriction — and nothing ever recorded that they had done so.
 --
--- Pentru o instituție publică sub GDPR, un export fără urmă este exact felul de
--- lipsă care închide un portal. Se înregistrează exporturile și accesul la
--- fișiere: sunt cele două căi prin care datele pleacă din portal.
+-- For a public institution under the GDPR, an export that leaves no trace is
+-- exactly the kind of gap that closes a portal down. Exports and file access are
+-- recorded: they are the two paths by which the data leaves the portal.
 --
--- Nu este un jurnal de aplicație: nu ține conținut, doar cine, ce fel de acces,
--- ce a atins și când. Se păstrează un an — suficient pentru o verificare, nu
--- pentru o supraveghere.
+-- This is not an application log: it holds no content, only who, what kind of
+-- access, what they touched and when. It is kept for a year — enough for an
+-- inspection, not enough for surveillance.
 
 CREATE TABLE access_log (
   id         bigserial   PRIMARY KEY,
   user_id    uuid        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   action     text        NOT NULL,
-  -- Ce a fost atins: un id, o rută, un filtru. Text liber, pentru că formele
-  -- diferă, dar niciodată conținutul însuși.
+  -- What was touched: an id, a route, a filter. Free text, because the shapes
+  -- differ, but never the content itself.
   subject    text,
-  -- Câte înregistrări a văzut: diferența dintre a deschide un fișier și a
-  -- descărca întreaga promoție.
+  -- How many records they saw: the difference between opening one file and
+  -- downloading the entire cohort.
   row_count  integer,
   ip         text,
   created_at timestamptz NOT NULL DEFAULT now()

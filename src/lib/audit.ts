@@ -1,27 +1,50 @@
 import { execute } from './db'
 
 /**
- * Urma pe care o lasă datele când pleacă din portal.
+ * The trail the data leaves when it goes out of the portal.
  *
- * Se înregistrează doar căile prin care datele personale ies: exporturile și
- * descărcarea fișierelor. Nu este un jurnal de aplicație și nu ține niciodată
- * conținut — cine, ce fel de acces, ce a atins, câte rânduri, când.
+ * Only the ways personal data leaves are recorded: the exports and the file
+ * downloads. This is not an application log and it never holds content — who,
+ * what kind of access, what was touched, how many rows, when.
  *
- * Nu aruncă niciodată. Un jurnal care nu poate scrie nu are voie să oprească
- * acțiunea pe care o descrie: ar transforma un export reușit într-o eroare, iar
- * utilizatorul l-ar cere din nou.
+ * It never throws. A log that cannot write is not allowed to stop the action
+ * it describes: it would turn a successful export into an error, and the user
+ * would ask for it again.
  */
-export type AccesTip =
+export type AccessAction =
   | 'export_coordonari'
   | 'export_cereri'
+  | 'export_studenti'
   | 'descarca_fisier'
   | 'descarca_arhiva'
   | 'descarca_document'
   | 'export_date_proprii'
+  /* Changes to somebody else's identity: who was added, whose access was
+     closed, whose address was changed. They are exactly the category the log
+     exists for — more than the reads, these change who can get in. */
+  | 'adauga_cont'
+  | 'dezactiveaza_cont'
+  | 'reactiveaza_cont'
+  | 'schimba_email'
+  /* Decisions the head makes over somebody else's work, and the ones a
+     coordinator makes that a student cannot undo. Each of these moves a
+     student between people or changes what a coordinator is allowed to take
+     on, so "who did this, and when" has to survive the screen that did it. */
+  | 'importa_studenti'
+  | 'muta_student'
+  | 'acorda_locuri'
+  | 'retrage_locuri'
+  | 'schimba_norma_locuri'
+  | 'anuleaza_consultatie'
+  | 'schimba_titlu'
+  /* The thesis itself: who handed it in, and who read it afterwards. The file
+     is the one thing in the portal that a person spent a year on. */
+  | 'incarca_lucrare'
+  | 'descarca_lucrare'
 
-export async function noteazaAcces(e: {
+export async function recordAccess(e: {
   userId: string
-  action: AccesTip
+  action: AccessAction
   subject?: string | null
   rowCount?: number | null
   request?: Request
@@ -43,11 +66,11 @@ export async function noteazaAcces(e: {
 }
 
 /**
- * Curățenia: un an este suficient pentru o verificare, nu pentru supraveghere.
+ * Housekeeping: one year is enough for a check, not for surveillance.
  *
- * Chemată din măturarea de termene, care rulează oricum periodic.
+ * Called from the milestone sweep, which runs periodically anyway.
  */
-export async function curataJurnalul(): Promise<void> {
+export async function purgeAccessLog(): Promise<void> {
   try {
     await execute(`DELETE FROM access_log WHERE created_at < now() - interval '1 year'`)
   } catch (err) {

@@ -8,17 +8,33 @@ import { fileStore } from './container'
  * no change at the call sites.
  */
 
-export { MAX_BYTES } from './adapters/disk-files'
+export { MAX_BYTES, MAX_ABSOLUTE_BYTES } from './adapters/disk-files'
 
 /**
- * Ce se poate atașa într-o conversație.
+ * What may be handed in as a finished thesis, and what may accompany it.
  *
- * O listă închisă, nu una de excluderi: un fir de lucrare de licență poartă
- * capitole, chestionare și seturi de date, nu executabile. Tipul se deduce din
- * extensia verificată, nu din ce declară browserul — `file.type` vine de la
- * client și nu este o dovadă.
+ * The thesis is a PDF and nothing else: it is the form that reads the same on
+ * every machine, it is what the regulation asks for, and it is what goes into
+ * the anti-plagiarism platform. The declaration of originality is signed on
+ * paper, so a photograph of it counts.
  */
-export const EXTENSII_PERMISE = [
+export const THESIS_EXTENSIONS = ['pdf'] as const
+export const DECLARATION_EXTENSIONS = ['pdf', 'jpg', 'jpeg', 'png'] as const
+
+export const THESIS_MAX_BYTES = 40 * 1024 * 1024
+
+export const THESIS_ACCEPT = THESIS_EXTENSIONS.map((e) => `.${e}`).join(',')
+export const DECLARATION_ACCEPT = DECLARATION_EXTENSIONS.map((e) => `.${e}`).join(',')
+
+/**
+ * What can be attached in a conversation.
+ *
+ * A closed list, not a list of exclusions: a thread about a bachelor's thesis
+ * carries chapters, questionnaires and data sets, not executables. The type is
+ * derived from the checked extension, not from what the browser declares —
+ * `file.type` comes from the client and is not proof.
+ */
+export const ALLOWED_EXTENSIONS = [
   'pdf', 'doc', 'docx', 'odt', 'rtf', 'txt', 'md',
   'xls', 'xlsx', 'csv', 'ods',
   'ppt', 'pptx', 'odp',
@@ -26,7 +42,7 @@ export const EXTENSII_PERMISE = [
   'zip',
 ] as const
 
-const TIPURI: Record<string, string> = {
+const MIME_TYPES: Record<string, string> = {
   pdf: 'application/pdf',
   doc: 'application/msword',
   docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
@@ -49,21 +65,21 @@ const TIPURI: Record<string, string> = {
   zip: 'application/zip',
 }
 
-/** Atributul `accept` al câmpului de fișier, derivat din aceeași listă. */
-export const ACCEPT = EXTENSII_PERMISE.map((e) => `.${e}`).join(',')
+/** The `accept` attribute of the file field, derived from the same list. */
+export const ACCEPT = ALLOWED_EXTENSIONS.map((e) => `.${e}`).join(',')
 
-export function extensia(nume: string): string {
-  const parte = nume.split('.').pop()
-  return parte && parte !== nume ? parte.toLowerCase() : ''
+export function extensionOf(name: string): string {
+  const part = name.split('.').pop()
+  return part && part !== name ? part.toLowerCase() : ''
 }
 
-export function extensiePermisa(nume: string): boolean {
-  return (EXTENSII_PERMISE as readonly string[]).includes(extensia(nume))
+export function isAllowedExtension(name: string): boolean {
+  return (ALLOWED_EXTENSIONS as readonly string[]).includes(extensionOf(name))
 }
 
-/** Tipul pe care îl înregistrăm, dedus din extensie — nu din ce spune clientul. */
-export function tipDupaExtensie(nume: string): string {
-  return TIPURI[extensia(nume)] ?? 'application/octet-stream'
+/** The type we record, derived from the extension — not from what the client says. */
+export function mimeForExtension(name: string): string {
+  return MIME_TYPES[extensionOf(name)] ?? 'application/octet-stream'
 }
 
 export const saveFile = fileStore.save.bind(fileStore)

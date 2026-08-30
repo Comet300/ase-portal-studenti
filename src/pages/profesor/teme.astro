@@ -1,18 +1,32 @@
 ---
 import ProfesorLayout from '../../layouts/ProfesorLayout.astro'
 import { teacherTopics } from '../../lib/repo'
-import { LANGUAGE_LABELS, languageLabel } from '../../lib/years'
+import { currentYear, languageLabel, programmes } from '../../lib/years'
 
 /**
- * Temele propuse de un cadru didactic.
+ * The topics proposed by a member of the teaching staff.
  *
- * Ecran propriu, nu un tab: catalogul de teme se editează la începutul sesiunii
- * și apoi rar, dar este ceea ce văd toți studenții care caută un coordonator —
- * îngropat sub „Studenți & Cereri" era greu de găsit tocmai când conta.
+ * A screen of its own, not a tab: the topic catalogue is edited at the start of
+ * the session and rarely afterwards, but it is what every student looking for a
+ * coordinator sees — buried under „Studenți & Cereri" it was hard to find
+ * exactly when it mattered.
  */
 
 const u = Astro.locals.user!
 const teme = await teacherTopics(u.id)
+
+/* The programmes of the year under way, both levels together.
+ *
+ * All of them are rendered as options, each carrying its level, and the choice
+ * of „Nivel” filters them in the browser. Rendering only one level's worth
+ * would mean a form that cannot be filled in without JavaScript — and the
+ * endpoint checks the pair anyway, because a browser is not a defence. */
+const an = await currentYear()
+const programe = an ? (await programmes(an.id)).filter((p) => p.is_active) : []
+const areProgramePeNivel = {
+  bachelor: programe.some((p) => p.level === 'bachelor'),
+  master: programe.some((p) => p.level === 'master'),
+}
 ---
 
 <ProfesorLayout
@@ -22,8 +36,9 @@ const teme = await teacherTopics(u.id)
 >
     <section class="panel">
       <div class="panel__header">
-        {/* Titlul paginii spune deja „Teme propuse”; antetul panoului repeta
-            cuvânt cu cuvânt și nu adăuga nimic. Aici e util numărul. */}
+        {/* The page title already says „Teme propuse”; the panel header
+            repeated it word for word and added nothing. What is useful
+            here is the count. */}
         <h2 class="section-title">În catalog</h2>
         <span class="muted text-sm">
           {teme.filter((t) => t.is_active).length} din {teme.length}
@@ -42,26 +57,37 @@ const teme = await teacherTopics(u.id)
       ) : (
         <ul class="teme">
           {teme.map((t) => (
-            <li class:list={['tema', { 'is-inactiva': !t.is_active }]}>
+            <li class:list={['tema', { 'is-inactive': !t.is_active }]}>
               <div class="tema__cap">
                 <span class="badge badge--taxon">
                   {t.level === 'master' ? 'Master' : 'Licență'}
                   {t.language !== 'ro' ? ` · ${languageLabel(t.language)}` : ''}
                 </span>
-                <span class="muted numeric text-xs">
-                  {t.taken}/{t.seats} locuri
+                <span class="muted text-xs">
+                  {t.taken === 0
+                    ? 'nicio cerere'
+                    : t.taken === 1
+                      ? 'un student'
+                      : `${t.taken} studenți`}
                 </span>
               </div>
               <h3 class="tema__titlu">{t.title}</h3>
-              {t.methods && <p class="muted text-sm">Metode: {t.methods}</p>}
-              {t.prerequisites && t.prerequisites !== '—' && (
-                <p class="muted text-xs">Prerechizite: {t.prerequisites}</p>
+              {t.programme_name ? (
+                <p class="muted text-sm">{t.programme_name}</p>
+              ) : (
+                <p class="tema__lipsa text-sm">
+                  Fără program de studii — alege unul ca tema să ajungă la studenții potriviți.
+                </p>
+              )}
+              {t.domain && t.domain !== '—' && <p class="muted text-sm">Domeniu: {t.domain}</p>}
+              {t.methodology && t.methodology !== '—' && (
+                <p class="muted text-xs">Metodologie: {t.methodology}</p>
               )}
               <form method="POST" action="/api/teme" style="margin-top:auto">
                 <input type="hidden" name="actiune" value="comuta" />
                 <input type="hidden" name="tema_id" value={t.id} />
-                {/* Ghost pe fundal alb nu are contur, deci arăta ca un link, nu
-                    ca un buton — exact reproșul primit de două ori până acum. */}
+                {/* Ghost on a white background has no outline, so it looked like a
+                    link, not a button — exactly the complaint received twice so far. */}
                 <button class="btn btn--secondary btn--sm" type="submit">
                   {t.is_active ? 'Retrage din catalog' : 'Publică din nou'}
                 </button>
@@ -89,27 +115,29 @@ const teme = await teacherTopics(u.id)
             </select>
           </div>
 
-          <div class="field tema-noua__limba">
-            <label class="label" for="tema-limba">Limba lucrării</label>
-            <select class="select" id="tema-limba" name="limba" aria-describedby="ajutor-limba">
-              {Object.entries(LANGUAGE_LABELS).map(([cod, text]) => (
-                <option value={cod}>{text}</option>
+          <div class="field tema-noua__program">
+            <label class="label" for="tema-program">Program de studii</label>
+            <select class="select" id="tema-program" name="program_id" data-programe required
+              aria-describedby="ajutor-program">
+              {/* Fără o opțiune goală, prima din listă ar fi un răspuns pe care
+                  nimeni nu l-a dat: la licență aceea este programul în engleză,
+                  iar tema ar ajunge tăcut în catalogul altcuiva. */}
+              <option value="">Alege programul…</option>
+              {programe.map((p) => (
+                <option value={p.id} data-nivel={p.level} hidden={p.level !== 'bachelor'}>
+                  {p.name}
+                </option>
               ))}
             </select>
-            <span class="hint" id="ajutor-limba">
-              Tema apare doar studenților din programele cu această limbă.
+            <span class="hint" id="ajutor-program">
+              Programul stabilește și limba lucrării. Lista se schimbă după nivelul ales.
             </span>
           </div>
 
-          <div class="field tema-noua__locuri">
-            <label class="label" for="tema-locuri">Locuri</label>
-            <input class="input" id="tema-locuri" name="locuri" type="number" min="1" max="20" value="2" />
-          </div>
-
-          {/* Descrierea este singurul loc în care un student află despre ce e
-              vorba. Catalogul o afișa și o căuta de la început, dar formularul
-              nu o cerea niciodată, așa că fiecare temă publicată din portal
-              rămânea fără ea. */}
+          {/* The description is the only place where a student finds out what
+              the topic is about. The catalogue displayed it and searched it
+              from the start, but the form never asked for it, so every topic
+              published from the portal was left without one. */}
           <div class="field tema-noua__descriere">
             <label class="label" for="tema-descriere">Descriere</label>
             <textarea
@@ -125,14 +153,16 @@ const teme = await teacherTopics(u.id)
             <span class="hint" id="contor-descriere" data-contor-pentru="tema-descriere"></span>
           </div>
 
-          <div class="field tema-noua__metode">
-            <label class="label" for="tema-metode">Metode</label>
-            <input class="input" id="tema-metode" name="metode" placeholder="Ex: sondaj, analiză factorială" />
+          <div class="field tema-noua__domeniu">
+            <label class="label" for="tema-domeniu">Domeniu</label>
+            <input class="input" id="tema-domeniu" name="domeniu" maxlength="200"
+              placeholder="Ex: comportamentul consumatorului" />
           </div>
 
-          <div class="field tema-noua__prerechizite">
-            <label class="label" for="tema-prerechizite">Prerechizite</label>
-            <input class="input" id="tema-prerechizite" name="prerechizite" placeholder="Ex: Statistică aplicată" />
+          <div class="field tema-noua__metodologie">
+            <label class="label" for="tema-metodologie">Metodologie</label>
+            <input class="input" id="tema-metodologie" name="metodologie" maxlength="200"
+              placeholder="Ex: anchetă pe bază de chestionar, eșantion de 200" />
           </div>
 
           <button class="btn btn--primary tema-noua__actiune" type="submit">Publică tema</button>
@@ -141,11 +171,40 @@ const teme = await teacherTopics(u.id)
     </section>
 </ProfesorLayout>
 
+<script>
+  /* «Nivel» decide ce programe se pot alege.
+   *
+   * Toate opțiunile sunt în pagină de la început, fiecare cu nivelul ei, iar
+   * aici rămân vizibile doar cele potrivite. Fără JavaScript formularul rămâne
+   * complet și trimisibil — iar dacă perechea nu se potrivește, endpointul o
+   * refuză cu o propoziție, pentru că browserul nu este o apărare. */
+  const nivel = document.querySelector<HTMLSelectElement>('#tema-nivel')
+  const programe = document.querySelector<HTMLSelectElement>('[data-programe]')
+
+  if (nivel && programe) {
+    const optiuni = [...programe.options]
+
+    const potrivite = () => {
+      for (const o of optiuni) {
+        const seVede = !o.dataset.nivel || o.dataset.nivel === nivel.value
+        o.hidden = !seVede
+        o.disabled = !seVede
+      }
+      /* Selecția rămasă de la nivelul anterior ar fi trimis un master la
+         licență: dacă a devenit invizibilă, cade pe prima potrivită. */
+      if (programe.selectedOptions[0]?.hidden) programe.value = ''
+    }
+
+    potrivite()
+    nivel.addEventListener('change', potrivite)
+  }
+</script>
+
 <style>
-  /* Douăsprezece coloane, fiecare câmp cu deschiderea lui declarată.
-     `auto-fit` dădea tuturor aceeași lățime — un titlu de lucrare primea 160px,
-     la fel ca numărul de locuri — iar stilurile inline rămase de la varianta
-     flex băteau regula de mai jos și scoteau câmpurile unul peste altul. */
+  /* Twelve columns, each field with its own span declared.
+     `auto-fit` gave them all the same width — a thesis title got 160px, just
+     like the number of seats — and the inline styles left over from the flex
+     version beat the rule below and pushed the fields on top of one another. */
   .tema-noua {
     display: grid;
     grid-template-columns: repeat(12, minmax(0, 1fr));
@@ -160,19 +219,16 @@ const teme = await teacherTopics(u.id)
     grid-column: span 12;
   }
   .tema-noua__nivel {
-    grid-column: span 3;
-  }
-  .tema-noua__limba {
-    grid-column: span 5;
-  }
-  .tema-noua__locuri {
     grid-column: span 4;
+  }
+  .tema-noua__program {
+    grid-column: span 8;
   }
   .tema-noua__descriere {
     grid-column: span 12;
   }
-  .tema-noua__metode,
-  .tema-noua__prerechizite {
+  .tema-noua__domeniu,
+  .tema-noua__metodologie {
     grid-column: span 6;
   }
   .tema-noua__actiune {
@@ -182,12 +238,17 @@ const teme = await teacherTopics(u.id)
 
   @media (max-width: 640px) {
     .tema-noua__nivel,
-    .tema-noua__limba,
-    .tema-noua__locuri,
-    .tema-noua__metode,
-    .tema-noua__prerechizite {
+    .tema-noua__program,
+    .tema-noua__domeniu,
+    .tema-noua__metodologie {
       grid-column: span 12;
     }
+  }
+
+  /* O temă fără program nu ajunge la nimeni: catalogul o arată, dar niciun
+     student nu o recunoaște ca fiind pentru el. Spune asta la fața locului. */
+  .tema__lipsa {
+    color: var(--warn);
   }
 
   .teme {
@@ -207,7 +268,7 @@ const teme = await teacherTopics(u.id)
     border: 1px solid var(--border);
     border-radius: var(--r-md);
   }
-  .tema.is-inactiva {
+  .tema.is-inactive {
     opacity: 0.55;
   }
 

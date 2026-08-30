@@ -2,11 +2,11 @@
 import BaseLayout from '../layouts/BaseLayout.astro'
 
 /**
- * Ceva a căzut pe server.
+ * Something fell over on the server.
  *
- * Se construiește pe BaseLayout, nu pe layout-ul cu meniu: dacă baza de date nu
- * răspunde, orice interogare din bara de navigație ar arunca la rândul ei, iar
- * pagina de eroare ar deveni ea însăși o eroare.
+ * Built on BaseLayout, not on the layout with the menu: if the database does
+ * not answer, any query in the navigation bar would throw in its turn, and the
+ * error page would itself become an error.
  */
 
 Astro.response.status = 500

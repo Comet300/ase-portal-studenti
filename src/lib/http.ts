@@ -1,3 +1,5 @@
+import type { Role } from './auth'
+
 /**
  * Redirect helper.
  *
@@ -30,6 +32,18 @@ export function internalPath(path: string | null | undefined, fallback = '/'): s
   return path
 }
 
+/**
+ * Where a role belongs after signing in.
+ *
+ * The pair was written out in four places — the magic link, the demo sign-in,
+ * the sign-in page and signing out — and they had already drifted: the demo
+ * buttons fell back to `redirect()`'s own `/`, so a teacher who used them
+ * landed on the student home. One rule, one place.
+ */
+export function homeFor(user: { role: Role }): string {
+  return user.role === 'student' ? '/' : '/profesor'
+}
+
 export function redirect(path: string, status: 302 | 303 = 303): Response {
   return new Response(null, { status, headers: { location: internalPath(path) } })
 }
@@ -37,14 +51,14 @@ export function redirect(path: string, status: 302 | 303 = 303): Response {
 /**
  * Redirect back to a path, carrying a Romanian toast message.
  *
- * Fragmentul se desprinde înainte de a atinge `URLSearchParams` și se lipește la
- * urmă. Altfel `#student-<id>` ajungea *în* ultimul parametru și era codat ca
- * `%23student-…`: adresa rămânea valabilă, dar ancora nu mai exista, deci
- * salvarea nu se mai întorcea la rândul pe care lucrai.
+ * The fragment is detached before it reaches `URLSearchParams` and glued back on
+ * at the end. Otherwise `#student-<id>` ended up *inside* the last parameter and
+ * was encoded as `%23student-…`: the address stayed valid, but the anchor no
+ * longer existed, so a save no longer came back to the row you were working on.
  */
 export function redirectWithNotice(path: string, message: string, isError = false): Response {
-  const [faraFragment, fragment] = path.split('#')
-  const [base, existing] = faraFragment.split('?')
+  const [withoutFragment, fragment] = path.split('#')
+  const [base, existing] = withoutFragment.split('?')
   const params = new URLSearchParams(existing ?? '')
   params.set('notificare', message)
   if (isError) params.set('tip', 'error')
@@ -52,40 +66,42 @@ export function redirectWithNotice(path: string, message: string, isError = fals
 }
 
 /**
- * O confirmare cu un drum de întoarcere.
+ * A confirmation with a way back.
  *
- * Ștergerile portalului erau definitive la un clic: o etapă din calendar, un
- * termen al unei lucrări. Nimic din ele nu merită un dialog de confirmare — sunt
- * gesturi mărunte, iar un dialog la fiecare le-ar face pe toate obositoare — dar
- * merită să poată fi luate înapoi.
+ * Deletions in the portal were final after a single click: a stage in the
+ * calendar, a milestone of a thesis. None of them deserves a confirmation dialog
+ * — they are small gestures, and a dialog on each one would make all of them
+ * tiring — but they do deserve to be taken back.
  *
- * Fereastra este cât trăiește notificarea. După ea, gestul s-a încheiat: nu se
- * păstrează nimic pe server, nu apare niciun coș de reciclare de întreținut.
+ * The window lasts as long as the notice does. After it, the gesture is over:
+ * nothing is kept on the server, no recycle bin appears that has to be
+ * maintained.
  */
 export function redirectWithUndo(
   path: string,
   message: string,
-  undo: { catre: string; date: Record<string, string> },
+  undo: { to: string; date: Record<string, string> },
 ): Response {
-  const [faraFragment, fragment] = path.split('#')
-  const [base, existing] = faraFragment.split('?')
+  const [withoutFragment, fragment] = path.split('#')
+  const [base, existing] = withoutFragment.split('?')
   const params = new URLSearchParams(existing ?? '')
   params.set('notificare', message)
-  params.set('anulare', undo.catre)
+  params.set('anulare', undo.to)
   params.set('anulare_date', JSON.stringify(undo.date))
   return redirect(`${base}?${params.toString()}${fragment ? `#${fragment}` : ''}`)
 }
 
 /**
- * Sesiunea a expirat în timp ce cineva completa un formular.
+ * The session expired while somebody was filling in a form.
  *
- * Rutele răspundeau cu `new Response('Neautentificat', { status: 401 })` — adică
- * o pagină albă cu un cuvânt pe ea, în afara portalului, după douăzeci de minute
- * de scris. Cookie-ul ține treizeci de zile, deci se întâmplă rar, dar când se
- * întâmplă e cel mai prost moment posibil.
+ * The routes answered with `new Response('Neautentificat', { status: 401 })` —
+ * that is, a white page with one word on it, outside the portal, after twenty
+ * minutes of writing. The cookie lasts thirty days, so it happens rarely, but
+ * when it does happen it is the worst possible moment.
  *
- * Un redirect duce omul unde poate face ceva. Ce a scris se păstrează oricum în
- * `sessionStorage` (scripts/formulare.ts) și revine după autentificare.
+ * A redirect takes the person somewhere they can do something. What they wrote
+ * is kept in `sessionStorage` anyway (scripts/forms.ts) and comes back after
+ * signing in.
  */
 export function sessionExpired(back?: string): Response {
   const params = new URLSearchParams()
@@ -96,11 +112,11 @@ export function sessionExpired(back?: string): Response {
 }
 
 /**
- * Un capăt de drum, îmbrăcat ca portalul.
+ * A dead end, dressed as the portal.
  *
- * Pentru cazurile în care nu există o pagină la care să te întorci: o cerere
- * greșită, o acțiune necunoscută. Nu folosește layout-urile, ca să funcționeze
- * și când baza de date este exact lucrul care a picat.
+ * For the cases where there is no page to go back to: a malformed request, an
+ * unknown action. It does not use the layouts, so that it keeps working even
+ * when the database is exactly the thing that went down.
  */
 export function deadEnd(status: number, title: string, text: string): Response {
   const esc = (s: string) =>

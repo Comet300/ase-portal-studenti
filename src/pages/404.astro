@@ -2,38 +2,39 @@
 import StudentLayout from '../layouts/StudentLayout.astro'
 
 /**
- * Pagina care nu există.
+ * The page that does not exist.
  *
- * Până acum, o adresă greșită scotea utilizatorul din portal cu totul: Astro
- * servea pagina lui implicită, în engleză, cu paleta ei violet și fără nicio
- * legătură înapoi. Pentru cineva care a dat clic pe un link vechi dintr-un
- * email, asta arată ca un portal căzut.
+ * Until now, a wrong address took the user out of the portal altogether: Astro
+ * served its own default page, in English, with its violet palette and without
+ * any link back. To somebody who clicked an old link in an email, that looks
+ * like a portal that is down.
  *
- * Aceeași pagină servește și zonele în care utilizatorul nu are ce căuta:
- * textul nu confirmă că locul acela există.
+ * The same page also serves the areas the user has no business in: the text
+ * does not confirm that that place exists.
  */
 
 Astro.response.status = 404
 
 const u = Astro.locals.user
 
-const drumuri = u
+const links = u
   ? [
       { href: '/', text: 'Acasă' },
       { href: '/coordonatori', text: 'Coordonatori & Teme' },
       ...(u.role === 'student'
-        ? [{ href: '/cererile-mele', text: 'Cererile mele' }]
+        ? [{ href: '/lucrarea-mea', text: 'Cererile mele' }]
         : [{ href: '/profesor', text: 'Zona cadrelor didactice' }]),
       { href: '/ghid', text: 'Ghid & Regulament' },
     ]
-  : [
-      { href: '/', text: 'Acasă' },
-      { href: '/coordonatori', text: 'Coordonatori & Teme' },
+  : /* Nothing else in the portal opens without a session: a link to „Acasă” or
+       to the catalogue would only bounce off the gate and land back here. */
+    [
       { href: '/autentificare', text: 'Autentificare' },
+      { href: '/confidentialitate', text: 'Ce date păstrăm despre tine' },
     ]
 ---
 
-<StudentLayout title="Pagina nu a fost găsită" docTitle="404">
+<StudentLayout title="Pagina nu a fost găsită" docTitle="404" erou="fara">
   <div class="container">
     <div class="patru04">
       <p class="patru04__cod numeric">404</p>
@@ -45,7 +46,7 @@ const drumuri = u
 
       <nav class="patru04__drumuri" aria-label="Unde poți merge">
         {
-          drumuri.map((d, i) => (
+          links.map((d, i) => (
             <a href={d.href} class:list={['btn', i === 0 ? 'btn--primary' : 'btn--secondary']}>
               {d.text}
             </a>

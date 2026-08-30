@@ -26,12 +26,13 @@ export const POST: APIRoute = async ({ request, locals }) => {
   const back = (message: string, isError = false) =>
     redirectWithNotice('/profesor/studenti?sectiune=studenti', message, isError)
 
-  /* --- lucrarea a fost susținută -------------------------------------------
+  /* --- the thesis has been defended ----------------------------------------
    *
-   * Terminarea unei lucrări nu avea nicio stare: coordonarea rămânea „aprobată”
-   * pentru totdeauna, deci un student care își luase licența cu doi ani în urmă
-   * apărea în continuare printre cei coordonați activ, iar locul lui rămânea
-   * ocupat. Iar arhiva prezenta data aprobării drept dată a susținerii. */
+   * Finishing a thesis had no state at all: the coordination stayed "approved"
+   * forever, so a student who had taken their bachelor's degree two years
+   * earlier still showed up among the actively supervised ones, and their seat
+   * stayed taken. And the archive presented the approval date as the defence
+   * date. */
   if (action === 'sustinuta') {
     const data = String(form.get('data') ?? '').trim()
     const nota = String(form.get('nota') ?? '').trim()
@@ -43,8 +44,8 @@ export const POST: APIRoute = async ({ request, locals }) => {
       return back('Data susținerii nu poate fi în viitor.', true)
     }
 
-    const notaNum = nota === '' ? null : Number(nota.replace(',', '.'))
-    if (notaNum !== null && (!Number.isFinite(notaNum) || notaNum < 1 || notaNum > 10)) {
+    const gradeNumber = nota === '' ? null : Number(nota.replace(',', '.'))
+    if (gradeNumber !== null && (!Number.isFinite(gradeNumber) || gradeNumber < 1 || gradeNumber > 10)) {
       return back('Nota trebuie să fie între 1 și 10.', true)
     }
 
@@ -52,7 +53,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
       `UPDATE requests
           SET status = 'defended', defended_on = $3::date, grade = $4, updated_at = now()
         WHERE id = $2 AND teacher_id = $1 AND status = 'approved'`,
-      [u!.id, requestId, data, notaNum],
+      [u!.id, requestId, data, gradeNumber],
     )
 
     return back(

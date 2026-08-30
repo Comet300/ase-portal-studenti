@@ -3,7 +3,8 @@ import { queryOne } from '../../../lib/db'
 import { renderDoc } from '../../../lib/doc'
 import { id as routeId } from '../../../lib/ids'
 import { escapeHtml } from '../../../lib/mail'
-import { formatDate } from '../../../lib/repo'
+import { formatDate, requestTitleChanges } from '../../../lib/repo'
+import { officialName } from '../../../lib/text'
 import { languageLabel, levelLabel } from '../../../lib/years'
 
 /**
@@ -32,10 +33,12 @@ export const GET: APIRoute = async ({ params, locals }) => {
     submitted_at: string
     student_name: string
     student_number: string | null
+    father_initial: string | null
     program: string | null
     specialization: string | null
     study_year: number | null
     study_language: string
+    study_series: string | null
     study_group: string | null
     teacher_name: string
     academic_title: string | null
@@ -43,8 +46,9 @@ export const GET: APIRoute = async ({ params, locals }) => {
     year_label: string
   }>(
     `SELECT r.number, r.title_ro, r.title_en, r.objectives, r.motivation, r.decided_at, r.submitted_at,
-            s.name AS student_name, s.student_number, s.program, s.specialization,
-            s.study_year, s.study_language, s.study_group,
+            s.name AS student_name, s.student_number, s.father_initial,
+            s.program, s.specialization,
+            s.study_year, s.study_language, s.study_series, s.study_group,
             t.name AS teacher_name, t.academic_title, t.department,
             y.label AS year_label
        FROM requests r
@@ -59,8 +63,22 @@ export const GET: APIRoute = async ({ params, locals }) => {
 
   if (!r) return new Response('Documentul nu a fost găsit', { status: 404 })
 
+  /* The document is regenerated from live data every time it is asked for, and
+   * the title can now change after the coordination was agreed. So a copy
+   * printed in October and one printed in March can carry two different titles
+   * for the same request number, with the first already signed and filed at the
+   * secretariat. The sheet says so itself rather than leaving the registry to
+   * discover it. */
+  const changes = await requestTitleChanges(requestId)
+
   const e = escapeHtml
   const row = (label: string, value: string) => `<dt>${label}</dt><dd>${value}</dd>`
+
+  /* The name the secretariat matches against the register — „Popescu I. Maria”.
+   * The document used to print `users.name`, without the father's initial, and
+   * a request that does not carry it is a request that comes back from the
+   * counter. */
+  const studentName = officialName({ name: r.student_name, father_initial: r.father_initial })
 
   return new Response(
     renderDoc(
@@ -71,11 +89,12 @@ export const GET: APIRoute = async ({ params, locals }) => {
        </p>
 
        <p style="margin-top:24pt">Domnule/Doamnă Decan,</p>
-       <p>Subsemnatul(a) <strong>${e(r.student_name)}</strong>, student(ă) în anul
+       <p>Subsemnatul(a) <strong>${e(studentName)}</strong>, student(ă) în anul
        <strong>${r.study_year ?? '—'}</strong> la programul de studii de
        <strong>${levelLabel(r.program).toLowerCase()}</strong>, specializarea
        <strong>${e(r.specialization ?? '—')}</strong>, limba de studiu
-       <strong>${languageLabel(r.study_language).toLowerCase()}</strong>, grupa
+       <strong>${languageLabel(r.study_language).toLowerCase()}</strong>, seria
+       <strong>${e(r.study_series ?? '—')}</strong>, grupa
        <strong>${e(r.study_group ?? '—')}</strong>, număr matricol
        <strong>${e(r.student_number ?? '—')}</strong>, vă rog să aprobați coordonarea lucrării mele
        de finalizare a studiilor de către <strong>${e(r.teacher_name)}</strong>.</p>
@@ -105,10 +124,27 @@ export const GET: APIRoute = async ({ params, locals }) => {
        </div>
        <div class="signatures"><span>Data: <span class="blank">&nbsp;</span></span></div>
 
+       ${
+         changes.length > 0
+           ? `<p class="note"><strong>Titlul lucrării a fost modificat după aprobarea cererii.</strong>
+              Documentul de mai sus poartă titlul în vigoare la data tipăririi. Dacă un exemplar
+              semnat a fost deja depus la secretariat, el trebuie înlocuit cu acesta.</p>
+              <dl class="record">${changes
+                .map(
+                  (c) =>
+                    `<dt>${formatDate(c.decided_at ?? c.created_at)}</dt>
+                     <dd>„${e(c.old_title_ro)}” → „${e(c.new_title_ro)}”${
+                       c.by_teacher ? ' (modificare a coordonatorului)' : ' (la cererea studentului)'
+                     }</dd>`,
+                )
+                .join('')}</dl>`
+           : ''
+       }
+
        <p class="note">Document generat automat din Portalul Studenți pe baza cererii înregistrate
        electronic. Se tipărește, se semnează de ambele părți și se depune la secretariatul
        facultății.</p>`,
-      `Cererea ${r.number} · ${r.student_name}`,
+      `Cererea ${r.number} · ${studentName}`,
     ),
     { headers: { 'content-type': 'text/html; charset=utf-8' } },
   )

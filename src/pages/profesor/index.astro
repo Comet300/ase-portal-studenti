@@ -14,41 +14,60 @@ import {
   teacherStats,
   supervisedStudents,
 } from '../../lib/repo'
-import { teacherInvitations } from '../../lib/lifecycle'
-import { currentYearLabel } from '../../lib/years'
+import { seatRequests, teacherInvitations } from '../../lib/lifecycle'
+import { numar, officialName } from '../../lib/text'
+import { LEVEL_LABELS, currentYearLabel, groupLabel } from '../../lib/years'
 
 const u = Astro.locals.user!
-const [stat, cereri, studenti, sloturi, stageList, etapa, locuri, invitatii] = await Promise.all([
-  teacherStats(u.id),
-  teacherRequests(u.id, 'pending'),
-  supervisedStudents(u.id),
-  teacherSlots(u.id),
-  stages(),
-  currentStage(),
-  teacherSeats(u.id),
-  teacherInvitations(u.id),
-])
+const [stat, cereri, studenti, slots, stageList, etapa, locuri, invitatii, cereriLocuri] =
+  await Promise.all([
+    teacherStats(u.id),
+    teacherRequests(u.id, 'pending'),
+    supervisedStudents(u.id),
+    teacherSlots(u.id),
+    stages(),
+    currentStage(),
+    teacherSeats(u.id),
+    teacherInvitations(u.id),
+    seatRequests({ teacherId: u.id }),
+  ])
 
-const sesiune = await currentYearLabel()
-const azi = new Date().toDateString()
-const sloturiAzi = sloturi.filter((s) => new Date(s.starts_at).toDateString() === azi && !s.is_cancelled)
-const urmatoareleSloturi = sloturi.filter((s) => new Date(s.starts_at) > new Date() && !s.is_cancelled).slice(0, 4)
+const yearLabel = await currentYearLabel()
+const today = new Date().toDateString()
+const todaySlots = slots.filter((s) => new Date(s.starts_at).toDateString() === today && !s.is_cancelled)
+const upcomingSlots = slots.filter((s) => new Date(s.starts_at) > new Date() && !s.is_cancelled).slice(0, 4)
 
-const capacitate = locuri.total_seats
-const ocupate = locuri.total_taken
-const procent = capacitate > 0 ? Math.min(100, Math.round((ocupate / capacitate) * 100)) : 0
-const invitatiiDeschise = invitatii.filter((i) => i.status === 'pending').length
+const capacity = locuri.total_seats
+const taken = locuri.total_taken
+const percent = capacity > 0 ? Math.min(100, Math.round((taken / capacity) * 100)) : 0
+const openInvitations = invitatii.filter((i) => i.status === 'pending').length
 
-const prenume = u.name.replace(/^(Prof\.|Conf\.|Lect\.|Asist\.)\s*univ\.\s*dr\.\s*/i, '').split(' ')[0]
+/* Asking the department for more seats belongs where the coordinator finds out
+ * they have none left, not in the archive where it used to live: this panel
+ * already says how many seats there are, how many are free and what being full
+ * does to the catalogue entry. Seat requests are current-session only by
+ * construction (`seat_requests.academic_year_id` is the current year), which is
+ * the other reason they cannot sit on a screen with a year picker.
+ *
+ * The form is folded away until it is needed — the dashboard is a summary, and
+ * a textarea open by default on it would be the tallest thing on the screen.
+ * It unfolds by itself when there is nothing left to give away, and when a
+ * validation error sends the person back here with their text refused. */
+const openSeatRequest = cereriLocuri.find((r) => r.status === 'pending')
+const decidedSeatRequests = cereriLocuri.filter((r) => r.status !== 'pending')
+const seatNoticeIsError = Astro.url.searchParams.get('tip') === 'error'
+const askSeatsOpen = !openSeatRequest && (locuri.free === 0 || seatNoticeIsError)
+
+const firstName = u.name.replace(/^(Prof\.|Conf\.|Lect\.|Asist\.)\s*univ\.\s*dr\.\s*/i, '').split(' ')[0]
 const necitite = studenti.reduce((s, x) => s + x.unread, 0)
 ---
 
 <ProfesorLayout
-  title={`Bine ai revenit, ${prenume}`}
+  title={`Bine ai revenit, ${firstName}`}
   docTitle="Panoul meu"
   lede={etapa
     ? `Etapa curentă: ${etapa.title} · ${etapa.interval_label}`
-    : `Sesiunea de Finalizare a Studiilor ${sesiune}`}
+    : `Sesiunea de Finalizare a Studiilor ${yearLabel}`}
   active="dashboard"
 >
   <div slot="actiuni" class="row">
@@ -56,14 +75,14 @@ const necitite = studenti.reduce((s, x) => s + x.unread, 0)
   </div>
 
   <div class="stack stack--loose">
-    <!-- Ce cere acțiune acum -->
+    <!-- What needs action now -->
     <section class="stack">
       <h2 class="section-title">Ce cere atenția ta</h2>
       <div class="grid-auto">
         <Metrica
-          valoare={stat?.pending ?? 0}
-          eticheta="cereri în așteptare"
-          nota={
+          value={stat?.pending ?? 0}
+          label="cereri în așteptare"
+          note={
             (stat?.pending ?? 0) > 0
               ? `Cea mai veche: ${timeAgo(cereri.at(-1)?.submitted_at ?? null)}`
               : undefined
@@ -72,27 +91,27 @@ const necitite = studenti.reduce((s, x) => s + x.unread, 0)
         />
 
         <Metrica
-          valoare={necitite}
-          eticheta="mesaje necitite"
-          nota={`de la ${studenti.filter((s) => s.unread > 0).length} studenți`}
+          value={necitite}
+          label="mesaje necitite"
+          note={`de la ${studenti.filter((s) => s.unread > 0).length} studenți`}
           href="/profesor/mesaje"
         />
 
         <Metrica
-          valoare={sloturiAzi.length}
-          eticheta="consultații astăzi"
-          nota={
-            sloturiAzi.length > 0
-              ? `Prima la ${formatTime(sloturiAzi[0].starts_at)}`
+          value={todaySlots.length}
+          label="consultații astăzi"
+          note={
+            todaySlots.length > 0
+              ? `Prima la ${formatTime(todaySlots[0].starts_at)}`
               : 'Nicio programare'
           }
         />
 
         <Metrica
-          valoare={invitatiiDeschise}
-          eticheta="propuneri trimise"
-          nota={
-            invitatiiDeschise > 0
+          value={openInvitations}
+          label="propuneri trimise"
+          note={
+            openInvitations > 0
               ? 'în așteptarea răspunsului studentului'
               : 'Poți invita tu un student la coordonare'
           }
@@ -101,8 +120,8 @@ const necitite = studenti.reduce((s, x) => s + x.unread, 0)
       </div>
     </section>
 
-    <div class="coloane">
-      <!-- Coada de cereri -->
+    <div class="columns">
+      <!-- The request queue -->
       <section class="panel">
         <div class="panel__header">
           <h2 class="section-title">Cereri în așteptare</h2>
@@ -128,14 +147,14 @@ const necitite = studenti.reduce((s, x) => s + x.unread, 0)
                       {c.title_ro}
                     </a>
                     <span class="lista__meta">
-                      {c.student_name} · {c.student_number} ·{' '}
-                      {c.program === 'master' ? 'Master' : 'Licență'} · depusă {timeAgo(c.submitted_at)}
+                      {officialName({ name: c.student_name, father_initial: c.father_initial })} ·{' '}
+                      {c.student_number} · {groupLabel(c)} · depusă {timeAgo(c.submitted_at)}
                     </span>
                   </span>
-                  {/* Acceptarea ocupă un loc și leagă un student de tine pentru
-                      toată sesiunea. Era un singur clic, fără confirmare și fără
-                      niciun cuvânt către student — aici doar deschide dialogul
-                      din coada de cereri. */}
+                  {/* Accepting takes up a seat and ties a student to you for the
+                      whole session. It used to be a single click, with no
+                      confirmation and not a word to the student — here it only
+                      opens the dialog in the request queue. */}
                   <a
                     class="btn btn--primary btn--sm"
                     href={`/profesor/studenti?sectiune=cereri#cerere-${c.id}`}
@@ -149,7 +168,7 @@ const necitite = studenti.reduce((s, x) => s + x.unread, 0)
         }
       </section>
 
-      <!-- Următoarele consultații -->
+      <!-- The next consultations -->
       <section class="panel">
         <div class="panel__header">
           <h2 class="section-title">Consultații</h2>
@@ -157,7 +176,7 @@ const necitite = studenti.reduce((s, x) => s + x.unread, 0)
         </div>
 
         {
-          urmatoareleSloturi.length === 0 ? (
+          upcomingSlots.length === 0 ? (
             <div class="empty">
               <p class="empty__title">Niciun interval publicat</p>
               <p class="empty__text">
@@ -167,9 +186,9 @@ const necitite = studenti.reduce((s, x) => s + x.unread, 0)
             </div>
           ) : (
             <ul class="lista">
-              {urmatoareleSloturi.map((s) => (
+              {upcomingSlots.map((s) => (
                 <li class="lista__item lista__item--compact">
-                  <span class="data-chip">
+                  <span class="date-chip">
                     <strong>{new Date(s.starts_at).getDate()}</strong>
                     <small>{formatDate(s.starts_at).split(' ')[1]?.slice(0, 3)}</small>
                   </span>
@@ -195,39 +214,129 @@ const necitite = studenti.reduce((s, x) => s + x.unread, 0)
       </section>
     </div>
 
-    <!-- Capacitate + calendarul sesiunii -->
-    <div class="coloane">
-      <section class="panel">
+    <!-- Capacity + the session calendar -->
+    <div class="columns">
+      <section class="panel" id="locuri" tabindex="-1">
         <div class="panel__header">
           <h2 class="section-title">Locuri de coordonare</h2>
-          <a href="/profesor/arhiva#locuri" class="btn btn--secondary btn--sm">Cere locuri</a>
+          <span class="muted text-sm">{yearLabel}</span>
         </div>
         <div class="panel__body stack">
           <div class="row row--between">
             <span class="muted text-sm">
               Licență {locuri.bachelor_taken}/{locuri.bachelor_seats} · Master {locuri.master_taken}/{locuri.master_seats}
             </span>
-            <span class="numeric" style="font-weight:600">{ocupate} / {capacitate}</span>
+            <span class="numeric" style="font-weight:600">{taken} / {capacity}</span>
           </div>
           <div
             class="bara"
             role="progressbar"
-            aria-valuenow={ocupate}
+            aria-valuenow={taken}
             aria-valuemin="0"
-            aria-valuemax={capacitate}
+            aria-valuemax={capacity}
             aria-label="Capacitate de coordonare"
           >
-            <span class="bara__fill" style={`--procent:${procent / 100}`}></span>
+            <span class="bara__fill" style={`--procent:${percent / 100}`}></span>
           </div>
+          {/* „apari în catalog ca fără locuri, împreună cu studenții pe care îi
+              coordonezi” read as though the coordinator were listed next to
+              their students. What the catalogue does is keep the entry and mark
+              it — so that is what the sentence says. */}
           <p class="muted text-sm">
             {
-              capacitate === 0
-                ? 'Directorul de departament nu ți-a alocat încă locuri pentru această sesiune.'
+              capacity === 0
+                ? 'Directorul de departament nu ți-a alocat încă locuri în această sesiune, deci nu poți accepta cereri. Cere-i locuri de mai jos.'
                 : locuri.free > 0
-                  ? `Mai poți prelua ${locuri.free} ${locuri.free === 1 ? 'student' : 'studenți'} în această sesiune. Locurile sunt alocate de directorul de departament.`
-                  : 'Toate locurile sunt ocupate. În catalogul studenților apari ca fără locuri disponibile; poți cere locuri suplimentare directorului.'
+                  ? `Mai poți accepta ${numar(locuri.free, 'student', 'studenți')} în această sesiune. Numărul de locuri este stabilit de directorul de departament.`
+                  : 'Toate locurile sunt ocupate: nu mai poți accepta o cerere. Rămâi în catalogul studenților, marcat „fără locuri disponibile”, cu studenții pe care îi coordonezi deja.'
             }
           </p>
+        </div>
+
+        <div class="panel__footer stack">
+          {
+            openSeatRequest ? (
+              <p class="alerta-locuri">
+                Ai cerut <strong>{openSeatRequest.extra_seats}</strong> locuri la{' '}
+                {LEVEL_LABELS[openSeatRequest.level].toLowerCase()} pe{' '}
+                {formatDate(openSeatRequest.created_at)}. Așteaptă decizia directorului de
+                departament — o primești și pe email.
+              </p>
+            ) : (
+              <details class="cere-locuri" open={askSeatsOpen}>
+                <summary>Cere locuri directorului de departament</summary>
+                <form method="POST" action="/api/locuri" class="stack">
+                  <input type="hidden" name="actiune" value="cere" />
+                  <div class="row row--wrap" style="gap:var(--s-3)">
+                    <div class="field" style="min-width:190px">
+                      <label class="label" for="nivel">Nivelul pentru care ceri locuri</label>
+                      <select class="select" id="nivel" name="nivel">
+                        <option value="bachelor">Licență</option>
+                        <option value="master">Master</option>
+                      </select>
+                    </div>
+                    <div class="field" style="min-width:130px">
+                      <label class="label" for="locuri-cerute">Câte locuri în plus</label>
+                      <input
+                        class="input"
+                        id="locuri-cerute"
+                        name="locuri"
+                        type="number"
+                        min="1"
+                        max="20"
+                        value="2"
+                      />
+                    </div>
+                  </div>
+                  <div class="field">
+                    <label class="label" for="motiv">De ce ai nevoie de ele</label>
+                    <textarea
+                      class="textarea"
+                      id="motiv"
+                      name="motiv"
+                      rows="2"
+                      minlength="20"
+                      required
+                      placeholder="Ex: am primit trei cereri peste capacitate, toate pe teme din aria mea de cercetare."
+                    data-autogrow />
+                    <span class="hint">
+                      Directorul de departament decide pe baza acestui text; scrie cel puțin 20 de
+                      caractere.
+                    </span>
+                  </div>
+                  <div class="row row--end">
+                    <button class="btn btn--secondary" type="submit">
+                      Trimite cererea directorului
+                    </button>
+                  </div>
+                </form>
+              </details>
+            )
+          }
+
+          {
+            decidedSeatRequests.length > 0 && (
+              <ul class="decizii-locuri">
+                {decidedSeatRequests.map((r) => (
+                  <li>
+                    <span
+                      class:list={[
+                        'badge',
+                        r.status === 'approved' ? 'badge--aprobata' : 'badge--respinsa',
+                      ]}
+                    >
+                      {r.status === 'approved' ? 'Aprobată' : 'Respinsă'}
+                    </span>
+                    <span>
+                      {r.extra_seats} locuri la {LEVEL_LABELS[r.level].toLowerCase()} ·{' '}
+                      {formatDate(r.decided_at)}
+                    </span>
+                    {r.decision_note && <span class="muted">„{r.decision_note}”</span>}
+                  </li>
+                ))}
+              </ul>
+            )
+          }
         </div>
       </section>
 
@@ -235,13 +344,13 @@ const necitite = studenti.reduce((s, x) => s + x.unread, 0)
         <div class="panel__header">
           <h2 class="section-title">Calendarul sesiunii</h2>
         </div>
-        <ol class="etape">
+        <ol class="stages">
           {
             stageList.map((e) => {
               const activa = etapa?.id === e.id
               const trecuta = e.ends_on ? new Date(e.ends_on) < new Date() : false
               return (
-                <li class:list={['etapa', { 'is-activa': activa, 'is-trecuta': trecuta }]}>
+                <li class:list={['etapa', { 'is-current': activa, 'is-past': trecuta }]}>
                   <span class="etapa__punct" aria-hidden="true" />
                   <span class="etapa__corp">
                     <strong>{e.title}</strong>
@@ -259,7 +368,50 @@ const necitite = studenti.reduce((s, x) => s + x.unread, 0)
 </ProfesorLayout>
 
 <style>
-  .coloane {
+  .alerta-locuri {
+    padding: var(--s-3) var(--s-4);
+    background: var(--warn-tint);
+    color: var(--warn);
+    border-radius: var(--r-md);
+    font-size: var(--t-sm);
+    text-wrap: pretty;
+  }
+
+  /* The summary is the control that opens the form, so it is drawn as one and
+     keeps the tap target the rest of the portal has. */
+  .cere-locuri > summary {
+    display: flex;
+    align-items: center;
+    min-height: var(--tap);
+    font-size: var(--t-sm);
+    font-weight: 600;
+    color: var(--ink-soft);
+    cursor: pointer;
+  }
+  .cere-locuri > summary:hover {
+    color: var(--red);
+  }
+  .cere-locuri[open] > summary {
+    margin-bottom: var(--s-3);
+  }
+
+  .decizii-locuri {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-2);
+    font-size: var(--t-sm);
+  }
+  .decizii-locuri li {
+    display: flex;
+    align-items: center;
+    gap: var(--s-3);
+    flex-wrap: wrap;
+  }
+
+  .columns {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
     gap: var(--s-4);
@@ -315,7 +467,7 @@ const necitite = studenti.reduce((s, x) => s + x.unread, 0)
     color: var(--ink-muted);
   }
 
-  .data-chip {
+  .date-chip {
     display: grid;
     place-items: center;
     width: 38px;
@@ -326,11 +478,11 @@ const necitite = studenti.reduce((s, x) => s + x.unread, 0)
     line-height: 1;
     flex: none;
   }
-  .data-chip strong {
+  .date-chip strong {
     font-size: var(--t-sm);
     font-variant-numeric: tabular-nums;
   }
-  .data-chip small {
+  .date-chip small {
     font-size: var(--t-xs);
     color: var(--ink-muted);
     text-transform: lowercase;
@@ -342,7 +494,8 @@ const necitite = studenti.reduce((s, x) => s + x.unread, 0)
     border-radius: 999px;
     overflow: hidden;
   }
-  /* Umplerea se face prin scaleX, nu prin lățime: transformarea nu declanșează layout. */
+  /* The fill is done with scaleX, not with width: a transform does not trigger
+     layout. */
   .bara__fill {
     display: block;
     width: 100%;
@@ -354,7 +507,7 @@ const necitite = studenti.reduce((s, x) => s + x.unread, 0)
     transition: transform var(--base) var(--ease);
   }
 
-  .etape {
+  .stages {
     list-style: none;
     margin: 0;
     padding: var(--s-4) var(--s-5);
@@ -390,11 +543,11 @@ const necitite = studenti.reduce((s, x) => s + x.unread, 0)
     z-index: 1;
   }
 
-  .etapa.is-trecuta .etapa__punct {
+  .etapa.is-past .etapa__punct {
     background: var(--ok);
     border-color: var(--ok);
   }
-  .etapa.is-activa .etapa__punct {
+  .etapa.is-current .etapa__punct {
     background: var(--red);
     border-color: var(--red);
   }
@@ -413,7 +566,7 @@ const necitite = studenti.reduce((s, x) => s + x.unread, 0)
     font-size: var(--t-xs);
     color: var(--ink-muted);
   }
-  .etapa.is-trecuta .etapa__corp strong {
+  .etapa.is-past .etapa__corp strong {
     color: var(--ink-muted);
     font-weight: 500;
   }

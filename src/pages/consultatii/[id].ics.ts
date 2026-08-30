@@ -4,15 +4,15 @@ import { buildIcs, consultationUid } from '../../lib/ics'
 import { id as routeId } from '../../lib/ids'
 
 /**
- * Invitația de calendar, descărcabilă din portal.
+ * The calendar invitation, downloadable from the portal.
  *
- * Fișierul se construia deja la rezervare și pleca doar prin email. Cine îl
- * ștergea din greșeală, sau îl citea pe un telefon care nu a adăugat automat
- * evenimentul, nu mai avea de unde să îl ia — deși portalul îl putea genera
- * oricând din aceleași date.
+ * The file was already built at booking time and left only by email. Whoever
+ * deleted it by mistake, or read it on a phone that did not add the event
+ * automatically, had nowhere left to take it from — even though the portal
+ * could generate it at any time from the same data.
  *
- * Apartenența se verifică în aceeași interogare care aduce datele, ca peste tot
- * în portal: un student vede doar rezervarea lui.
+ * Ownership is checked in the same query that fetches the data, as everywhere
+ * else in the portal: a student sees only their own booking.
  */
 export const GET: APIRoute = async ({ params, locals }) => {
   const u = locals.user
@@ -49,13 +49,17 @@ export const GET: APIRoute = async ({ params, locals }) => {
 
   if (!r) return new Response('Rezervarea nu a fost găsită', { status: 404 })
 
-  const unde = r.mode === 'online' ? (r.meeting_url ?? 'Online') : (r.location ?? 'Cabinet')
+  const location = r.mode === 'online' ? (r.meeting_url ?? 'Online') : (r.location ?? 'Cabinet')
 
   const ics = buildIcs({
     uid: consultationUid(slotId, u.id),
-    title: `Consultație cu ${r.teacher_name}`,
+    /* The same SUMMARY the emailed invitation carried, and the same the
+       cancellation carries. The UID is what a calendar matches on, so a
+       different title here did not create a second event — it renamed the
+       existing one to something nobody else in the portal ever wrote. */
+    title: `Consultație — ${r.teacher_name}`,
     description: r.note ?? r.subject ?? 'Consultație pentru lucrarea de finalizare a studiilor.',
-    location: unde,
+    location,
     meetingUrl: r.meeting_url ?? undefined,
     start: new Date(r.starts_at),
     end: new Date(r.ends_at),

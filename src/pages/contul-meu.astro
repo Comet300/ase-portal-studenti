@@ -1,91 +1,152 @@
 ---
 import Avatar from '../components/Avatar.astro'
+import ProfesorLayout from '../layouts/ProfesorLayout.astro'
 import StudentLayout from '../layouts/StudentLayout.astro'
 import { ROLE_LABELS } from '../lib/auth'
 import { formatDate, studentRequests } from '../lib/repo'
+import { officialName } from '../lib/text'
 import { languageLabel, levelLabel } from '../lib/years'
 
+/**
+ * The account, for every role.
+ *
+ * It used to bounce anyone who was not a student to „Arhivă & Profil”, the
+ * screen that carried the coordinator's profile form at the bottom of five
+ * other sections — so a teacher who opened „Contul meu” from the student portal
+ * was thrown into an archive, and the account menu of their own shell had no
+ * entry at all. One address now, one form, in the shell of whoever is reading.
+ *
+ * What is not editable is written as a definition list rather than as disabled
+ * inputs: a control you cannot use still reads as a control you should try.
+ * Email, role and the registrar's record of a student come from the faculty, and
+ * the sentence under each block says who corrects them.
+ */
+
 const u = Astro.locals.user!
+const isStudent = u.role === 'student'
 
-// A teacher landing here has a richer page of their own.
-if (u.role !== 'student') return Astro.redirect('/profesor/arhiva', 302)
-
-const requests = await studentRequests(u.id)
+const requests = isStudent ? await studentRequests(u.id) : []
 const active = requests.find((r) => r.status === 'approved' || r.status === 'pending')
 const saved = Astro.url.searchParams.get('salvat') === '1'
+
+const lede = isStudent
+  ? 'Datele din evidența facultății, profilul pe care îl văd coordonatorii și sesiunea curentă.'
+  : 'Ce văd studenții despre tine în catalog și pe profilul public, plus datele cu care intri în portal.'
+
+/* The page renders in the shell of whoever is reading it, as the profile does:
+ * a coordinator sent into the student top bar loses their navigation and reads
+ * it as a different portal. Both shells now print the title and the lede on the
+ * banner, so the page starts straight at its first panel. */
+const Shell = isStudent ? StudentLayout : ProfesorLayout
 ---
 
-<StudentLayout title="Contul meu" active="cont">
+<Shell title="Contul meu" description="Datele contului și profilul public" lede={lede} active="cont">
   <div class="container stack stack--loose">
-    <header class="stack stack--tight">
-      <h1 class="page-title">Contul meu</h1>
-      <p class="page-lede">
-        Datele din evidența facultății, profilul pe care îl văd coordonatorii și sesiunea curentă.
-      </p>
-    </header>
-
     <section class="panel">
       <div class="panel__body identity">
         <Avatar name={u.name} src={u.avatar_path} size="lg" />
         <div class="stack stack--tight" style="gap:2px;flex:1;min-width:0">
           <strong class="identity__name">{u.name}</strong>
-          <span class="muted">{ROLE_LABELS[u.role]}</span>
+          <span class="muted">
+            {ROLE_LABELS[u.role]}
+            {!isStudent && u.department ? ` · ${u.department}` : ''}
+          </span>
         </div>
         <a class="btn btn--ghost btn--sm" href={`/profil/${u.id}`}>Vezi profilul public</a>
       </div>
 
       <dl class="details">
+        {/* The name as it is printed on the cerere and read at the counter. It
+            is here because a typo in the initial is a document handed back, and
+            until now nobody could see the initial in order to report it. */}
+        {
+          isStudent && (
+            <div>
+              <dt>Nume în acte</dt>
+              <dd>
+                {officialName(u)}
+                {!u.father_initial && (
+                  <span class="muted text-sm">
+                    {' '}— fără inițiala tatălui; scrie secretariatului dacă lipsește
+                  </span>
+                )}
+              </dd>
+            </div>
+          )
+        }
         <div>
           <dt>Email instituțional</dt>
           <dd>{u.email}</dd>
         </div>
-        <div>
-          <dt>Număr matricol</dt>
-          <dd>{u.student_number ?? '—'}</dd>
-        </div>
-        <div>
-          <dt>Program</dt>
-          <dd>{levelLabel(u.program)}</dd>
-        </div>
-        <div>
-          <dt>Specializare</dt>
-          <dd>{u.specialization ?? '—'}</dd>
-        </div>
-        <div>
-          <dt>Limba de studiu</dt>
-          <dd>{languageLabel(u.study_language)}</dd>
-        </div>
-        <div>
-          <dt>An de studiu</dt>
-          <dd>{u.study_year ?? '—'}</dd>
-        </div>
-        <div>
-          <dt>Grupa</dt>
-          <dd>{u.study_group ?? '—'}</dd>
-        </div>
-        <div>
-          <dt>Coordonator</dt>
-          <dd>
-            {
-              active?.status === 'approved' ? (
-                <a href={`/profil/${active.teacher_id}`}>{active.teacher_name}</a>
-              ) : active?.status === 'pending' ? (
-                <span class="muted">cerere depusă la {active.teacher_name}</span>
-              ) : (
-                'Nealocat'
-              )
-            }
-          </dd>
-        </div>
+        {
+          isStudent ? (
+            <>
+              <div>
+                <dt>Număr matricol</dt>
+                <dd>{u.student_number ?? '—'}</dd>
+              </div>
+              <div>
+                <dt>Program</dt>
+                <dd>{levelLabel(u.program)}</dd>
+              </div>
+              <div>
+                <dt>Specializare</dt>
+                <dd>{u.specialization ?? '—'}</dd>
+              </div>
+              <div>
+                <dt>Limba de studiu</dt>
+                <dd>{languageLabel(u.study_language)}</dd>
+              </div>
+              <div>
+                <dt>An de studiu</dt>
+                <dd>{u.study_year ?? '—'}</dd>
+              </div>
+              <div>
+                <dt>Serie</dt>
+                <dd>{u.study_series ?? '—'}</dd>
+              </div>
+              <div>
+                <dt>Grupa</dt>
+                <dd>{u.study_group ?? '—'}</dd>
+              </div>
+              <div>
+                <dt>Coordonator</dt>
+                <dd>
+                  {active?.status === 'approved' ? (
+                    <a href={`/profil/${active.teacher_id}`}>{active.teacher_name}</a>
+                  ) : active?.status === 'pending' ? (
+                    <span class="muted">cerere depusă la {active.teacher_name}</span>
+                  ) : (
+                    'Nealocat'
+                  )}
+                </dd>
+              </div>
+            </>
+          ) : (
+            <>
+              <div>
+                <dt>Rol în portal</dt>
+                <dd>{ROLE_LABELS[u.role]}</dd>
+              </div>
+              <div>
+                <dt>Departament</dt>
+                <dd>{u.department ?? '—'}</dd>
+              </div>
+            </>
+          )
+        }
       </dl>
 
       <p class="panel__footer hint">
-        Datele de identificare vin din evidența facultății și nu pot fi modificate din portal.
-        Pentru corecturi, contactează secretariatul.
+        {
+          isStudent
+            ? 'Datele de identificare vin din evidența facultății și nu pot fi modificate din portal. Pentru corecturi, scrie secretariatului.'
+            : 'Adresa instituțională, rolul și departamentul vin din evidența facultății și nu pot fi schimbate din portal. Pentru corecturi, scrie directorului de departament. Locurile de coordonare se cer din Panoul meu.'
+        }
       </p>
     </section>
 
-    {/* -------------------------------------------------------- profilul */}
+    {/* --------------------------------------------------------- profile */}
     <section class="panel">
       <div class="panel__header">
         <h2 class="section-title">Profilul public</h2>
@@ -94,8 +155,11 @@ const saved = Astro.url.searchParams.get('salvat') === '1'
 
       <form method="POST" action="/api/cont" enctype="multipart/form-data" class="panel__body stack">
         <p class="hint">
-          Coordonatorii îți văd profilul când primesc cererea. Un rând despre ce te interesează
-          spune mai mult decât numărul matricol.
+          {
+            isStudent
+              ? 'Coordonatorii îți văd profilul când primesc cererea. Un rând despre ce te interesează spune mai mult decât numărul matricol.'
+              : 'Studenții citesc profilul în catalog, înainte să îți scrie. Ce este scris aici hotărăște cine îți trimite cereri.'
+          }
         </p>
 
         <div class="row row--wrap" style="gap:var(--s-4);align-items:center">
@@ -103,17 +167,72 @@ const saved = Astro.url.searchParams.get('salvat') === '1'
           <div class="field" style="flex:1;min-width:240px">
             <label class="label" for="poza">Poză de profil</label>
             <input class="input" id="poza" name="poza" type="file" accept="image/*" />
+            {/* One sentence for both screens: the two used to explain the same
+                mechanism differently, one saying it is shrunk, the other saying
+                it is displayed small. */}
             <span class="hint">
-              JPG, PNG, WEBP sau GIF, maximum 2 MB. Pozele mari sunt micșorate
-              automat înainte de trimitere — portalul le afișează la cel mult 72 px.
+              JPG, PNG, WEBP sau GIF, maximum 2 MB. Pozele mari sunt micșorate automat înainte de
+              trimitere; portalul le afișează la cel mult 72 px.
             </span>
           </div>
         </div>
 
-        <div class="field">
-          <label class="label" for="nume">Nume afișat</label>
-          <input class="input" id="nume" name="nume" value={u.name} required maxlength="120" />
+        <div class="row row--wrap" style="gap:var(--s-4)">
+          <div class="field" style="flex:2;min-width:240px">
+            <label class="label" for="nume">Nume afișat</label>
+            <input class="input" id="nume" name="nume" value={u.name} required maxlength="120" />
+          </div>
+          {
+            !isStudent && (
+              <div class="field" style="flex:1;min-width:200px">
+                <label class="label" for="titlu">Titlu didactic</label>
+                <input
+                  class="input"
+                  id="titlu"
+                  name="titlu"
+                  value={u.academic_title ?? ''}
+                  maxlength="60"
+                  placeholder="Conf. univ. dr."
+                />
+                {/* It was printed on the request form and in the coordination
+                    export, and no screen in the portal could write it: outside
+                    the seed it stayed empty for good. */}
+                <span class="hint">
+                  Se tipărește pe cererea studentului și în exportul de coordonări.
+                </span>
+              </div>
+            )
+          }
         </div>
+
+        {
+          !isStudent && (
+            <div class="row row--wrap" style="gap:var(--s-4)">
+              <div class="field" style="flex:2;min-width:240px">
+                <label class="label" for="birou">Birou</label>
+                <input
+                  class="input"
+                  id="birou"
+                  name="birou"
+                  value={u.office ?? ''}
+                  placeholder="Corp Ion Angelescu, etaj 3, sala 2314"
+                />
+                <span class="hint">Unde te găsesc studenții la consultațiile față în față.</span>
+              </div>
+              <div class="field" style="flex:1;min-width:220px">
+                <label class="label" for="pagina_web">Pagină web</label>
+                <input
+                  class="input"
+                  id="pagina_web"
+                  name="pagina_web"
+                  type="url"
+                  value={u.website ?? ''}
+                  placeholder="https://"
+                />
+              </div>
+            </div>
+          )
+        }
 
         <div class="field">
           <label class="label" for="descriere">Despre mine</label>
@@ -123,16 +242,32 @@ const saved = Astro.url.searchParams.get('salvat') === '1'
             name="descriere"
             rows="3"
             maxlength="1200"
-            placeholder="Unde lucrezi sau ai făcut practică, ce cursuri ți-au plăcut, ce vrei să faci după absolvire."
+            placeholder={
+              isStudent
+                ? 'Unde lucrezi sau ai făcut practică, ce cursuri ți-au plăcut, ce vrei să faci după absolvire.'
+                : 'Ce fel de lucrări coordonezi și ce aștepți de la un student. Studenții citesc asta înainte să îți scrie.'
+            }
             set:text={u.bio ?? ''}
           data-autogrow />
         </div>
 
         <div class="field">
-          <label class="label" for="interese">Domenii de interes</label>
+          <label class="label" for="interese">
+            {isStudent ? 'Domenii de interes' : 'Direcții de cercetare'}
+          </label>
           <input class="input" id="interese" name="interese" value={u.interests ?? ''}
-            placeholder="Marketing digital · analiza datelor · comportamentul consumatorului" />
-          <span class="hint">Separate prin „·”.</span>
+            placeholder={
+              isStudent
+                ? 'Marketing digital · analiza datelor · comportamentul consumatorului'
+                : 'Comportamentul consumatorului · modelare structurală'
+            } />
+          <span class="hint">
+            {
+              isStudent
+                ? 'Separate prin „·”.'
+                : 'Separate prin „·”; apar sub numele tău în catalogul studenților.'
+            }
+          </span>
         </div>
 
         <div class="row row--end">
@@ -141,31 +276,37 @@ const saved = Astro.url.searchParams.get('salvat') === '1'
       </form>
     </section>
 
-    <section class="panel">
-      <div class="panel__header">
-        <h2 class="section-title">Cererile mele</h2>
-        <a href="/cererile-mele" class="btn btn--ghost btn--sm">Vezi toate</a>
-      </div>
-      {
-        requests.length === 0 ? (
-          <div class="empty">
-            <p class="empty__title">Nicio cerere depusă</p>
-            <p class="empty__text">Alege un coordonator din catalog și depune prima cerere.</p>
-            <a href="/coordonatori" class="btn btn--primary btn--sm">Vezi coordonatorii</a>
+    {
+      isStudent && (
+        <section class="panel">
+          <div class="panel__header">
+            <h2 class="section-title">Cererile mele</h2>
+            <a href="/lucrarea-mea" class="btn btn--ghost btn--sm">
+              Vezi toate
+            </a>
           </div>
-        ) : (
-          <ul class="requests">
-            {requests.map((r) => (
-              <li>
-                <span class="numeric muted">{r.number}</span>
-                <span class="requests__title">{r.title_ro}</span>
-                <span class="muted">{formatDate(r.submitted_at)}</span>
-              </li>
-            ))}
-          </ul>
-        )
-      }
-    </section>
+          {requests.length === 0 ? (
+            <div class="empty">
+              <p class="empty__title">Nicio cerere depusă</p>
+              <p class="empty__text">Alege un coordonator din catalog și depune prima cerere.</p>
+              <a href="/coordonatori" class="btn btn--primary btn--sm">
+                Vezi coordonatorii
+              </a>
+            </div>
+          ) : (
+            <ul class="requests">
+              {requests.map((r) => (
+                <li>
+                  <span class="numeric muted">{r.number}</span>
+                  <span class="requests__title">{r.title_ro}</span>
+                  <span class="muted">{formatDate(r.submitted_at)}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      )
+    }
 
     <section class="panel">
       <div class="panel__header">
@@ -182,7 +323,7 @@ const saved = Astro.url.searchParams.get('salvat') === '1'
       </div>
     </section>
   </div>
-</StudentLayout>
+</Shell>
 
 <style>
   .identity {
@@ -212,6 +353,7 @@ const saved = Astro.url.searchParams.get('salvat') === '1'
     margin: 0;
     font-size: var(--t-sm);
     font-weight: 500;
+    overflow-wrap: anywhere;
   }
 
   .requests {

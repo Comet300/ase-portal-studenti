@@ -6,6 +6,7 @@ import Taburi from '../../components/Taburi.astro'
 import { query, queryOne } from '../../lib/db'
 import { seatRequests } from '../../lib/lifecycle'
 import { STATUS_CLASS, STATUS_LABELS, formatDate, programLabel, timeAgo } from '../../lib/repo'
+import { officialName } from '../../lib/text'
 import { LEVEL_LABELS, currentYear } from '../../lib/years'
 
 /**
@@ -17,16 +18,17 @@ import { LEVEL_LABELS, currentYear } from '../../lib/years'
  * else in the portal.
  */
 
-/* Un `?sectiune` necunoscut lăsa pagina cu bara de taburi, antetul și zero
- * conținut: ambele gărzi erau false și nimic nu prelua. Orice valoare
- * nerecunoscută cade pe secțiunea implicită. */
-const SECTIUNI = ['situatie', 'locuri'] as const
-const cerut = Astro.url.searchParams.get('sectiune') ?? ''
-const sectiune = (SECTIUNI as readonly string[]).includes(cerut) ? cerut : 'situatie'
+/* An unknown `?sectiune` left the page with the tab bar, the header and zero
+ * content: both guards were false and nothing took over. Any unrecognised
+ * value falls back to the default section. */
+const SECTIONS = ['situatie', 'locuri'] as const
+const requestedSection = Astro.url.searchParams.get('sectiune') ?? ''
+const sectiune = (SECTIONS as readonly string[]).includes(requestedSection) ? requestedSection : 'situatie'
 
 const teacherFilter = Astro.url.searchParams.get('coordonator') ?? ''
 const programFilter = Astro.url.searchParams.get('program') ?? ''
 const statusFilter = Astro.url.searchParams.get('status') ?? ''
+const seriesFilter = Astro.url.searchParams.get('serie') ?? ''
 
 const year = await currentYear()
 
@@ -38,15 +40,24 @@ interface Row {
   submitted_at: string
   student_name: string
   student_number: string | null
+  father_initial: string | null
   program: string | null
   specialization: string | null
+  study_year: number | null
+  study_series: string | null
+  study_group: string | null
   teacher_id: string
   teacher_name: string
 }
 
+/* The cohort travelled with the student everywhere except here, where the
+ * department's own table showed a name and a programme and nothing that says
+ * which year, series or group the request comes from — the one screen where the
+ * head compares cohorts against each other. */
 const rows = await query<Row>(
   `SELECT r.id, r.number, r.title_ro, r.status, r.submitted_at,
-          s.name AS student_name, s.student_number, s.program, s.specialization,
+          s.name AS student_name, s.student_number, s.father_initial,
+          s.program, s.specialization, s.study_year, s.study_series, s.study_group,
           t.id AS teacher_id, t.name AS teacher_name
      FROM requests r
      JOIN users s ON s.id = r.student_id
@@ -55,10 +66,20 @@ const rows = await query<Row>(
       AND ($1::uuid IS NULL OR r.teacher_id = $1)
       AND ($2::text IS NULL OR s.program = $2)
       AND ($3::text IS NULL OR r.status = $3)
+      AND ($5::text IS NULL OR s.study_series = $5)
     ORDER BY r.submitted_at DESC
     LIMIT 300`,
-  [teacherFilter || null, programFilter || null, statusFilter || null, year?.id],
+  [teacherFilter || null, programFilter || null, statusFilter || null, year?.id, seriesFilter || null],
 )
+
+/** The series the department actually has; there is no list to offer besides. */
+const seriesOptions = (
+  await query<{ study_series: string }>(
+    `SELECT DISTINCT study_series FROM users
+      WHERE role = 'student' AND study_series IS NOT NULL AND study_series <> ''
+      ORDER BY study_series`,
+  )
+).map((r) => r.study_series)
 
 const totals = await queryOne<{
   students: number
@@ -70,11 +91,11 @@ const totals = await queryOne<{
 }>(
   `SELECT
      (SELECT count(*)::int FROM users WHERE role = 'student') AS students,
-     /* „A depus” însemna orice cerere din an, inclusiv una respinsă, expirată
-        sau retrasă — deci un student rămas fără coordonator era numărat printre
-        cei rezolvați, iar acest ecran anunța „Toți studenții au depus” în timp
-        ce celălalt ecran al aceluiași director arăta patru fără cerere. Se
-        numără doar cererile vii. */
+     /* "Has submitted" meant any request from that year, including a rejected,
+        an expired or a withdrawn one — so a student left without a coordinator
+        was counted among the settled ones, and this screen announced "All the
+        students have submitted" while the other screen of the same head showed
+        four with no request. Only the live requests are counted. */
      (SELECT count(DISTINCT student_id)::int
         FROM requests
        WHERE academic_year_id = $1 AND status IN ('approved', 'pending')) AS with_request,
@@ -119,8 +140,8 @@ const load = await query<{
   [year?.id],
 )
 
-const cereriLocuri = await seatRequests()
-const locuriInAsteptare = cereriLocuri.filter((r) => r.status === 'pending')
+const seatRequestRows = await seatRequests()
+const pendingSeatRequests = seatRequestRows.filter((r) => r.status === 'pending')
 
 const unassigned = (totals?.students ?? 0) - (totals?.with_request ?? 0)
 const withSeats = load.map((t) => ({
@@ -136,11 +157,12 @@ const exportUrl = `/profesor/departament/export-cereri?${new URLSearchParams({
   ...(teacherFilter ? { coordonator: teacherFilter } : {}),
   ...(programFilter ? { program: programFilter } : {}),
   ...(statusFilter ? { status: statusFilter } : {}),
+  ...(seriesFilter ? { serie: seriesFilter } : {}),
 }).toString()}`
 
-const sectiuni = [
-  { cheie: 'situatie', text: 'Situația sesiunii', contor: null },
-  { cheie: 'locuri', text: 'Locuri', contor: locuriInAsteptare.length },
+const sections = [
+  { key: 'situatie', text: 'Situația sesiunii', count: null },
+  { key: 'locuri', text: 'Locuri', count: pendingSeatRequests.length },
 ]
 ---
 
@@ -155,24 +177,24 @@ const sectiuni = [
   </div>
 
   <Taburi
-    taburi={sectiuni.map((s) => ({ ...s, href: `/profesor/departament?sectiune=${s.cheie}` }))}
+    taburi={sections.map((s) => ({ ...s, href: `/profesor/departament?sectiune=${s.key}` }))}
     activ={sectiune}
     eticheta="Secțiuni"
   />
 
-  {/* ---------------------------------------------------------- situație */}
+  {/* --------------------------------------------------------- situation */}
   {
     sectiune === 'situatie' && (
       <div class="stack stack--loose">
         <section class="stack">
           <h2 class="section-title">Acoperire</h2>
           <div class="grid-auto">
-            <Metrica valoare={totals?.students ?? 0} eticheta="studenți în sesiune" />
+            <Metrica value={totals?.students ?? 0} label="studenți în sesiune" />
             <Metrica
-              valoare={unassigned}
-              eticheta="fără cerere activă"
+              value={unassigned}
+              label="fără cerere activă"
               alerta={unassigned > 0}
-              nota={
+              note={
                 (totals?.students ?? 0) === 0
                   ? 'Niciun student înscris în sesiune'
                   : unassigned > 0
@@ -180,26 +202,26 @@ const sectiuni = [
                     : 'Toți au o cerere în lucru sau aprobată'
               }
             />
-            {/* Respinsele și expirările nu mai dispar în „a depus”: sunt exact
-                studenții pe care directorul trebuie să îi caute. */}
+            {/* Rejections and expirations no longer vanish into "has submitted":
+                they are exactly the students the head has to go looking for. */}
             <Metrica
-              valoare={(totals?.rejected ?? 0) + (totals?.expired ?? 0)}
-              eticheta="cereri respinse sau expirate"
-              nota={
+              value={(totals?.rejected ?? 0) + (totals?.expired ?? 0)}
+              label="cereri respinse sau expirate"
+              note={
                 (totals?.expired ?? 0) > 0
                   ? `${totals?.expired} expirate fără răspuns`
                   : 'toate cu motivul comunicat'
               }
             />
             <Metrica
-              valoare={totals?.pending ?? 0}
-              eticheta="cereri în așteptare"
-              nota={`la ${load.filter((t) => t.pending > 0).length} coordonatori`}
+              value={totals?.pending ?? 0}
+              label="cereri în așteptare"
+              note={`la ${load.filter((t) => t.pending > 0).length} coordonatori`}
             />
             <Metrica
-              valoare={totals?.approved ?? 0}
-              eticheta="coordonări confirmate"
-              nota={
+              value={totals?.approved ?? 0}
+              label="coordonări confirmate"
+              note={
                 totals?.expired ? `${totals.expired} cereri au expirat fără răspuns` : undefined
               }
             />
@@ -252,7 +274,7 @@ const sectiuni = [
                     <td class="numeric">{t.bachelor_taken} / {t.bachelor_seats}</td>
                     <td class="numeric">{t.master_taken} / {t.master_seats}</td>
                     <td class="numeric">
-                      <span class:list={{ 'la-limita': t.seats > 0 && t.taken === t.seats, 'over-capacity': t.seats > 0 && t.taken > t.seats }}>
+                      <span class:list={{ 'at-capacity': t.seats > 0 && t.taken === t.seats, 'over-capacity': t.seats > 0 && t.taken > t.seats }}>
                         {t.taken} / {t.seats}
                       </span>
                     </td>
@@ -298,6 +320,17 @@ const sectiuni = [
                 <option value="master" selected={programFilter === 'master'}>Master</option>
               </select>
             </div>
+            <div class="field" style="flex:1;min-width:130px">
+              <label class="label" for="serie">Serie</label>
+              <select class="select" id="serie" name="serie">
+                <option value="">Toate seriile</option>
+                {seriesOptions.map((v) => (
+                  <option value={v} selected={seriesFilter === v}>
+                    {v}
+                  </option>
+                ))}
+              </select>
+            </div>
             <div class="field" style="flex:1;min-width:150px">
               <label class="label" for="status">Stare</label>
               <select class="select" id="status" name="status">
@@ -315,7 +348,7 @@ const sectiuni = [
           {rows.length === 0 ? (
             <div class="empty">
               <p class="empty__title">Nicio cerere pentru filtrele alese</p>
-              <p class="empty__text">Schimbă coordonatorul, programul sau starea.</p>
+              <p class="empty__text">Schimbă coordonatorul, programul, seria sau starea.</p>
             </div>
           ) : (
             <div class="table-wrap" tabindex="0" role="region" aria-label="Cereri de locuri suplimentare">
@@ -335,8 +368,15 @@ const sectiuni = [
                     <tr>
                       <td>
                         <div class="stack stack--tight" style="gap:0">
-                          <strong>{r.student_name}</strong>
-                          <span class="muted text-xs">{r.student_number}</span>
+                          <strong>{officialName({ name: r.student_name, father_initial: r.father_initial })}</strong>
+                          <span class="muted text-xs">
+                            {[
+                              r.student_number,
+                              r.study_year ? `anul ${r.study_year}` : null,
+                              r.study_series ? `seria ${r.study_series}` : null,
+                              r.study_group,
+                            ].filter(Boolean).join(' · ')}
+                          </span>
                         </div>
                       </td>
                       <td>
@@ -359,7 +399,7 @@ const sectiuni = [
     )
   }
 
-  {/* ------------------------------------------------------------- locuri */}
+  {/* -------------------------------------------------------------- seats */}
   {
     sectiune === 'locuri' && (
       <div class="stack stack--loose">
@@ -367,11 +407,11 @@ const sectiuni = [
           <div class="panel__header">
             <h2 class="section-title">Cereri de locuri suplimentare</h2>
             <span class="muted text-sm">
-              {locuriInAsteptare.length} în așteptare
+              {pendingSeatRequests.length} în așteptare
             </span>
           </div>
 
-          {locuriInAsteptare.length === 0 ? (
+          {pendingSeatRequests.length === 0 ? (
             <div class="empty">
               <p class="empty__title">Nicio cerere în așteptare</p>
               <p class="empty__text">
@@ -380,8 +420,8 @@ const sectiuni = [
               </p>
             </div>
           ) : (
-            <ul class="cereri-locuri">
-              {locuriInAsteptare.map((r) => (
+            <ul class="seat-requests">
+              {pendingSeatRequests.map((r) => (
                 <li>
                   <div class="row row--between row--wrap" style="gap:var(--s-2)">
                     <strong>{r.teacher_name}</strong>
@@ -463,7 +503,7 @@ const sectiuni = [
                       </div>
                     </td>
                     <td class="numeric">
-                      <span class:list={{ 'la-limita': t.seats > 0 && t.taken === t.seats, 'over-capacity': t.seats > 0 && t.taken > t.seats }}>
+                      <span class:list={{ 'at-capacity': t.seats > 0 && t.taken === t.seats, 'over-capacity': t.seats > 0 && t.taken > t.seats }}>
                         {t.taken} / {t.seats}
                       </span>
                     </td>
@@ -509,7 +549,7 @@ const sectiuni = [
           </div>
         </section>
 
-        {cereriLocuri.filter((r) => r.status !== 'pending').length > 0 && (
+        {seatRequestRows.filter((r) => r.status !== 'pending').length > 0 && (
           <section class="panel">
             <div class="panel__header">
               <h2 class="section-title">Decizii anterioare</h2>
@@ -526,7 +566,7 @@ const sectiuni = [
                   </tr>
                 </thead>
                 <tbody>
-                  {cereriLocuri
+                  {seatRequestRows
                     .filter((r) => r.status !== 'pending')
                     .map((r) => (
                       <tr>
@@ -613,10 +653,10 @@ const sectiuni = [
     color: inherit;
   }
 
-  /* Exact plin nu este o problemă — este planul îndeplinit. Roșul era pus pe
-     `taken >= seats`, deci un coordonator cu 8 din 8 arăta ca o depășire, pe
-     același ecran care mai sus scria că totul e în regulă. */
-  .la-limita {
+  /* Exactly full is not a problem — it is the plan fulfilled. The red was put
+     on `taken >= seats`, so a coordinator with 8 out of 8 looked like an
+     overrun, on the same screen that said higher up that everything was fine. */
+  .at-capacity {
     color: var(--warn);
     font-weight: 600;
   }
@@ -633,19 +673,19 @@ const sectiuni = [
     white-space: nowrap;
   }
 
-  .cereri-locuri {
+  .seat-requests {
     list-style: none;
     margin: 0;
     padding: 0;
   }
-  .cereri-locuri li {
+  .seat-requests li {
     display: flex;
     flex-direction: column;
     gap: var(--s-3);
     padding: var(--s-4) var(--s-5);
     border-bottom: 1px solid var(--border);
   }
-  .cereri-locuri li:last-child {
+  .seat-requests li:last-child {
     border-bottom: 0;
   }
 

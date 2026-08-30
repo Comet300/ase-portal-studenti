@@ -33,13 +33,13 @@ export function escapeHtml(s: string): string {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
-    /* Apostroful, deși nimic din portal nu îl are nevoie astăzi.
+    /* The apostrophe, even though nothing in the portal needs it today.
      *
-     * El contează doar într-un atribut delimitat cu ghilimele simple, iar toate
-     * atributele scrise aici folosesc ghilimele duble — deci lipsa lui nu era
-     * exploatabilă. Dar asta face siguranța marcajului să depindă de o convenție
-     * de stil pe care o poate încălca următorul șablon scris în grabă, într-un
-     * fișier care nu are nimic de-a face cu acesta. Costă o înlocuire. */
+     * It matters only inside an attribute delimited with single quotes, and
+     * every attribute written here uses double quotes — so its absence was not
+     * exploitable. But that makes the safety of the markup depend on a style
+     * convention that the next template written in a hurry can break, in a file
+     * that has nothing to do with this one. It costs one replacement. */
     .replace(/'/g, '&#39;')
 }
 

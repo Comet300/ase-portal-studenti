@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 /**
- * Date demonstrative — fictive, în limba română.
+ * Demo data — fictional, in Romanian.
  *
- * Idempotent: rulează la fiecare pornire fără să dubleze nimic. Conturile sunt
- * identificate prin email, restul entităților prin combinații naturale, deci o
- * a doua rulare nu adaugă rânduri.
+ * Idempotent: runs on every startup without duplicating anything. Accounts are
+ * identified by email, the remaining entities by natural combinations, so a
+ * second run adds no rows.
  */
 
 import pg from 'pg'
@@ -17,17 +17,19 @@ if (!connectionString) {
 
 const client = new pg.Client({ connectionString })
 await client.connect()
-// Aceleași ore ca la runtime: datele demonstrative sunt construite cu `now()`
-// și `date + '14 hours'`, deci fusul sesiunii decide ce instant înseamnă 14:00.
+// The same hours as at runtime: the demo data is built with `now()` and
+// `date + '14 hours'`, so the session's time zone decides what instant 14:00
+// stands for.
 await client.query(`SET TIME ZONE '${process.env.TZ ?? 'Europe/Bucharest'}'`)
 
 const q = (sql, params = []) => client.query(sql, params)
 const one = async (sql, params = []) => (await q(sql, params)).rows[0]
 
-/* --- anul universitar ------------------------------------------------------
- * Migrarea a creat deja anul curent. Seed-ul adaugă doi ani încheiați, ca
- * arhiva să aibă istoric — inclusiv un an dinaintea portalului, care nu are
- * cereri, ci doar înregistrări introduse de director.
+/* --- academic year ---------------------------------------------------------
+ * The migration has already created the current year. The seed adds two
+ * finished years, so the archive has history — including a year from before the
+ * portal existed, which has no requests, only records entered by the department
+ * head.
  */
 
 const currentYear = await one(`SELECT * FROM academic_years WHERE is_current`)
@@ -48,14 +50,25 @@ async function pastYear(offset) {
 const lastYear = await pastYear(1)
 const olderYear = await pastYear(2)
 
-/* --- programe de studiu ---------------------------------------------------- */
+/* --- study programmes ------------------------------------------------------ */
 
+/* The faculty's real programmes, the same list migration 0020 writes into the
+ * current year. At licență the programme is Marketing and what distinguishes
+ * one student from another is the form of study; at master they are separate
+ * programmes. The demo data has to name the same things the portal does, or
+ * every screenshot of it teaches the wrong vocabulary. */
 const PROGRAMMES = [
-  ['bachelor', 'Marketing', 'ro', 3],
-  ['bachelor', 'Marketing', 'en', 3],
-  ['master', 'Marketing strategic', 'ro', 2],
+  ['bachelor', 'Învățământ cu frecvență — RO', 'ro', 3],
+  ['bachelor', 'Învățământ cu frecvență — EN', 'en', 3],
+  ['bachelor', 'Învățământ fără frecvență', 'ro', 3],
+  ['bachelor', 'Învățământ la distanță — București', 'ro', 3],
+  ['bachelor', 'Învățământ la distanță — Buzău', 'ro', 3],
   ['master', 'Cercetări de marketing', 'ro', 2],
-  ['master', 'Marketing digital', 'en', 2],
+  ['master', 'Marketing și comunicare în afaceri', 'ro', 2],
+  ['master', 'Marketing online', 'ro', 2],
+  ['master', 'Relații publice în marketing', 'ro', 2],
+  ['master', 'Marketing strategic', 'ro', 2],
+  ['master', 'Managementul relațiilor cu clienții', 'ro', 2],
 ]
 
 const programmeIds = new Map()
@@ -71,10 +84,11 @@ for (const [level, name, language, years] of PROGRAMMES) {
   programmeIds.set(`${level}|${name}|${language}`, row.id)
 }
 
-/* --- etapele sesiunii ------------------------------------------------------
+/* --- session stages --------------------------------------------------------
  * Anchored to the current date rather than to fixed 2026 dates: a demo opened
- * after a hard-coded session had ended showed every stage as încheiată and no
- * stage in curs, which is exactly the state the portal is meant to make legible.
+ * after a hard-coded session had ended showed every stage labelled „încheiată"
+ * and none „în curs", which is exactly the state the portal is meant to make
+ * legible.
  * Offsets are in months, relative to today; labels are derived from the dates so
  * the two can never disagree.
  */
@@ -118,7 +132,7 @@ const STAGES = STAGE_SPANS.map(([title, description, fromM, fromD, toM, toD]) =>
   return [title, description, label(from, to), from, to]
 })
 
-/* --- cadre didactice ------------------------------------------------------- */
+/* --- teaching staff -------------------------------------------------------- */
 
 const TEACHERS = [
   ['Prof. univ. dr. Mihaela Ionescu', 'mihaela.ionescu@ase.ro', 'Marketing', 'Prof. univ. dr.', 'Corp Ion Angelescu, sala 2314', 8, 5, true,
@@ -151,7 +165,7 @@ const HEAD = ['Prof. univ. dr. Daniela Constantin', 'daniela.constantin@ase.ro',
   'Director de departament. Coordonez un număr restrâns de lucrări, cu prioritate la programele de master.',
   'Politici de marketing · management academic']
 
-/* --- studenți -------------------------------------------------------------- */
+/* --- students -------------------------------------------------------------- */
 
 const STUDENT_NAMES = [
   'Dan Marinescu', 'Elena Popescu', 'Andrei Vasilescu', 'Ioana Dumitru', 'Mihai Stoica',
@@ -161,32 +175,44 @@ const STUDENT_NAMES = [
   'Sorin Bălan', 'Teodora Rusu', 'Adrian Costache', 'Gabriela Matei',
 ]
 
-/** Programul fiecărui student: [nivel, specializare, limbă, an]. */
+/* A year is split into series before it is split into groups, and the father's
+ * initial is part of the official name. Both are seeded so that the catalogue's
+ * series filter and the printed request have something to show in demo mode. */
+const SERIES = ['A', 'B']
+const FATHER_INITIALS = ['I', 'Gh', 'C', 'M', 'D', 'N']
+
+/** Each student's programme: [level, specialization, language, year]. */
 const BACHELOR_GROUPS = [
-  ['bachelor', 'Marketing', 'ro', 3],
-  ['bachelor', 'Marketing', 'en', 3],
+  ['bachelor', 'Învățământ cu frecvență — RO', 'ro', 3],
+  ['bachelor', 'Învățământ cu frecvență — EN', 'en', 3],
+  ['bachelor', 'Învățământ la distanță — București', 'ro', 3],
 ]
 const MASTER_GROUPS = [
   ['master', 'Marketing strategic', 'ro', 2],
   ['master', 'Cercetări de marketing', 'ro', 2],
-  ['master', 'Marketing digital', 'en', 2],
+  ['master', 'Marketing online', 'ro', 2],
 ]
 
-/* --- teme ------------------------------------------------------------------ */
+/* --- topics ---------------------------------------------------------------- */
 
+/* Title, level, language, methodology, domain.
+ *
+ * No seat count: capacity belongs to the coordinator, per level and per study
+ * programme, and a topic never had a pot of its own. The programme is picked
+ * below, from the year's own list, by level and language. */
 const TOPICS = [
-  ['Comportamentul consumatorului în comerțul electronic românesc', 'bachelor', 'ro', 'Cantitativă, SPSS, modelare structurală', 'Marketing cantitativ, nota minimă 8', 3],
-  ['Transformarea digitală a strategiilor B2B', 'master', 'ro', 'Studii de caz multiple, interviuri semi-structurate', 'Management strategic', 2],
-  ['Credibilitatea influencerilor și decizia de cumpărare la generația Z', 'bachelor', 'ro', 'Chestionar online, analiză factorială', 'Statistică descriptivă', 4],
-  ['Marketingul sustenabil în industria FMCG', 'bachelor', 'ro', 'Analiză de conținut, interviuri', '—', 3],
-  ['Personalizarea prin inteligență artificială în retail', 'master', 'en', 'Experiment, A/B testing', 'Marketing digital', 2],
-  ['Loialitatea față de brand în serviciile bancare', 'bachelor', 'ro', 'Sondaj, regresie logistică', 'Statistică aplicată', 3],
-  ['Comunicarea de criză pe rețelele sociale', 'master', 'ro', 'Netnografie, analiză tematică', 'Comunicare de marketing', 2],
-  ['Prețul de referință intern și percepția valorii', 'bachelor', 'ro', 'Experiment de laborator', 'Comportamentul consumatorului', 2],
-  ['Marketingul experiențial în turismul cultural', 'master', 'ro', 'Observație participativă, interviuri', '—', 2],
-  ['Adopția plăților contactless în mediul rural', 'bachelor', 'ro', 'Sondaj față în față, analiză descriptivă', '—', 3],
-  ['Strategii de internaționalizare pentru IMM-uri românești', 'master', 'ro', 'Studii de caz comparative', 'Marketing internațional', 2],
-  ['Impactul recenziilor online asupra vânzărilor', 'bachelor', 'en', 'Analiză de date secundare, regresie', 'Econometrie', 3],
+  ['Comportamentul consumatorului în comerțul electronic românesc', 'bachelor', 'ro', 'Anchetă pe bază de chestionar, SPSS, modelare structurală', 'Comportamentul consumatorului'],
+  ['Transformarea digitală a strategiilor B2B', 'master', 'ro', 'Studii de caz multiple, interviuri semi-structurate', 'Marketing B2B'],
+  ['Credibilitatea influencerilor și decizia de cumpărare la generația Z', 'bachelor', 'ro', 'Chestionar online, analiză factorială', 'Comunicare de marketing'],
+  ['Marketingul sustenabil în industria FMCG', 'bachelor', 'ro', 'Analiză de conținut, interviuri', 'Marketing sustenabil'],
+  ['Personalizarea prin inteligență artificială în retail', 'master', 'en', 'Experiment, testare A/B', 'Marketing digital'],
+  ['Loialitatea față de brand în serviciile bancare', 'bachelor', 'ro', 'Sondaj, regresie logistică', 'Marketingul serviciilor'],
+  ['Comunicarea de criză pe rețelele sociale', 'master', 'ro', 'Netnografie, analiză tematică', 'Comunicare de marketing'],
+  ['Prețul de referință intern și percepția valorii', 'bachelor', 'ro', 'Experiment de laborator', 'Politici de preț'],
+  ['Marketingul experiențial în turismul cultural', 'master', 'ro', 'Observație participativă, interviuri', 'Marketing experiențial'],
+  ['Adopția plăților contactless în mediul rural', 'bachelor', 'ro', 'Sondaj față în față, analiză descriptivă', 'Comportamentul consumatorului'],
+  ['Strategii de internaționalizare pentru IMM-uri românești', 'master', 'ro', 'Studii de caz comparative', 'Marketing internațional'],
+  ['Impactul recenziilor online asupra vânzărilor', 'bachelor', 'en', 'Analiză de date secundare, regresie', 'Marketing digital'],
 ]
 
 const REQUEST_TITLES = [
@@ -228,33 +254,33 @@ const DEMO_MESSAGES = [
   ['teacher', 'Foarte bine. Alfa este în limite acceptabile. Ne vedem la consultația de marți ca să discutăm interpretarea rezultatelor.'],
 ]
 
-/* --- inserare -------------------------------------------------------------- */
+/* --- insertion ------------------------------------------------------------- */
 
 console.log('[seed] pornit')
 
 console.log('[seed] etape')
-/* Etape — identificate prin titlu, nu prin poziție.
+/* Stages — identified by title, not by position.
  *
- * Poziția se schimbă de fiecare dată când cineva reordonează calendarul din
- * portal, iar o poziție rămasă liberă ar face ca următoarea pornire să insereze
- * din nou o etapă care există deja, sub alt număr. */
-for (const [i, [titlu, descriere, interval, di, ds]] of STAGES.entries()) {
+ * The position changes every time someone reorders the calendar from inside the
+ * portal, and a position left free would make the next startup insert a stage
+ * that already exists all over again, under a different number. */
+for (const [i, [titlu, description, interval, di, ds]] of STAGES.entries()) {
   await q(
     `INSERT INTO session_stages (academic_year_id, position, title, description, interval_label, starts_on, ends_on)
      SELECT $1, $2, $3, $4, $5, $6::date, $7::date
       WHERE NOT EXISTS (
         SELECT 1 FROM session_stages WHERE academic_year_id = $1 AND title = $3
       )`,
-    [currentYear.id, i + 1, titlu, descriere, interval, di, ds],
+    [currentYear.id, i + 1, titlu, description, interval, di, ds],
   )
 }
 
-async function upsertUser(campuri) {
+async function upsertUser(fields) {
   const { rows } = await q(
     `INSERT INTO users (email, name, role, student_number, program, specialization, study_year,
-                        programme_id, study_language, study_group,
+                        programme_id, study_language, study_group, study_series, father_initial,
                         academic_title, department, office, bio, interests, is_demo)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
      ON CONFLICT (email) DO UPDATE SET
        name = EXCLUDED.name,
        student_number = EXCLUDED.student_number,
@@ -264,67 +290,87 @@ async function upsertUser(campuri) {
        programme_id = EXCLUDED.programme_id,
        study_language = EXCLUDED.study_language,
        study_group = EXCLUDED.study_group,
-       -- Textul scris de om nu se suprascrie: dacă cineva și-a editat profilul
-       -- în portal, o repornire nu are de ce să îi șteargă descrierea.
+       study_series = EXCLUDED.study_series,
+       father_initial = EXCLUDED.father_initial,
+       -- Human-written text is never overwritten: if someone has edited their
+       -- profile in the portal, a restart has no reason to erase their bio.
        bio = COALESCE(users.bio, EXCLUDED.bio),
        interests = COALESCE(users.interests, EXCLUDED.interests)
      RETURNING id`,
-    campuri,
+    fields,
   )
   return rows[0].id
 }
 
 console.log('[seed] cadre didactice')
 const teacherIds = []
-for (const [nume, email, dep, titlu, birou, capL, capM, demo, bio, interese] of TEACHERS) {
+for (const [name, email, department, titlu, office, bachelorSeats, masterSeats, demo, bio, interests] of TEACHERS) {
   const id = await upsertUser([
-    email, nume, 'teacher', null, null, null, null,
-    null, 'ro', null,
-    titlu, dep, birou, bio, interese, demo,
+    email, name, 'teacher', null, null, null, null,
+    null, 'ro', null, null, null,
+    titlu, department, office, bio, interests, demo,
   ])
   teacherIds.push(id)
   await q(
     `INSERT INTO seat_allocations (teacher_id, academic_year_id, bachelor_seats, master_seats)
      VALUES ($1, $2, $3, $4)
      ON CONFLICT (teacher_id, academic_year_id) DO NOTHING`,
-    [id, currentYear.id, capL, capM],
+    [id, currentYear.id, bachelorSeats, masterSeats],
   )
 }
 
-const [numeD, emailD, depD, titluD, birouD, capLD, capMD, , bioD, intereseD] = HEAD
+const [headName, headEmail, headDepartment, titluD, headOffice, headBachelorSeats, headMasterSeats, , headBio, headInterests] = HEAD
 const headId = await upsertUser([
-  emailD, numeD, 'head', null, null, null, null,
-  null, 'ro', null,
-  titluD, depD, birouD, bioD, intereseD, true,
+  headEmail, headName, 'head', null, null, null, null,
+  null, 'ro', null, null, null,
+  titluD, headDepartment, headOffice, headBio, headInterests, true,
 ])
 await q(
   `INSERT INTO seat_allocations (teacher_id, academic_year_id, bachelor_seats, master_seats)
    VALUES ($1, $2, $3, $4) ON CONFLICT (teacher_id, academic_year_id) DO NOTHING`,
-  [headId, currentYear.id, capLD, capMD],
+  [headId, currentYear.id, headBachelorSeats, headMasterSeats],
 )
 
 console.log('[seed] studenți')
 const studentIds = []
-for (const [i, nume] of STUDENT_NAMES.entries()) {
+for (const [i, name] of STUDENT_NAMES.entries()) {
   const isMaster = i % 3 === 2
-  // Împărțit pe poziția în seria de master, nu pe indexul global: `i % 3` este
-  // constant 2 pentru toți masteranzii, deci `i % MASTER_GROUPS.length` i-ar fi
-  // trimis pe toți la același program.
-  const [level, specializare, limba, an] = isMaster
+  // Split on the position within the master's series, not on the global index:
+  // `i % 3` is constantly 2 for every master's student, so
+  // `i % MASTER_GROUPS.length` would have sent them all to the same programme.
+  const [level, specialization, limba, an] = isMaster
     ? MASTER_GROUPS[Math.floor(i / 3) % MASTER_GROUPS.length]
     : BACHELOR_GROUPS[i % BACHELOR_GROUPS.length]
-  const email = `${nume.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, '.')}@stud.ase.ro`
+  const email = `${name.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, '.')}@stud.ase.ro`
   studentIds.push(
     await upsertUser([
-      email, nume, 'student',
+      email, name, 'student',
       `MK-${startYear}-${String(i + 1).padStart(4, '0')}`,
-      level, specializare, an,
-      programmeIds.get(`${level}|${specializare}|${limba}`), limba, `${limba.toUpperCase()}-${1500 + (i % 4)}`,
+      level, specialization, an,
+      programmeIds.get(`${level}|${specialization}|${limba}`), limba, `${limba.toUpperCase()}-${1500 + (i % 4)}`,
+      // A series above the group, and the father's initial: „Popescu I. Maria”
+      // is the name the secretariat reads on the printed request.
+      SERIES[i % SERIES.length], FATHER_INITIALS[i % FATHER_INITIALS.length],
       null, 'Marketing', null, null, null,
-      i === 0, // primul student este cont demo
+      i === 0, // the first student is a demo account
     ]),
   )
 }
+
+/* Who has ever signed in.
+ *
+ * Written in `createSession` in the running portal, so a seeded database would
+ * otherwise show the entire faculty as „nu a intrat niciodată” and the flag
+ * would carry no information at all in demo mode. Three students are left
+ * without it on purpose — that state is the one the head of department has to
+ * act on, and it has to be visible without waiting for it to occur.
+ *
+ * `COALESCE` so that re-seeding never moves a real first sign-in. */
+await q(
+  `UPDATE users SET first_login_at = COALESCE(first_login_at, now() - interval '40 days')
+    WHERE id = ANY($1::uuid[])`,
+  [[...teacherIds, headId, ...studentIds.slice(0, -3)]],
+)
 
 /* A demo student with no supervisor at all.
  *
@@ -336,8 +382,8 @@ for (const [i, nume] of STUDENT_NAMES.entries()) {
 const unassignedStudentId = await upsertUser([
   'ana.lupu@stud.ase.ro', 'Ana-Maria Lupu', 'student',
   `MK-${startYear}-0099`,
-  'bachelor', 'Marketing', 3,
-  programmeIds.get('bachelor|Marketing|ro'), 'ro', 'RO-1503',
+  'bachelor', 'Învățământ cu frecvență — RO', 3,
+  programmeIds.get('bachelor|Învățământ cu frecvență — RO|ro'), 'ro', 'RO-1503', 'A', 'V',
   null, 'Marketing', null, null, null,
   true,
 ])
@@ -350,35 +396,41 @@ await q(`DELETE FROM requests WHERE student_id = $1`, [unassignedStudentId])
 await q(`DELETE FROM invitations WHERE student_id = $1 AND status <> 'pending'`, [unassignedStudentId])
 
 console.log('[seed] teme')
-for (const [i, [titlu, nivel, limba, metode, prereq, locuri]] of TOPICS.entries()) {
-  const profesorId = teacherIds[i % teacherIds.length]
+for (const [i, [titlu, level, limba, metodologie, domeniu]] of TOPICS.entries()) {
+  const teacherId = teacherIds[i % teacherIds.length]
   await q(
     `INSERT INTO topics (academic_year_id, teacher_id, title, description, level, language,
-                         methods, prerequisites, seats)
-     SELECT $1,$2,$3,$4,$5,$6,$7,$8,$9
+                         methodology, domain, programme_id)
+     SELECT $1,$2,$3,$4,$5,$6,$7,$8,
+            (SELECT id FROM study_programmes
+              WHERE academic_year_id = $1 AND level = $5 AND language = $6 AND is_active
+              ORDER BY name LIMIT 1)
       WHERE NOT EXISTS (
         SELECT 1 FROM topics WHERE academic_year_id = $1 AND teacher_id = $2 AND title = $3
       )`,
-    [currentYear.id, profesorId, titlu, `Direcție de cercetare propusă pentru sesiunea în curs. ${metode}.`,
-     nivel, limba, metode, prereq, locuri],
+    [currentYear.id, teacherId, titlu, `Direcție de cercetare propusă pentru sesiunea în curs. ${metodologie}.`,
+     level, limba, metodologie, domeniu],
   )
 }
 
 console.log('[seed] cereri')
-/* Cereri — distribuite pe stări, majoritatea către primul profesor (contul demo).
+/* Requests — spread across states, most of them to the first teacher (the demo
+ * account).
  *
- * Cheia de idempotență este perechea (student, an universitar), nu numărul
- * cererii: numărul conține anul, iar la schimbarea anului o cerere „nouă” ar fi
- * fost inserată pentru un student care are deja una activă — și ar fi lovit
- * indexul unic parțial, oprind restul seed-ului.
+ * The idempotency key is the (student, academic year) pair, not the request
+ * number: the number contains the year, so when the year changed a "new"
+ * request would have been inserted for a student who already has an active one
+ * — and it would have hit the partial unique index, stopping the rest of the
+ * seed.
  */
 const STATES = ['pending', 'approved', 'approved', 'rejected', 'pending', 'approved']
 for (const [i, studentId] of studentIds.entries()) {
   const [titluRo, titluEn] = REQUEST_TITLES[i % REQUEST_TITLES.length]
   const status = STATES[i % STATES.length]
-  // Primii 10 studenți merg la profesorul demo, ca dashboardul lui să aibă conținut.
-  const profesorId = i < 10 ? teacherIds[0] : teacherIds[i % teacherIds.length]
-  const numar = `CRR-${startYear}-${String(i + 1).padStart(4, '0')}`
+  // The first 10 students go to the demo teacher, so that his dashboard has
+  // some content.
+  const teacherId = i < 10 ? teacherIds[0] : teacherIds[i % teacherIds.length]
+  const requestNumber = `CRR-${startYear}-${String(i + 1).padStart(4, '0')}`
 
   const { rows } = await q(
     `INSERT INTO requests (academic_year_id, number, student_id, teacher_id, title_ro, title_en,
@@ -392,38 +444,39 @@ for (const [i, studentId] of studentIds.entries()) {
       )
      RETURNING id`,
     [
-      currentYear.id, numar, studentId, profesorId, titluRo, titluEn, OBJECTIVES,
+      currentYear.id, requestNumber, studentId, teacherId, titluRo, titluEn, OBJECTIVES,
       MOTIVATIONS[i % MOTIVATIONS.length], status,
       status === 'rejected'
         ? 'Tema propusă se suprapune cu o lucrare deja alocată. Vă rog să reformulați direcția de cercetare sau să alegeți una dintre temele propuse.'
         : null,
-      // Cererile în așteptare sunt recente, ca să nu fie măturate imediat de
-      // termenul de o săptămână; restul sunt vechi, ca istoricul să aibă adâncime.
+      // Pending requests are recent, so that they are not swept away right away
+      // by the one-week deadline; the rest are old, so the history has depth.
       status === 'pending' ? String(1 + (i % 3)) : String(30 - i),
       String(Math.max(1, 25 - i)),
       String(5 - (i % 3)),
     ],
   )
 
-  // Termenele lucrării pentru cererile aprobate
+  // The thesis milestones for the approved requests
   if (rows[0] && status === 'approved') {
-    const cerereId = rows[0].id
-    for (const [j, [titlu, descriere, ordine]] of MILESTONES.entries()) {
-      const stare = j === 0 ? 'done' : j === 1 ? (i % 2 === 0 ? 'done' : 'in_progress') : j === 2 ? 'in_progress' : 'planned'
+    const requestId = rows[0].id
+    for (const [j, [titlu, description, position]] of MILESTONES.entries()) {
+      const milestoneStatus = j === 0 ? 'done' : j === 1 ? (i % 2 === 0 ? 'done' : 'in_progress') : j === 2 ? 'in_progress' : 'planned'
       await q(
         `INSERT INTO milestones (request_id, title, description, due_on, status, position)
          VALUES ($1,$2,$3, (current_date + ($4 || ' days')::interval)::date, $5, $6)`,
-        [cerereId, titlu, descriere, String(j * 30 - 30), stare, ordine],
+        [requestId, titlu, description, String(j * 30 - 30), milestoneStatus, position],
       )
     }
   }
 }
 
-/* Termenul de răspuns pentru cererile rămase de la o rulare anterioară.
+/* The response deadline for requests left over from an earlier run.
  *
- * O cerere depusă „acum 30 de zile” are termenul depășit, iar portalul o
- * respinge automat la prima cerere HTTP — demonstrația ar porni cu coada goală.
- * Le împrospătăm, ca ecranul de triaj să aibă mereu ce arăta.
+ * A request submitted "30 days ago" has an expired deadline, and the portal
+ * rejects it automatically on the first HTTP request — the demo would start
+ * with an empty queue. We refresh them, so that the triage screen always has
+ * something to show.
  */
 await q(
   `UPDATE requests
@@ -435,14 +488,14 @@ await q(
   [currentYear.id],
 )
 
-/* Contul demonstrativ al cadrului didactic trebuie să aibă mereu ce tria.
+/* The teacher's demo account must always have something to triage.
  *
- * Cererile pe care le primise erau deja decise, iar termenul de răspuns —
- * introdus ulterior — a expirat restul chiar înainte de prima privire. Ecranul
- * de triaj, care este primul lucru pe care îl deschide cineva, rămânea gol.
- * Readucem în coadă cereri decise ale acestui cadru didactic, dar numai pentru
- * studenți care nu au altă cerere activă: regula „o singură cerere activă per
- * student” este un index, nu o convenție.
+ * The requests it had received were already decided, and the response deadline
+ * — introduced later — had expired the rest right before the first look. The
+ * triage screen, which is the first thing anyone opens, stayed empty. We bring
+ * decided requests of this teacher back into the queue, but only for students
+ * who have no other active request: the rule "a single active request per
+ * student" is an index, not a convention.
  */
 await q(
   `UPDATE requests
@@ -472,8 +525,8 @@ await q(
   [currentYear.id],
 )
 
-// Cererile dinaintea acestui câmp nu au motivație; fără ea ecranul
-// coordonatorului arată o secțiune goală acolo unde ar trebui să fie argumentul.
+// Requests from before this field exists have no motivation; without it the
+// supervisor's screen shows an empty section where the argument should be.
 await q(
   `UPDATE requests SET motivation = $2
     WHERE motivation IS NULL AND academic_year_id = $1`,
@@ -482,12 +535,12 @@ await q(
 
 console.log('[seed] consultații')
 
-/* Intervalele deschise se reconstruiesc, nu se completează.
+/* Open slots are rebuilt, not topped up.
  *
- * Cele create înainte ca aplicația să ruleze pe fusul Bucureștiului poartă
- * instantul greșit — un „14:00” scris atunci este 17:00 acum. Se șterg doar
- * cele viitoare și nerezervate: o consultație pe care un student și-a
- * programat-o nu dispare de sub el.
+ * The ones created before the application ran on Bucharest's time zone carry
+ * the wrong instant — a "14:00" written back then is 17:00 now. Only the future
+ * and unbooked ones are deleted: a consultation that a student has booked for
+ * himself does not disappear from under him.
  */
 await q(
   `DELETE FROM consultation_slots s
@@ -498,12 +551,12 @@ await q(
       )`,
 )
 
-// Sloturi de consultații pentru profesorul demo și încă doi. Unul din trei este
-// online, ca linkul întâlnirii să fie vizibil undeva în interfață.
-for (const profesorId of [teacherIds[0], teacherIds[1], headId]) {
+// Consultation slots for the demo teacher and two more. One in three is
+// online, so that the meeting link is visible somewhere in the interface.
+for (const teacherId of [teacherIds[0], teacherIds[1], headId]) {
   for (let zi = 1; zi <= 14; zi += 2) {
-    for (const ora of [14, 15]) {
-      const online = (zi + ora) % 3 === 0
+    for (const hour of [14, 15]) {
+      const online = (zi + hour) % 3 === 0
       await q(
         `INSERT INTO consultation_slots (teacher_id, starts_at, ends_at, mode, location, meeting_url, capacity)
          SELECT $1,
@@ -516,7 +569,7 @@ for (const profesorId of [teacherIds[0], teacherIds[1], headId]) {
                AND starts_at = date_trunc('day', now() + ($2 || ' days')::interval) + ($3 || ' hours')::interval
           )`,
         [
-          profesorId, String(zi), String(ora),
+          teacherId, String(zi), String(hour),
           online ? 'online' : 'in_person',
           online ? null : 'Corp Ion Angelescu, etaj 3, sala 2314',
           online ? 'https://meet.ase.ro/consultatii-marketing' : null,
@@ -527,14 +580,14 @@ for (const profesorId of [teacherIds[0], teacherIds[1], headId]) {
 }
 
 console.log('[seed] conversații')
-// Conversații + mesaje pentru studenții aprobați ai profesorului demo
+// Conversations + messages for the demo teacher's approved students
 const { rows: approved } = await q(
   `SELECT student_id, teacher_id FROM requests WHERE status = 'approved' AND teacher_id = $1 LIMIT 6`,
   [teacherIds[0]],
 )
 
 for (const { student_id, teacher_id } of approved) {
-  const conversatie = await one(
+  const conversation = await one(
     `INSERT INTO conversations (student_id, teacher_id, last_message_at)
      VALUES ($1, $2, now())
      ON CONFLICT (student_id, teacher_id)
@@ -542,18 +595,18 @@ for (const { student_id, teacher_id } of approved) {
      RETURNING id`,
     [student_id, teacher_id],
   )
-  const conversatieId = conversatie.id
+  const conversationId = conversation.id
 
-  // Firul începe cu evenimentul care l-a deschis, nu cu o replică. Ghidat pe
-  // tipul mesajului, nu pe existența conversației: firele create de o rulare
-  // anterioară au deja replici, dar niciun eveniment.
+  // The thread starts with the event that opened it, not with a reply. Keyed on
+  // the kind of message, not on the existence of the conversation: threads
+  // created by an earlier run already have replies, but no event.
   await q(
     `INSERT INTO messages (conversation_id, sender_id, body, kind, event_type, read_at, created_at)
      SELECT $1, $2, $3, 'event', 'request_approved', now(), now() - interval '40 hours'
       WHERE NOT EXISTS (
         SELECT 1 FROM messages WHERE conversation_id = $1 AND kind = 'event'
       )`,
-    [conversatieId, teacher_id, 'Cererea de coordonare a fost aprobată. Termenele lucrării sunt disponibile în portal.'],
+    [conversationId, teacher_id, 'Cererea de coordonare a fost aprobată. Termenele lucrării sunt disponibile în portal.'],
   )
 
   for (const [i, [role, body]] of DEMO_MESSAGES.entries()) {
@@ -564,7 +617,7 @@ for (const { student_id, teacher_id } of approved) {
           SELECT 1 FROM messages WHERE conversation_id = $1 AND body = $3
         )`,
       [
-        conversatieId,
+        conversationId,
         role === 'student' ? student_id : teacher_id,
         body,
         i < DEMO_MESSAGES.length - 1 ? new Date().toISOString() : null,
@@ -572,7 +625,7 @@ for (const { student_id, teacher_id } of approved) {
       ],
     )
   }
-  await q(`UPDATE conversations SET last_message_at = (SELECT max(created_at) FROM messages WHERE conversation_id = $1) WHERE id = $1`, [conversatieId])
+  await q(`UPDATE conversations SET last_message_at = (SELECT max(created_at) FROM messages WHERE conversation_id = $1) WHERE id = $1`, [conversationId])
 }
 
 /* --- connect the two demo accounts ---------------------------------------
@@ -594,11 +647,11 @@ const { rows: demoPair } = await q(
   [unassignedStudentId],
 )
 
-/* Perechea demo, indiferent dacă tocmai a fost aprobată sau era deja.
+/* The demo pair, whether it has just been approved or already was.
  *
- * `RETURNING` de mai sus dă rânduri doar la prima rulare, pentru că filtrul
- * cere `status <> 'approved'`. Tot ce urmează trebuie să fie idempotent, deci
- * se citește separat. */
+ * The `RETURNING` above yields rows only on the first run, because the filter
+ * requires `status <> 'approved'`. Everything that follows has to be
+ * idempotent, so it is read separately. */
 const { rows: demoPairAll } = demoPair.length
   ? { rows: demoPair }
   : await q(
@@ -629,12 +682,12 @@ for (const r of demoPairAll) {
     [r.student_id, r.teacher_id],
   )
 
-  /* Aprobarea, ca eveniment în fir.
+  /* The approval, as an event in the thread.
    *
-   * Perechea demo era legată direct în bază, fără să treacă prin decizia
-   * coordonatorului — deci studentul demo avea o cerere aprobată și nicio urmă
-   * a aprobării: cronologia și clopoțelul de notificări arătau goale exact
-   * pentru contul pe care îl deschide oricine încearcă portalul. */
+   * The demo pair was linked directly in the database, without going through
+   * the supervisor's decision — so the demo student had an approved request and
+   * no trace of the approval: the timeline and the notification bell showed up
+   * empty for exactly the account that anyone trying the portal opens. */
   await q(
     `INSERT INTO messages (conversation_id, sender_id, kind, event_type, body, created_at)
      SELECT c.id, $2, 'event', 'request_approved',
@@ -653,19 +706,21 @@ for (const r of demoPairAll) {
 }
 
 console.log('[seed] invitație')
-/* Textul evenimentelor deja scrise în bază păstrează vocabularul vechi.
- * „Jaloane" a fost redenumit „Termene" peste tot în interfață; un mesaj din
- * conversație scris înainte de redenumire ar contrazice ecranul de lângă el. */
+/* The text of the events already written to the database keeps the old
+ * vocabulary. „Jaloane" was renamed to „Termene" everywhere in the
+ * interface; a message in a conversation written before the rename would
+ * contradict the screen next to it. */
 await q(
   `UPDATE messages
       SET body = replace(replace(body, 'Jaloanele', 'Termenele'), 'jaloanele', 'termenele')
     WHERE kind = 'event' AND body LIKE '%aloanele%'`,
 )
 
-/* --- o invitație în așteptare ---------------------------------------------
- * Studenta fără coordonator primește o propunere de la cadrul didactic demo.
- * Rămâne fără coordonator până răspunde, deci scenariul „niciun coordonator”
- * se păstrează, iar ecranul de acceptare/refuz devine accesibil din demo.
+/* --- a pending invitation -------------------------------------------------
+ * The student without a supervisor receives a proposal from the demo teacher.
+ * She stays without a supervisor until she answers, so the "no supervisor"
+ * scenario is preserved, and the accept/refuse screen becomes reachable from
+ * the demo.
  */
 await q(
   `INSERT INTO invitations (academic_year_id, teacher_id, student_id, topic_id, message, expires_at)
@@ -681,20 +736,21 @@ await q(
   ],
 )
 
-/* Un coordonator cu toate locurile ocupate.
+/* A supervisor with every seat taken.
  *
- * Starea „plin" schimbă catalogul, butonul de depunere și invitațiile, dar nu
- * apărea nicăieri în datele demonstrative — nu se putea compara cu un
- * coordonator disponibil fără să strici manual alocările.
+ * The „plin" state changes the catalogue, the submit button and the
+ * invitations, but appeared nowhere in the demo data — it could not be compared
+ * against an available supervisor without breaking the allocations by hand.
  *
- * Se alege cel cu cei mai puțini studenți aprobați, ca schimbarea să fie
- * minimă, și niciodată contul demo: coada lui trebuie să rămână liberă.
+ * The one with the fewest approved students is picked, so that the change is
+ * minimal, and never the demo account: its queue has to stay free.
  */
 await q(
   `UPDATE seat_allocations a
-      -- Exact câte sunt ocupate. Un GREATEST(…, 1) aici dădea un loc de licență
-      -- în plus unui coordonator al cărui singur student e la master, deci nu
-      -- mai era plin deloc. HAVING de mai jos garantează că totalul nu e zero.
+      -- Exactly as many as are taken. A GREATEST(…, 1) here gave one extra
+      -- bachelor seat to a supervisor whose only student is on a master's
+      -- programme, so they were not full at all any more. The HAVING below
+      -- guarantees that the total is not zero.
       SET bachelor_seats = ocupate.b,
           master_seats   = ocupate.m
      FROM (
@@ -715,16 +771,16 @@ await q(
   [currentYear.id],
 )
 
-/* Poza de profil a contului demo, ștearsă la fiecare pornire.
+/* The demo account's profile photo, deleted on every startup.
  *
- * Un fișier încărcat în timpul unui test rămâne acolo și ascunde exact ce ar
- * trebui să se vadă implicit: inițialele. Conturile demonstrative pornesc fără
- * poză, ca varianta implicită să fie cea vizibilă.
+ * A file uploaded during a test stays there and hides exactly what ought to be
+ * visible by default: the initials. Demo accounts start out without a photo, so
+ * that the default variant is the one on screen.
  */
 await q(`UPDATE users SET avatar_path = NULL WHERE is_demo = true`)
 
 console.log('[seed] cerere de locuri')
-/* --- o cerere de locuri suplimentare, în așteptarea directorului ----------- */
+/* --- a request for extra seats, awaiting the department head --------------- */
 await q(
   `INSERT INTO seat_requests (teacher_id, academic_year_id, level, extra_seats, reason)
    SELECT $1, $2, 'bachelor', 2,
@@ -736,10 +792,10 @@ await q(
 )
 
 console.log('[seed] arhivă istorică')
-/* --- arhivă istorică -------------------------------------------------------
- * Anul trecut are date native în portal doar dacă a rulat cineva portalul
- * atunci — nu a rulat. Ambii ani încheiați primesc înregistrări introduse
- * manual, exact ca importul pe care îl face directorul.
+/* --- historical archive ----------------------------------------------------
+ * Last year has native data in the portal only if someone ran the portal back
+ * then — nobody did. Both finished years get manually entered records, exactly
+ * like the import the department head performs.
  */
 const ARCHIVE = [
   ['Cristian Dobre', 'Prof. univ. dr. Mihaela Ionescu', 'Fidelizarea clienților în retailul alimentar', 'bachelor', 'Marketing', 'ro'],
@@ -751,7 +807,7 @@ const ARCHIVE = [
 ]
 
 for (const [an, offset] of [[lastYear, 1], [olderYear, 2]]) {
-  for (const [i, [student, profesor, titlu, nivel, program, limba]] of ARCHIVE.entries()) {
+  for (const [i, [student, teacherName, titlu, level, program, limba]] of ARCHIVE.entries()) {
     await q(
       `INSERT INTO archive_entries (academic_year_id, student_name, student_number, programme,
                                     level, language, teacher_name, title_ro, defended_on)
@@ -761,25 +817,25 @@ for (const [an, offset] of [[lastYear, 1], [olderYear, 2]]) {
         )`,
       [
         an.id, student, `MK-${startYear - offset}-${String(100 + i).padStart(4, '0')}`,
-        program, nivel, limba, profesor, titlu, startYear - offset + 1,
+        program, level, limba, teacherName, titlu, startYear - offset + 1,
       ],
     )
   }
 }
 
-/* Numerele cererilor urmează anul universitar, inclusiv cele vechi.
+/* Request numbers follow the academic year, the old ones included.
  *
- * Rândurile create înainte ca anul să fie un obiect poartă anul calendaristic
- * („CRR-2026-…” într-o sesiune 2025–2026), lângă numere matricole MK-2025-…, iar
- * cererile noi le contrazic. Renumerotarea se face în două treceri, pentru că
- * `number` este UNIQUE și nu e amânat: o singură instrucțiune s-ar ciocni de un
- * număr încă ocupat de alt rând.
+ * Rows created before the year became an object carry the calendar year
+ * ("CRR-2026-…" in a 2025–2026 session), next to student numbers MK-2025-…,
+ * and the new requests contradict them. The renumbering is done in two
+ * passes, because `number` is UNIQUE and not deferred: a single statement
+ * would collide with a number still held by another row.
  */
-const anCurentPrefix = `CRR-${startYear}-`
+const currentYearPrefix = `CRR-${startYear}-`
 const { rows: [{ gresite }] } = await q(
   `SELECT count(*)::int AS gresite FROM requests
     WHERE academic_year_id = $1 AND number NOT LIKE $2`,
-  [currentYear.id, `${anCurentPrefix}%`],
+  [currentYear.id, `${currentYearPrefix}%`],
 )
 
 if (gresite > 0) {
@@ -792,15 +848,15 @@ if (gresite > 0) {
            FROM requests WHERE academic_year_id = $1
        ) o
       WHERE r.id = o.id`,
-    [currentYear.id, anCurentPrefix],
+    [currentYear.id, currentYearPrefix],
   )
   console.log(`[seed] ${gresite} cereri renumerotate pe anul ${startYear}`)
 }
 
-/* Numerotarea cererilor continuă de unde s-a oprit seed-ul.
- * Contorul stă pe anul universitar, iar rândurile inserate aici nu au trecut
- * prin el — fără această aliniere, prima cerere depusă din portal ar primi un
- * număr deja folosit. */
+/* Request numbering carries on from where the seed left off.
+ * The counter sits on the academic year, and the rows inserted here did not go
+ * through it — without this alignment, the first request submitted from the
+ * portal would get a number that is already in use. */
 await q(
   `UPDATE academic_years y
       SET request_counter = GREATEST(

@@ -4,23 +4,24 @@ import { currentYearLabel } from '../lib/years'
 
 interface Props {
   title: string
-  /** Titlul din bara browserului, când cel din pagină nu e bun de semn de carte. */
+  /** The browser-bar title, for when the page's own is no good as a bookmark. */
   docTitle?: string
   description?: string
 }
 
 const { title, docTitle, description } = Astro.props
 
-// Sesiunea se numește după anul din baza de date, nu după unul scris în cod:
-// altfel, în dimineața în care directorul deschide un an nou, fiecare titlu de
-// pagină îl contrazice.
-const sesiune = await currentYearLabel()
+// The session is named after the year in the database, not after one written
+// into the code: otherwise, on the morning the director opens a new year,
+// every page title contradicts them.
+const yearLabel = await currentYearLabel()
 
-// Sufixul rămâne scurt: cu trei file deschise, 45 de caractere identice le fac
-// imposibil de deosebit. Sesiunea se vede oricum în subsol și în bara laterală.
+// The suffix stays short: with three tabs open, 45 identical characters make
+// them impossible to tell apart. The session is visible in the footer and in
+// the sidebar anyway.
 const fullTitle = `${docTitle ?? title} · Portal Studenți ASE`
-const descriere =
-  description ?? `Sesiunea de Finalizare a Studiilor ${sesiune} — Facultatea de Marketing, ASE București`
+const metaDescription =
+  description ?? `Sesiunea de Finalizare a Studiilor ${yearLabel} — Facultatea de Marketing, ASE București`
 const site = Astro.site ?? new URL(Astro.url.origin)
 ---
 
@@ -30,16 +31,16 @@ const site = Astro.site ?? new URL(Astro.url.origin)
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <title>{fullTitle}</title>
-    <meta name="description" content={descriere} />
+    <meta name="description" content={metaDescription} />
     <meta name="theme-color" content="#990000" />
     <meta name="color-scheme" content="light" />
 
-    {/* Legătura către portal se lipește în grupuri de WhatsApp și pe Teams —
-        acolo se vede cardul, nu adresa. */}
+    {/* The link to the portal gets pasted into WhatsApp groups and into Teams
+        — what is seen there is the card, not the address. */}
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="Portal Studenți · ASE București" />
     <meta property="og:title" content={`${docTitle ?? title} · Portal Studenți`} />
-    <meta property="og:description" content={descriere} />
+    <meta property="og:description" content={metaDescription} />
     <meta property="og:image" content={new URL('/og.png', site).href} />
     <meta property="og:locale" content="ro_RO" />
     <meta name="twitter:card" content="summary_large_image" />
@@ -51,8 +52,9 @@ const site = Astro.site ?? new URL(Astro.url.origin)
   <body>
     <a href="#continut" class="skip">Sari la conținut</a>
 
-    {/* Fiecare acțiune este un POST care reîncarcă pagina. Bara arată că cererea
-        a plecat, în intervalul în care altfel nu se schimbă nimic pe ecran. */}
+    {/* Every action is a POST that reloads the page. The bar shows that the
+        request has left, over the interval in which nothing else on the screen
+        changes. */}
     <div class="progres-sus" aria-hidden="true"></div>
 
     <p class="banner-offline" id="banner-offline" role="status" hidden>
@@ -61,34 +63,34 @@ const site = Astro.site ?? new URL(Astro.url.origin)
 
     <slot />
 
-    {/* Două gazde, două urgențe: confirmările sunt politicoase și pleacă singure,
-        erorile întrerup și rămân până sunt închise. */}
+    {/* Two hosts, two urgencies: confirmations are polite and leave on their
+        own, errors interrupt and stay until they are closed. */}
     <div class="toast-host" id="toast-host" aria-live="polite" aria-atomic="false"></div>
     <div class="toast-host toast-host--erori" id="toast-host-erori" role="alert" aria-live="assertive"></div>
 
     <script>
-      import { porneste as pornesteNotificari } from '../scripts/notificari'
-      import { porneste as pornesteFormulare } from '../scripts/formulare'
-      import { porneste as pornesteRetea } from '../scripts/retea'
-      import { porneste as pornesteDialoguri } from '../scripts/dialoguri'
-      import { porneste as pornesteValidare } from '../scripts/validare'
-      import { pornestePoza } from '../scripts/poza'
-      import { porneste as pornestePaleta } from '../scripts/paleta'
+      import { start as startNotifications } from '../scripts/notifications'
+      import { start as startForms } from '../scripts/forms'
+      import { start as startNetwork } from '../scripts/network'
+      import { start as startDialogs } from '../scripts/dialogs'
+      import { start as startValidation } from '../scripts/validation'
+      import { startPhoto } from '../scripts/photo'
+      import { start as startPalette } from '../scripts/palette'
 
       declare global {
         interface Window {
-          notifica: (mesaj: string, tip?: 'info' | 'error') => void
+          notify: (message: string, kind?: 'info' | 'error') => void
         }
       }
 
-      pornesteNotificari()
-      pornesteFormulare()
-      pornesteRetea()
-      pornesteDialoguri()
-      pornesteValidare()
-      // Nu face nimic pe paginile fără câmp de poză, deci poate sta aici.
-      pornestePoza()
-      pornestePaleta()
+      startNotifications()
+      startForms()
+      startNetwork()
+      startDialogs()
+      startValidation()
+      // Does nothing on pages without a photo field, so it can live here.
+      startPhoto()
+      startPalette()
     </script>
 
     <style>

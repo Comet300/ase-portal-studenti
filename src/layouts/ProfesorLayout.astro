@@ -1,15 +1,18 @@
 ---
 import BaseLayout from './BaseLayout.astro'
 import Clopotel from '../components/Clopotel.astro'
+import Erou from '../components/Erou.astro'
 import { initials, DEMO_MODE } from '../lib/auth'
-import { ECRANE } from '../lib/navigare'
+import { SCREENS } from '../lib/navigation'
 import { currentYearLabel } from '../lib/years'
 
 interface Props {
   title: string
-  /** Titlul din bara browserului, când cel din pagină e un salut, nu un nume de ecran. */
+  /** The title in the browser bar, when the one on the page is a greeting, not a screen name. */
   docTitle?: string
   lede?: string
+  /** The way back, when the screen has a parent worth naming. */
+  inapoi?: { href: string; text: string }
   active?: string
   /**
    * Screens that fill the viewport instead of growing with their content.
@@ -22,51 +25,61 @@ interface Props {
   fill?: boolean
 }
 
-const { title, docTitle, lede, active, fill = false } = Astro.props
+const { title, docTitle, lede, inapoi, active, fill = false } = Astro.props
 const u = Astro.locals.user!
-const sesiune = await currentYearLabel()
+const yearLabel = await currentYearLabel()
 
-/* Zece intrări la rând, fără nicio ierarhie, iar directorul primea încă trei
- * amestecate printre ele. Se împart în ce faci zilnic, ce ține de facultate și
- * ce se configurează o dată pe an.
+/* Ten entries in a row, with no hierarchy at all, and the head of department
+ * got three more mixed in among them. They are split into what you do daily,
+ * what belongs to the faculty and what is configured once a year.
  *
- * „Dashboard” era singurul cuvânt englezesc dintr-o navigație integral
- * românească. */
-const grupuri = [
+ * „Dashboard” was the only English word in a wholly Romanian navigation. */
+const navGroups = [
   {
     titlu: 'Coordonare',
-    linkuri: [
-      { href: '/profesor', cheie: 'dashboard', text: ECRANE['/profesor'], icon: 'grid' },
-      { href: '/profesor/studenti', cheie: 'studenti', text: ECRANE['/profesor/studenti'], icon: 'users' },
-      { href: '/profesor/teme', cheie: 'teme', text: ECRANE['/profesor/teme'], icon: 'book' },
-      { href: '/profesor/consultatii', cheie: 'consultatii', text: ECRANE['/profesor/consultatii'], icon: 'clock' },
-      { href: '/profesor/mesaje', cheie: 'mesaje', text: ECRANE['/profesor/mesaje'], icon: 'chat' },
+    links: [
+      { href: '/profesor', key: 'dashboard', text: SCREENS['/profesor'], icon: 'grid' },
+      { href: '/profesor/studenti', key: 'studenti', text: SCREENS['/profesor/studenti'], icon: 'users' },
+      { href: '/profesor/teme', key: 'teme', text: SCREENS['/profesor/teme'], icon: 'book' },
+      { href: '/profesor/consultatii', key: 'consultatii', text: SCREENS['/profesor/consultatii'], icon: 'clock' },
+      { href: '/profesor/mesaje', key: 'mesaje', text: SCREENS['/profesor/mesaje'], icon: 'chat' },
+      /* Five of its six sections were about the logged-in person, yet it sat
+         under „Facultate”, between the faculty's students and the department.
+         Wrong group is part of why the screen read as a grab bag. */
+      { href: '/profesor/activitatea-mea', key: 'activitate', text: SCREENS['/profesor/activitatea-mea'], icon: 'activity' },
     ],
   },
-  {
-    titlu: 'Facultate',
-    linkuri: [
-      { href: '/profesor/facultate', cheie: 'facultate', text: ECRANE['/profesor/facultate'], icon: 'list' },
-      { href: '/profesor/arhiva', cheie: 'arhiva', text: ECRANE['/profesor/arhiva'], icon: 'archive' },
-      ...(u.role === 'head'
-        ? [{ href: '/profesor/departament', cheie: 'departament', text: ECRANE['/profesor/departament'], icon: 'chart' }]
-        : []),
-    ],
-  },
+  /* The faculty as a whole — the cohort, the archive of past sessions, the
+     department's load — is the director's group. A coordinator has their own
+     students one group above and the public catalogue outside the shell; this
+     one is the register, and the middleware refuses it to anyone else. */
+  ...(u.role === 'head'
+    ? [
+        {
+          titlu: 'Facultate',
+          links: [
+            { href: '/profesor/facultate', key: 'facultate', text: SCREENS['/profesor/facultate'], icon: 'list' },
+            { href: '/arhiva', key: 'arhiva', text: SCREENS['/arhiva'], icon: 'archive' },
+            { href: '/profesor/departament', key: 'departament', text: SCREENS['/profesor/departament'], icon: 'chart' },
+            { href: '/profesor/conturi', key: 'conturi', text: SCREENS['/profesor/conturi'], icon: 'users' },
+          ],
+        },
+      ]
+    : []),
   ...(u.role === 'head'
     ? [
         {
           titlu: 'Administrare',
-          linkuri: [
-            { href: '/profesor/calendar', cheie: 'calendar', text: ECRANE['/profesor/calendar'], icon: 'calendar' },
-            { href: '/profesor/an-universitar', cheie: 'an', text: ECRANE['/profesor/an-universitar'], icon: 'refresh' },
+          links: [
+            { href: '/profesor/calendar', key: 'calendar', text: SCREENS['/profesor/calendar'], icon: 'calendar' },
+            { href: '/profesor/an-universitar', key: 'an', text: SCREENS['/profesor/an-universitar'], icon: 'refresh' },
           ],
         },
       ]
     : []),
 ]
 
-const cai: Record<string, string> = {
+const iconPaths: Record<string, string> = {
   grid: 'M3 3h7v7H3zM14 3h7v7h-7zM14 14h7v7h-7zM3 14h7v7H3z',
   users: 'M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75',
   chat: 'M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z',
@@ -75,6 +88,8 @@ const cai: Record<string, string> = {
   clock: 'M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20zM12 6v6l4 2',
   chart: 'M18 20V10M12 20V4M6 20v-6',
   archive: 'M21 8v13H3V8M1 3h22v5H1zM10 12h4',
+  activity: 'M22 12h-4l-3 9L9 3l-3 9H2',
+  person: 'M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8',
   calendar: 'M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z',
   refresh: 'M23 4v6h-6M1 20v-6h6M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15',
 }
@@ -86,27 +101,27 @@ const cai: Record<string, string> = {
       <a href="/profesor" class="brand">
         <span class="brand__mark" aria-hidden="true">A</span>
         <span class="brand__text">
-          <strong>SFS {sesiune}</strong>
+          <strong>SFS {yearLabel}</strong>
           <small>Facultatea de Marketing</small>
         </span>
       </a>
 
       <nav class="nav" aria-label="Navigație cadru didactic">
         {
-          grupuri.map((g) => (
+          navGroups.map((g) => (
             <div class="nav__grup">
               <p class="nav__grup-titlu">{g.titlu}</p>
-              {/* `title` pentru tabletă în portret: acolo bara se strânge la
-                  pictograme, deci numele trebuie să rămână spus undeva. */}
-              {g.linkuri.map((l) => (
+              {/* `title` for a tablet in portrait: there the sidebar collapses
+                  to icons, so the name has to stay said somewhere. */}
+              {g.links.map((l) => (
                 <a
                   href={l.href}
-                  class:list={['nav__link', { 'is-active': active === l.cheie }]}
-                  aria-current={active === l.cheie ? 'page' : undefined}
+                  class:list={['nav__link', { 'is-active': active === l.key }]}
+                  aria-current={active === l.key ? 'page' : undefined}
                   title={l.text}
                 >
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
-                    <path d={cai[l.icon]} />
+                    <path d={iconPaths[l.icon]} />
                   </svg>
                   <span class="nav__text">{l.text}</span>
                 </a>
@@ -117,8 +132,8 @@ const cai: Record<string, string> = {
       </nav>
 
       <div class="sidebar__end">
-        {/* Ctrl+K nu se descoperă singur. Butonul spune scurtătura, ca a doua
-            dată să nu mai fie nevoie de el. */}
+        {/* Ctrl+K is not discovered on its own. The button says the shortcut,
+            so that the second time it is no longer needed. */}
         <button class="nav__link nav__link--quiet paleta-buton" type="button" data-paleta>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
             <path d="M11 19a8 8 0 1 0 0-16 8 8 0 0 0 0 16zM21 21l-4.35-4.35" />
@@ -133,13 +148,37 @@ const cai: Record<string, string> = {
           >
           <span class="nav__text">Portalul studenților</span>
         </a>
+        {/* The account had no door in this shell at all: the profile form lived
+            at the bottom of the archive, and „Contul meu” in the student top bar
+            threw a teacher back into it. It is a `.nav__link`, so ⌘K indexes it
+            like any other screen. */}
+        <a
+          href="/contul-meu"
+          class:list={['nav__link', 'nav__link--quiet', { 'is-active': active === 'cont' }]}
+          aria-current={active === 'cont' ? 'page' : undefined}
+          title={SCREENS['/contul-meu']}
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"
+            ><path d={iconPaths.person}></path></svg
+          >
+          <span class="nav__text">{SCREENS['/contul-meu']}</span>
+        </a>
+        {/* The notice lived only in the student shell's footer, so a teacher
+            or the head of department could use the portal from end to end
+            without ever being shown what it keeps about them. */}
+        <a href="/confidentialitate" class="nav__link nav__link--quiet" title="Confidențialitate">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"
+            ><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg
+          >
+          <span class="nav__text">Confidențialitate</span>
+        </a>
         <div class="user">
           <span class="user__avatar">{initials(u.name)}</span>
           <span class="user__meta">
             <strong>{u.name}</strong>
             <small>{u.role === 'head' ? 'Director de departament' : 'Cadru didactic'}</small>
           </span>
-          <Clopotel baseMesaje="/profesor/mesaje" />
+          <Clopotel messagesBase="/profesor/mesaje" />
           <form method="POST" action="/api/deconectare">
             <button class="btn btn--ghost btn--sm" type="submit" title="Deconectare" aria-label="Deconectare">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
@@ -152,9 +191,9 @@ const cai: Record<string, string> = {
     </aside>
 
     <div class="content">
-      {/* `main` începe deasupra titlului: altfel legătura „Sari la conținut”
-          sărea peste chiar titlul paginii, iar h1-ul rămânea în afara reperului
-          principal. */}
+      {/* `main` starts above the title: otherwise the „Sari la conținut” link
+          skipped over the page title itself, and the h1 stayed outside the main
+          landmark. */}
       <main id="continut" tabindex="-1">
         <header class="content__header">
           <button class="hamburger" aria-label="Deschide meniul" aria-expanded="false" aria-controls="sidebar">
@@ -162,11 +201,9 @@ const cai: Record<string, string> = {
               ><path d="M3 6h18M3 12h18M3 18h18"></path></svg
             >
           </button>
-          <div>
-            <h1 class="page-title">{title}</h1>
-            {lede && <p class="page-lede">{lede}</p>}
-          </div>
-          <slot name="actiuni" />
+          <Erou titlu={title} lede={lede} inapoi={inapoi} supratitlu={`Sesiunea ${yearLabel}`}>
+            <slot name="actiuni" slot="actiuni" />
+          </Erou>
         </header>
 
         {
@@ -192,12 +229,12 @@ const cai: Record<string, string> = {
 </BaseLayout>
 
 <script>
-  import { porneste, panouri } from '../scripts/meniu'
+  import { start, panels } from '../scripts/menu'
 
-  // Bara rămâne pe ecran la lățime mare, deci nu primește `hidden` — doar clasa
-  // pe care o știu deja stilurile.
-  porneste({ buton: '.hamburger', panou: '#sidebar', clasa: 'is-open', ascunde: false })
-  panouri('details.clopotel')
+  // The sidebar stays on screen at large widths, so it does not get `hidden` —
+  // only the class the styles already know.
+  start({ button: '.hamburger', panel: '#sidebar', openClass: 'is-open', hide: false })
+  panels('details.clopotel')
 </script>
 
 <style>
@@ -207,7 +244,7 @@ const cai: Record<string, string> = {
     min-height: 100svh;
   }
 
-  /* Bara laterală este al doilea strat neutru: închisă, ca să nu concureze cu conținutul. */
+  /* The sidebar is the second neutral layer: dark, so it does not compete with the content. */
   .sidebar {
     display: flex;
     flex-direction: column;
@@ -345,8 +382,8 @@ const cai: Record<string, string> = {
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  /* Rolul se scrie pe un rând: cu avatarul, clopoțelul și deconectarea în
-     aceeași bară de 260px, „Cadru didactic” se rupea în două. */
+  /* The role is written on one line: with the avatar, the bell and the sign-out
+     button in the same 260px sidebar, „Cadru didactic” broke in two. */
   .user__meta small {
     font-size: var(--t-xs);
     color: var(--dark-ink-muted);
@@ -377,16 +414,17 @@ const cai: Record<string, string> = {
     height: 100dvh;
     overflow: hidden;
   }
-  /* `main` stă între `.content` și `.content__body`, iar el lipsea din lanț.
+  /* `main` sits between `.content` and `.content__body`, and it was missing from
+   * the chain.
    *
-   * Fiind `display: block` cu `min-height: auto`, creștea cu conținutul: la un fir
-   * de patruzeci de mesaje ajungea 3904px într-o fereastră de 900, iar
-   * `.content` — mărginit și cu `overflow: hidden` — tăia restul. Mesajele de
-   * dedesubt nu erau doar sub linie: nu se putea ajunge la ele nici derulând
-   * pagina, nici derulând firul, pentru că firul nu mai avea o înălțime de la
-   * care să deruleze.
+   * Being `display: block` with `min-height: auto`, it grew with its content: on
+   * a thread of forty messages it reached 3904px inside a window of 900, and
+   * `.content` — bounded and with `overflow: hidden` — cut off the rest. The
+   * messages underneath were not merely below the line: they could not be
+   * reached by scrolling the page, nor by scrolling the thread, because the
+   * thread no longer had a height to scroll from.
    *
-   * Nu se vedea, pentru că firele din datele de test au șase mesaje. */
+   * It did not show, because the threads in the test data have six messages. */
   .shell--fill main {
     display: flex;
     flex-direction: column;
@@ -402,18 +440,22 @@ const cai: Record<string, string> = {
     overflow: hidden;
   }
 
+  /* Antetul ecranului este acum banda închisă a portalului, iar butonul de
+     meniu stă peste ea: pe telefon este singura cale către bara laterală, deci
+     nu poate să dispară, dar nici să împingă titlul cu un rând mai jos. */
   .content__header {
-    display: flex;
-    align-items: flex-start;
-    gap: var(--s-4);
-    padding: var(--s-6) var(--s-6) var(--s-5);
-    background: var(--surface);
-    border-bottom: 1px solid var(--border);
+    position: relative;
+    flex: none;
   }
 
-  .content__header > div {
-    flex: 1;
-    min-width: 0;
+  .content__header .hamburger {
+    position: absolute;
+    top: var(--s-4);
+    left: var(--s-4);
+    z-index: 1;
+    border-color: rgba(255, 255, 255, 0.45);
+    background: rgba(0, 0, 0, 0.45);
+    color: #fff;
   }
 
   .content__body {
@@ -421,9 +463,8 @@ const cai: Record<string, string> = {
     flex: 1;
   }
 
-  /* Trei rânduri de avertisment mâncau o treime din ecranul unui telefon, de
-     fiecare dată, ca să spună acelaşi lucru. Prima propoziție rămâne; restul se
-     desface la cerere. */
+  /* Three lines of warning ate a third of a phone screen, every time, to say
+     the same thing. The first sentence stays; the rest unfolds on demand. */
   .demo-note {
     margin: var(--s-5) var(--s-6) 0;
     padding: var(--s-3) var(--s-4);
@@ -441,9 +482,10 @@ const cai: Record<string, string> = {
     padding-left: var(--s-4);
   }
 
-  /* Clopoțelul stă în josul unei bare închise: panoul se deschide în sus, altfel
-     ar cădea sub marginea ecranului, iar iconița ia cerneala suprafeței închise.
-     Stilurile lui sunt scoped în componentă, deci ajung la el prin `:global`. */
+  /* The bell sits at the bottom of a dark sidebar: the panel opens upwards,
+     otherwise it would fall below the edge of the screen, and the icon takes the
+     ink of the dark surface. Its styles are scoped inside the component, so they
+     reach it through `:global`. */
   .user :global(.clopotel summary) {
     color: var(--dark-ink-quiet);
   }
@@ -511,13 +553,15 @@ const cai: Record<string, string> = {
     height: 18px;
   }
 
-  /* Sub 900px firul nu mai umple ecranul, deci carcasa nu are voie să îl taie.
+  /* Below 900px the thread no longer fills the screen, so the shell is not
+   * allowed to cut it.
    *
-   * `shell--fill` mărginește totul la 100dvh cu `overflow: hidden`, iar regula de
-   * telefon a conversației îi dă `height: auto` cu `min-height: 70vh`: cele două
-   * se băteau, deci un fir de patruzeci de mesaje avea zona de scris sub linia de
-   * tăiere și nimic nu derula până la ea — nici pagina, nici firul. Pe ecran mic
-   * derulează pagina, cum face oriunde altundeva în portal. */
+   * `shell--fill` bounds everything to 100dvh with `overflow: hidden`, while the
+   * conversation's phone rule gives it `height: auto` with `min-height: 70vh`:
+   * the two fought each other, so a thread of forty messages had its composer
+   * below the cut line and nothing scrolled down to it — neither the page nor
+   * the thread. On a small screen the page scrolls, as it does everywhere else
+   * in the portal. */
   @media (max-width: 900px) {
     .shell--fill,
     .shell--fill .content,
@@ -529,13 +573,13 @@ const cai: Record<string, string> = {
     }
   }
 
-  /* Tabletă în portret: bara se strânge, nu dispare.
+  /* Tablet in portrait: the sidebar shrinks, it does not disappear.
    *
-   * Sub 900px navigația devenea un sertar în spatele unui hamburger — și un iPad
-   * în portret are 810px, adică lățime destul pentru unsprezece pictograme și
-   * conținut. Cine ținea tableta vertical pierdea toată navigația și un clic în
-   * plus pentru fiecare pas, degeaba. Sub 640px, unde chiar nu încape, rămâne
-   * sertarul. */
+   * Below 900px the navigation became a drawer behind a hamburger — and an iPad
+   * in portrait is 810px, that is width enough for eleven icons and the content.
+   * Whoever held the tablet upright lost the whole navigation and paid one extra
+   * click for every step, for nothing. Below 640px, where it really does not
+   * fit, the drawer stays. */
   @media (min-width: 641px) and (max-width: 900px) {
     .shell {
       grid-template-columns: 68px minmax(0, 1fr);
@@ -555,7 +599,7 @@ const cai: Record<string, string> = {
       justify-content: center;
       padding: var(--s-3);
     }
-    /* Grupurile rămân distinse fără titluri: o linie, nu un cuvânt. */
+    /* The groups stay distinct without titles: a line, not a word. */
     .nav__grup + .nav__grup {
       padding-top: var(--s-3);
       border-top: 1px solid var(--dark-line);
@@ -589,26 +633,18 @@ const cai: Record<string, string> = {
     .hamburger {
       display: inline-flex;
     }
-    .content__header,
     .content__body {
       padding-inline: var(--s-4);
     }
-    /* At phone width a serif display title and an action button cannot share a
-       row: the title wraps to three lines and collides with the button. */
-    .content__header {
-      flex-wrap: wrap;
-      gap: var(--s-3);
+    /* Butonul de meniu stă peste bandă, iar pe telefon banda nu mai are
+       fotografie: fără spațiul de mai jos ar cădea peste supratitlu. Se rezervă
+       exact înălțimea lui. */
+    .content__header .hamburger {
+      top: var(--s-3);
+      left: var(--s-3);
     }
-    .content__header > div {
-      flex: 1 1 100%;
-      order: 2;
-    }
-    .content__header :global(.row) {
-      order: 3;
-      flex: 1 1 100%;
-    }
-    .content__header .page-title {
-      font-size: var(--t-xl);
+    .content__header :global(.erou__interior) {
+      padding-top: calc(var(--s-3) + var(--tap) + var(--s-2));
     }
     .demo-note {
       margin-inline: var(--s-4);
