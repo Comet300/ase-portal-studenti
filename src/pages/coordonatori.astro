@@ -1,9 +1,19 @@
 ---
 import Avatar from '../components/Avatar.astro'
 import StudentLayout from '../layouts/StudentLayout.astro'
-import { pairings, publicTopics, supervisors } from '../lib/repo'
-import { officialName } from '../lib/text'
-import { LANGUAGE_LABELS, LEVEL_LABELS, groupLabel, languageLabel } from '../lib/years'
+import { query, queryOne } from '../lib/db'
+import {
+  formatDate,
+  formatTime,
+  milestoneState,
+  pairings,
+  publicTopics,
+  studentMilestones,
+  studentRequests,
+  supervisors,
+} from '../lib/repo'
+import { numar, officialName } from '../lib/text'
+import { LANGUAGE_LABELS, LEVEL_LABELS, groupLabel, languageLabel, levelLabel } from '../lib/years'
 
 /**
  * The catalogue, from both ends.
@@ -19,11 +29,39 @@ import { LANGUAGE_LABELS, LEVEL_LABELS, groupLabel, languageLabel } from '../lib
  */
 
 const u = Astro.locals.user
-const view = Astro.url.searchParams.get('vedere') === 'teme' ? 'teme' : 'coordonatori'
+
+/* Whether the reader is still choosing.
+ *
+ * A student with an approved request is not browsing a catalogue: they have a
+ * coordinator, and this screen was showing them „Depune cerere de coordonare”
+ * on nine cards they cannot use. The same address answers a different question
+ * for them — „unde sunt cu lucrarea, și cu cine” — so it opens on that, and the
+ * catalogue stays one click away, readable, without the buttons that would be
+ * refused.
+ *
+ * The seat arithmetic is also personal: `supervisors` and `publicTopics` can
+ * compute availability for one reader's level and programme, which is the only
+ * honest answer to „mai are locuri” — a coordinator can be full for Marketing
+ * online and open for Cercetări de marketing in the same instant. */
+const isStudent = u?.role === 'student'
+const viewer = isStudent && u ? { programme_id: u.programme_id, program: u.program } : null
+
+const myRequests = isStudent && u ? await studentRequests(u.id) : []
+const myCoordination = myRequests.find((r) => r.status === 'approved') ?? null
+
+const askedView = Astro.url.searchParams.get('vedere')
+const view =
+  askedView === 'teme'
+    ? 'teme'
+    : askedView === 'coordonatori'
+      ? 'coordonatori'
+      : myCoordination
+        ? 'coordonare'
+        : 'coordonatori'
 
 const [teachers, allTopics, allPairings] = await Promise.all([
-  supervisors(),
-  publicTopics(),
+  supervisors({ viewer }),
+  publicTopics({ viewer }),
   pairings(),
 ])
 
@@ -45,29 +83,88 @@ for (const p of allPairings) {
 
 // A student arrives already belonging to a group; the catalogue opens on their
 // own level and language instead of on everything.
-const isStudent = u?.role === 'student'
 const defaultLevel = isStudent ? (u?.program ?? '') : ''
 const defaultLanguage = isStudent ? (u?.study_language ?? '') : ''
 
 const languages = [...new Set(allTopics.map((t) => t.language))]
 const freeTeachers = teachers.filter((t) => !t.is_full).length
+
+/* What „Coordonarea mea” needs, and only when it is going to be shown. */
+const coordinator = myCoordination
+  ? (teachers.find((t) => t.id === myCoordination.teacher_id) ?? null)
+  : null
+
+const myMilestones = myCoordination && u ? await studentMilestones(u.id) : []
+const nextMilestone =
+  myMilestones.find(
+    (m) => m.status !== 'done' && milestoneState(m.status, m.due_on) === 'overdue',
+  ) ??
+  myMilestones.find((m) => m.status !== 'done') ??
+  null
+const doneMilestones = myMilestones.filter((m) => m.status === 'done').length
+
+/* The next hour with this coordinator that the student actually has a place at,
+ * and whether the thesis has been handed in. Both are one line on the card and
+ * neither is worth a repo function: they are asked here and nowhere else. */
+const nextConsultation = myCoordination && u
+  ? await queryOne<{ starts_at: string; ends_at: string; mode: string; location: string | null }>(
+      `SELECT s.starts_at, s.ends_at, s.mode, s.location
+         FROM bookings b
+         JOIN consultation_slots s ON s.id = b.slot_id
+        WHERE b.student_id = $1 AND b.status = 'booked'
+          AND s.is_cancelled = false AND s.starts_at > now()
+        ORDER BY s.starts_at
+        LIMIT 1`,
+      [u.id],
+    )
+  : null
+
+const thesisFile = myCoordination
+  ? await queryOne<{ id: string; original_name: string; created_at: string }>(
+      `SELECT id, original_name, created_at::text
+         FROM files
+        WHERE request_id = $1 AND kind = 'thesis'
+        ORDER BY created_at DESC
+        LIMIT 1`,
+      [myCoordination.id],
+    )
+  : null
+
+const teammates = myCoordination
+  ? await query<{ student_name: string; title_ro: string }>(
+      `SELECT s.name AS student_name, r.title_ro
+         FROM requests r JOIN users s ON s.id = r.student_id
+        WHERE r.teacher_id = $1 AND r.status = 'approved' AND r.student_id <> $2
+          AND r.academic_year_id = (SELECT id FROM academic_years WHERE is_current)
+        ORDER BY s.name`,
+      [myCoordination.teacher_id, myCoordination.student_id],
+    )
+  : []
 ---
 
 <StudentLayout
-  title="Coordonatori & Teme"
+  title={view === 'coordonare' ? 'Coordonarea mea' : 'Coordonatori & Teme'}
+  docTitle="Coordonatori & Teme"
   description="Catalogul cadrelor didactice și temele propuse pentru sesiunea în curs"
   active="coordonatori"
+  lede={
+    view === 'coordonare'
+      ? 'Cine îți coordonează lucrarea, ce ai convenit cu el și ce urmează. Catalogul rămâne alături, de citit.'
+      : myCoordination
+        ? 'Cine ce coordonează în sesiunea asta. Ai deja o coordonare aprobată, deci de aici doar citești.'
+        : 'Alege un cadru didactic și o direcție de cercetare, apoi depune cererea de coordonare. Poți porni de la persoană sau de la temă — și poți propune o temă proprie.'
+  }
 >
   <div class="container stack stack--loose">
-    <header class="stack stack--tight">
-      <h1 class="page-title">Coordonatori & Teme</h1>
-      <p class="page-lede">
-        Alege un cadru didactic și o direcție de cercetare, apoi depune cererea de coordonare. Poți
-        porni de la persoană sau de la temă — și poți propune o temă proprie.
-      </p>
-    </header>
 
     <nav class="vederi" aria-label="Mod de răsfoire">
+      {/* Prima filă există doar pentru cine are deja coordonator: pentru
+          ceilalți ar fi o filă goală care spune „nu ai”. */}
+      {myCoordination && (
+        <a href="/coordonatori?vedere=coordonare" class:list={['vedere', { 'is-activ': view === 'coordonare' }]}>
+          Coordonarea mea
+        </a>
+      )}
       <a href="/coordonatori?vedere=coordonatori" class:list={['vedere', { 'is-activ': view === 'coordonatori' }]}>
         După coordonator
         <span class="vedere__contor numeric">{teachers.length}</span>
@@ -78,6 +175,165 @@ const freeTeachers = teachers.filter((t) => !t.is_full).length
       </a>
     </nav>
 
+    {/* --------------------------------------------------------- my supervision */}
+    {
+      view === 'coordonare' && myCoordination && (
+        <div class="coordonare">
+          <section class="panel coordonare__cine">
+            <div class="panel__body stack">
+              <div class="row" style="gap:var(--s-4);align-items:flex-start">
+                <Avatar
+                  name={myCoordination.teacher_name}
+                  src={coordinator?.avatar_path}
+                  size="lg"
+                  href={`/profil/${myCoordination.teacher_id}?de_la=${encodeURIComponent('/coordonatori?vedere=coordonare')}`}
+                />
+                <div class="stack stack--tight" style="gap:2px;flex:1;min-width:0">
+                  <span class="muted text-xs">Coordonatorul lucrării tale</span>
+                  <strong class="coordonare__nume">{myCoordination.teacher_name}</strong>
+                  <span class="muted text-sm">
+                    {coordinator?.department ?? 'Facultatea de Marketing'}
+                  </span>
+                  {coordinator?.office && (
+                    <span class="muted text-sm">{coordinator.office}</span>
+                  )}
+                </div>
+              </div>
+
+              <div class="row row--wrap" style="gap:var(--s-2)">
+                <a class="btn btn--primary btn--sm" href="/mesaje">Scrie-i coordonatorului</a>
+                <a class="btn btn--secondary btn--sm" href="/consultatii">Rezervă o consultație</a>
+                <a class="btn btn--ghost btn--sm" href={`/profil/${myCoordination.teacher_id}`}>
+                  Profilul lui
+                </a>
+              </div>
+            </div>
+          </section>
+
+          <section class="panel coordonare__lucrare">
+            <div class="panel__header">
+              <h2 class="section-title">Lucrarea ta</h2>
+              <span class="badge badge--aprobata">Coordonare aprobată</span>
+            </div>
+            <div class="panel__body stack">
+              <div class="stack stack--tight" style="gap:2px">
+                <strong class="coordonare__titlu">{myCoordination.title_ro}</strong>
+                {myCoordination.title_en && (
+                  <span class="muted text-sm">{myCoordination.title_en}</span>
+                )}
+              </div>
+
+              <dl class="fapte">
+                <div>
+                  <dt>Cerere</dt>
+                  <dd class="numeric">{myCoordination.number}</dd>
+                </div>
+                <div>
+                  <dt>Aprobată</dt>
+                  <dd>{myCoordination.decided_at ? formatDate(myCoordination.decided_at) : '—'}</dd>
+                </div>
+                <div>
+                  <dt>Nivel</dt>
+                  <dd>{levelLabel(u?.program ?? 'bachelor')}</dd>
+                </div>
+                <div>
+                  <dt>Program</dt>
+                  <dd>{myCoordination.specialization ?? u?.specialization ?? '—'}</dd>
+                </div>
+                <div>
+                  <dt>Termene</dt>
+                  <dd>
+                    {myMilestones.length > 0
+                      ? `${doneMilestones} din ${myMilestones.length} finalizate`
+                      : 'nu sunt stabilite'}
+                  </dd>
+                </div>
+              </dl>
+
+              <div class="row row--wrap" style="gap:var(--s-2)">
+                {/* Același formular ca pe „Lucrarea mea”: o singură cerere de
+                    modificare, cu aceleași reguli, deschisă din două locuri. */}
+                <a class="btn btn--secondary btn--sm" href="/lucrarea-mea?modificare=1">
+                  Cere o modificare
+                </a>
+                <a class="btn btn--ghost btn--sm" href="/lucrarea-mea">Deschide lucrarea</a>
+              </div>
+            </div>
+          </section>
+
+          <section class="panel coordonare__stare">
+            <div class="panel__header">
+              <h2 class="section-title">Ce urmează</h2>
+            </div>
+            <ul class="urmeaza">
+              <li>
+                <span class="urmeaza__eticheta">Următorul termen</span>
+                {nextMilestone ? (
+                  <span
+                    class:list={[
+                      'urmeaza__valoare',
+                      { 'is-depasit': milestoneState(nextMilestone.status, nextMilestone.due_on) === 'overdue' },
+                    ]}
+                  >
+                    {nextMilestone.title}
+                    {nextMilestone.due_on ? ` · ${formatDate(nextMilestone.due_on)}` : ''}
+                  </span>
+                ) : (
+                  <span class="urmeaza__valoare muted">
+                    {myMilestones.length > 0 ? 'toate termenele sunt finalizate' : '—'}
+                  </span>
+                )}
+              </li>
+
+              <li>
+                <span class="urmeaza__eticheta">Următoarea consultație</span>
+                {nextConsultation ? (
+                  <span class="urmeaza__valoare">
+                    {formatDate(nextConsultation.starts_at)} ·{' '}
+                    {formatTime(nextConsultation.starts_at)}–{formatTime(nextConsultation.ends_at)}
+                    {nextConsultation.mode === 'online'
+                      ? ' · online'
+                      : nextConsultation.location
+                        ? ` · ${nextConsultation.location}`
+                        : ''}
+                  </span>
+                ) : (
+                  <span class="urmeaza__valoare muted">nicio rezervare</span>
+                )}
+              </li>
+
+              <li>
+                <span class="urmeaza__eticheta">Forma finală</span>
+                {thesisFile ? (
+                  <span class="urmeaza__valoare">
+                    predată {formatDate(thesisFile.created_at)} · {thesisFile.original_name}
+                  </span>
+                ) : (
+                  <span class="urmeaza__valoare muted">neîncărcată</span>
+                )}
+              </li>
+
+              <li>
+                <span class="urmeaza__eticheta">Alți studenți coordonați</span>
+                <span class="urmeaza__valoare">
+                  {teammates.length > 0
+                    ? numar(teammates.length, 'coleg', 'colegi')
+                    : 'ești singurul, în sesiunea asta'}
+                </span>
+              </li>
+            </ul>
+
+            <div class="panel__footer">
+              <a class="btn btn--primary btn--sm" href="/lucrarea-mea#lucrare">
+                {thesisFile ? 'Înlocuiește lucrarea' : 'Încarcă lucrarea'}
+              </a>
+            </div>
+          </section>
+        </div>
+      )
+    }
+
+    {view !== 'coordonare' && (
     <div class="filtre panel">
       <div class="panel__body filters__row">
         <div class="field filters__search">
@@ -133,7 +389,9 @@ const freeTeachers = teachers.filter((t) => !t.is_full).length
         </button>
       </div>
     </div>
+    )}
 
+    {view !== 'coordonare' && (
     <p class="muted" id="rezultat" style="font-size:var(--t-sm)" aria-live="polite">
       {
         view === 'teme'
@@ -141,6 +399,7 @@ const freeTeachers = teachers.filter((t) => !t.is_full).length
           : `${teachers.length} cadre didactice · ${freeTeachers} cu locuri libere`
       }
     </p>
+    )}
 
     {/* --------------------------------------------------- by coordinator */}
     {
@@ -155,7 +414,7 @@ const freeTeachers = teachers.filter((t) => !t.is_full).length
                 class:list={['coord', { 'is-full': p.is_full }]}
                 data-nume={`${p.name} ${p.interests ?? ''}`.toLowerCase()}
                 data-departament={p.department ?? ''}
-                data-teme={theirTopics.map((t) => `${t.title} ${t.methods ?? ''}`).join(' ').toLowerCase()}
+                data-teme={theirTopics.map((t) => `${t.title} ${t.domain ?? ''} ${t.methodology ?? ''}`).join(' ').toLowerCase()}
                 data-niveluri={[...new Set(theirTopics.map((t) => t.level))].join(' ')}
                 data-limbi={[...new Set(theirTopics.map((t) => t.language))].join(' ')}
                 data-liber={p.is_full ? 'nu' : 'da'}
@@ -180,13 +439,18 @@ const freeTeachers = teachers.filter((t) => !t.is_full).length
                     </span>
                   )}
 
-                  {u?.role === 'student' &&
+                  {/* «Depune cerere de coordonare» dispare de îndată ce ai una
+                      aprobată: portalul acceptă o singură coordonare pe sesiune,
+                      iar butonul ar duce la un formular care refuză. Catalogul
+                      rămâne de citit — cine coordonează ce este exact
+                      informația pentru care se revine aici. */}
+                  {u?.role === 'student' && !myCoordination &&
                     (p.is_full ? (
                       <span class="btn btn--secondary coord__action is-disabled" aria-disabled="true">
                         Fără locuri disponibile
                       </span>
                     ) : (
-                      <a class="btn btn--primary coord__action" href={`/cererile-mele?coordonator=${p.id}`}>
+                      <a class="btn btn--primary coord__action" href={`/lucrarea-mea?coordonator=${p.id}`}>
                         Depune cerere de coordonare
                       </a>
                     ))}
@@ -205,18 +469,19 @@ const freeTeachers = teachers.filter((t) => !t.is_full).length
                             {t.language !== 'ro' ? ` · ${languageLabel(t.language)}` : ''}
                           </span>
                         </div>
-                        {t.methods && (
-                          <p class="muted text-xs">Metode: {t.methods}</p>
+                        {t.programme_name && (
+                          <p class="muted text-xs">{t.programme_name}</p>
                         )}
-                        {t.prerequisites && t.prerequisites !== '—' && (
-                          <p class="muted text-xs">
-                            Prerechizite: {t.prerequisites}
-                          </p>
+                        {t.domain && t.domain !== '—' && (
+                          <p class="muted text-xs">Domeniu: {t.domain}</p>
                         )}
-                        {u?.role === 'student' && !p.is_full && (
+                        {t.methodology && t.methodology !== '—' && (
+                          <p class="muted text-xs">Metodologie: {t.methodology}</p>
+                        )}
+                        {u?.role === 'student' && !myCoordination && !p.is_full && (
                           <a
                             class="btn btn--ghost btn--sm tema__alege"
-                            href={`/cererile-mele?coordonator=${p.id}&tema=${t.id}`}
+                            href={`/lucrarea-mea?coordonator=${p.id}&tema=${t.id}`}
                           >
                             Alege tema
                           </a>
@@ -265,8 +530,8 @@ const freeTeachers = teachers.filter((t) => !t.is_full).length
           {allTopics.map((t) => (
             <li
               class:list={['card-tema', { 'is-full': t.teacher_is_full }]}
-              data-nume={`${t.teacher_name} ${t.title} ${t.methods ?? ''} ${t.description ?? ''}`.toLowerCase()}
-              data-teme={`${t.title} ${t.methods ?? ''}`.toLowerCase()}
+              data-nume={`${t.teacher_name} ${t.title} ${t.domain ?? ''} ${t.description ?? ''}`.toLowerCase()}
+              data-teme={`${t.title} ${t.domain ?? ''} ${t.methodology ?? ''}`.toLowerCase()}
               data-niveluri={t.level}
               data-limbi={t.language}
               data-liber={t.teacher_is_full ? 'nu' : 'da'}
@@ -281,22 +546,31 @@ const freeTeachers = teachers.filter((t) => !t.is_full).length
 
               {t.description && <p class="card-tema__descriere">{t.description}</p>}
 
+              {/* «Locuri pe temă» stătea aici și nu însemna nimic: locurile
+                  sunt ale coordonatorului, pe nivel și pe program, iar poarta
+                  de la depunere doar pe acelea le-a verificat vreodată. */}
               <dl class="card-tema__detalii">
-                {t.methods && (
+                {t.programme_name && (
                   <div>
-                    <dt>Metode</dt>
-                    <dd>{t.methods}</dd>
+                    <dt>Program de studii</dt>
+                    <dd>{t.programme_name}</dd>
                   </div>
                 )}
-                {t.prerequisites && t.prerequisites !== '—' && (
+                {t.domain && t.domain !== '—' && (
                   <div>
-                    <dt>Prerechizite</dt>
-                    <dd>{t.prerequisites}</dd>
+                    <dt>Domeniu</dt>
+                    <dd>{t.domain}</dd>
+                  </div>
+                )}
+                {t.methodology && t.methodology !== '—' && (
+                  <div>
+                    <dt>Metodologie</dt>
+                    <dd>{t.methodology}</dd>
                   </div>
                 )}
                 <div>
-                  <dt>Locuri pe temă</dt>
-                  <dd class="numeric">{t.taken} / {t.seats}</dd>
+                  <dt>Studenți pe temă</dt>
+                  <dd class="numeric">{t.taken}</dd>
                 </div>
               </dl>
 
@@ -312,10 +586,10 @@ const freeTeachers = teachers.filter((t) => !t.is_full).length
                 {t.teacher_is_full ? (
                   <span class="badge badge--neutru">Coordonator fără locuri</span>
                 ) : (
-                  u?.role === 'student' && (
+                  u?.role === 'student' && !myCoordination && (
                     <a
                       class="btn btn--primary btn--sm"
-                      href={`/cererile-mele?coordonator=${t.teacher_id}&tema=${t.id}`}
+                      href={`/lucrarea-mea?coordonator=${t.teacher_id}&tema=${t.id}`}
                     >
                       Alege tema
                     </a>
@@ -385,20 +659,28 @@ const freeTeachers = teachers.filter((t) => !t.is_full).length
 </StudentLayout>
 
 <script>
-  const search = document.getElementById('cauta') as HTMLInputElement
-  const level = document.getElementById('nivel') as HTMLSelectElement
-  const language = document.getElementById('limba') as HTMLSelectElement
+  /* Filtrarea catalogului.
+   *
+   * `?vedere=coordonare` nu are catalog: un student cu coordonare aprobată
+   * deschide ecranul pe starea lucrării lui, iar câmpurile de mai jos nu există
+   * în pagină. Fără ieșirea asta, prima linie de citire arunca — și cu ea
+   * cădea tot scriptul, inclusiv dialogul echipei. */
+  const search = document.getElementById('cauta') as HTMLInputElement | null
+  const level = document.getElementById('nivel') as HTMLSelectElement | null
+  const language = document.getElementById('limba') as HTMLSelectElement | null
   const dep = document.getElementById('departament') as HTMLSelectElement | null
-  const onlyFree = document.getElementById('doar-libere') as HTMLInputElement
-  const resultLabel = document.getElementById('rezultat')!
-  const emptyLabel = document.getElementById('fara-rezultate')!
+  const onlyFree = document.getElementById('doar-libere') as HTMLInputElement | null
+  const resultLabel = document.getElementById('rezultat')
+  const emptyLabel = document.getElementById('fara-rezultate')
   const cards = [...document.querySelectorAll<HTMLLIElement>('[data-nume]')]
   const isTopicView = new URLSearchParams(location.search).get('vedere') === 'teme'
+  const areFiltre = Boolean(search && level && language && onlyFree && resultLabel && emptyLabel)
 
   function filter() {
-    const q = search.value.trim().toLowerCase()
-    const n = level.value
-    const l = language.value
+    if (!areFiltre) return
+    const q = search!.value.trim().toLowerCase()
+    const n = level!.value
+    const l = language!.value
     const d = dep?.value ?? ''
     let visibleCount = 0
 
@@ -408,7 +690,7 @@ const freeTeachers = teachers.filter((t) => !t.is_full).length
       const matchesDept = !d || c.dataset.departament === d
       const matchesLevel = !n || (c.dataset.niveluri ?? '').includes(n)
       const matchesLanguage = !l || (c.dataset.limbi ?? '').includes(l)
-      const matchesFree = !onlyFree.checked || c.dataset.liber === 'da'
+      const matchesFree = !onlyFree!.checked || c.dataset.liber === 'da'
       const visible = matchesText && matchesDept && matchesLevel && matchesLanguage && matchesFree
 
       c.hidden = !visible
@@ -423,14 +705,14 @@ const freeTeachers = teachers.filter((t) => !t.is_full).length
       })
     }
 
-    resultLabel.textContent = isTopicView
+    resultLabel!.textContent = isTopicView
       ? visibleCount === 1
         ? '1 temă propusă'
         : `${visibleCount} teme propuse`
       : visibleCount === 1
         ? '1 cadru didactic'
         : `${visibleCount} cadre didactice`
-    emptyLabel.hidden = visibleCount > 0
+    emptyLabel!.hidden = visibleCount > 0
   }
 
   /* --- the filters live in the address --------------------------------------
@@ -454,12 +736,13 @@ const freeTeachers = teachers.filter((t) => !t.is_full).length
   let timer: ReturnType<typeof setTimeout> | undefined
 
   function writeUrl() {
+    if (!areFiltre) return
     const p = new URLSearchParams(location.search)
     for (const [key, el] of FILTER_FIELDS) {
       if (el?.value) p.set(key, el.value)
       else p.delete(key)
     }
-    if (onlyFree.checked) p.set('libere', '1')
+    if (onlyFree?.checked) p.set('libere', '1')
     else p.delete('libere')
 
     const q = p.toString()
@@ -467,11 +750,12 @@ const freeTeachers = teachers.filter((t) => !t.is_full).length
   }
 
   function readUrl() {
+    if (!areFiltre) return
     const p = new URLSearchParams(location.search)
     for (const [key, el] of FILTER_FIELDS) {
       if (el && p.has(key)) el.value = p.get(key) ?? ''
     }
-    onlyFree.checked = p.get('libere') === '1'
+    if (onlyFree) onlyFree.checked = p.get('libere') === '1'
   }
 
   for (const el of [search, level, language, dep, onlyFree]) {
@@ -483,7 +767,7 @@ const freeTeachers = teachers.filter((t) => !t.is_full).length
   }
 
   // An address pasted into the bar has to show exactly the list it describes.
-  readUrl()
+  if (areFiltre) readUrl()
 
   window.addEventListener('popstate', () => {
     readUrl()
@@ -497,25 +781,27 @@ const freeTeachers = teachers.filter((t) => !t.is_full).length
   const resetFromEmpty = document.getElementById('goleste-filtre-gol')
 
   function showReset() {
+    if (!areFiltre) return
     const active =
-      Boolean(search.value) ||
-      Boolean(level.value) ||
-      Boolean(language.value) ||
+      Boolean(search!.value) ||
+      Boolean(level!.value) ||
+      Boolean(language!.value) ||
       Boolean(dep?.value) ||
-      onlyFree.checked
+      onlyFree!.checked
     if (reset) reset.hidden = !active
   }
 
   const goleste = () => {
-    search.value = ''
-    level.value = ''
-    language.value = ''
+    if (!areFiltre) return
+    search!.value = ''
+    level!.value = ''
+    language!.value = ''
     if (dep) dep.value = ''
-    onlyFree.checked = false
+    onlyFree!.checked = false
     filter()
     writeUrl()
     showReset()
-    search.focus()
+    search!.focus()
   }
 
   reset?.addEventListener('click', goleste)
@@ -574,6 +860,101 @@ const freeTeachers = teachers.filter((t) => !t.is_full).length
 </script>
 
 <style>
+  /* --- coordonarea mea ---------------------------------------------------- */
+
+  /* Trei panouri: cine, ce, ce urmează. Nu un card cu titlu mare și cifre —
+     ecranul răspunde la „unde sunt cu lucrarea”, iar răspunsul este format din
+     propoziții, nu din indicatori. */
+  .coordonare {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr);
+    gap: var(--s-5);
+    align-items: start;
+  }
+  .coordonare__cine {
+    grid-column: 1;
+  }
+  .coordonare__lucrare {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+  }
+  .coordonare__stare {
+    grid-column: 1;
+  }
+
+  .coordonare__nume {
+    font-family: var(--serif);
+    font-size: var(--t-lg);
+    line-height: 1.2;
+  }
+
+  .coordonare__titlu {
+    font-family: var(--serif);
+    font-size: var(--t-xl);
+    line-height: 1.25;
+    text-wrap: pretty;
+  }
+
+  /* Faptele cererii, ca listă de definiții: sunt perechi nume–valoare, iar un
+     tabel pentru șase rânduri ar fi mobilier în plus. */
+  .fapte {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: var(--s-3) var(--s-4);
+    margin: 0;
+  }
+  .fapte dt {
+    font-size: var(--t-xs);
+    color: var(--ink-muted);
+  }
+  .fapte dd {
+    margin: 0;
+    font-size: var(--t-sm);
+    font-weight: 600;
+  }
+
+  .urmeaza {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+  .urmeaza li {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--s-2) var(--s-4);
+    justify-content: space-between;
+    align-items: baseline;
+    padding: var(--s-3) var(--s-5);
+    border-bottom: 1px solid var(--border);
+  }
+  .urmeaza li:last-child {
+    border-bottom: 0;
+  }
+  .urmeaza__eticheta {
+    font-size: var(--t-sm);
+    color: var(--ink-muted);
+  }
+  .urmeaza__valoare {
+    font-size: var(--t-sm);
+    font-weight: 600;
+    text-align: right;
+  }
+  .urmeaza__valoare.is-depasit {
+    color: var(--danger);
+  }
+
+  @media (max-width: 900px) {
+    .coordonare {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .coordonare__cine,
+    .coordonare__lucrare,
+    .coordonare__stare {
+      grid-column: 1;
+      grid-row: auto;
+    }
+  }
+
   .vederi {
     display: flex;
     gap: var(--s-1);

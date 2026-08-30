@@ -14,6 +14,7 @@ import { execute } from './db'
 export type AccessAction =
   | 'export_coordonari'
   | 'export_cereri'
+  | 'export_studenti'
   | 'descarca_fisier'
   | 'descarca_arhiva'
   | 'descarca_document'
@@ -36,6 +37,10 @@ export type AccessAction =
   | 'schimba_norma_locuri'
   | 'anuleaza_consultatie'
   | 'schimba_titlu'
+  /* The thesis itself: who handed it in, and who read it afterwards. The file
+     is the one thing in the portal that a person spent a year on. */
+  | 'incarca_lucrare'
+  | 'descarca_lucrare'
 
 export async function recordAccess(e: {
   userId: string

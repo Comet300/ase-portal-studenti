@@ -13,7 +13,11 @@
 export const SCREENS: Record<string, string> = {
   '/': 'Acasă',
   '/coordonatori': 'Coordonatori & Teme',
-  '/cererile-mele': 'Cererile mele',
+  '/lucrarea-mea': 'Lucrarea mea',
+  /* The address the screen had while it was only about the request. It stays in
+   * the table because it is written in emails already delivered: without a name
+   * here, a „?de_la=” coming back from one of them renders a bare „Înapoi”. */
+  '/cererile-mele': 'Lucrarea mea',
   '/mesaje': 'Mesaje',
   '/consultatii': 'Consultații',
   '/arhiva': 'Arhivă',

@@ -3,6 +3,7 @@ import Avatar from '../../components/Avatar.astro'
 import AlegeData from '../../components/AlegeData.astro'
 import ProfesorLayout from '../../layouts/ProfesorLayout.astro'
 import Taburi from '../../components/Taburi.astro'
+import { query } from '../../lib/db'
 import { INVITATION_WINDOW_DAYS, teacherInvitations } from '../../lib/lifecycle'
 import {
   BUCKET_LABELS,
@@ -55,6 +56,24 @@ const [allRequests, studenti, teme, seats, invitatii, studentDirectoryRows, year
     allYears(),
     teacherTitleChanges(u.id),
   ])
+
+/* The handed-in paper of each supervised student, newest version per thesis.
+ *
+ * One statement for the whole roster rather than one per row, and `DISTINCT ON`
+ * because what is wanted is the current version: a student who uploaded three
+ * times has three rows, and the coordinator opens the last one. */
+const lucrari = new Map(
+  (
+    await query<{ request_id: string; id: string; created_at: string }>(
+      `SELECT DISTINCT ON (f.request_id) f.request_id, f.id, f.created_at::text
+         FROM files f
+         JOIN requests r ON r.id = f.request_id
+        WHERE r.teacher_id = $1 AND f.kind = 'thesis'
+        ORDER BY f.request_id, f.created_at DESC`,
+      [u.id],
+    )
+  ).map((f) => [f.request_id, f]),
+)
 
 /* A change to an agreed thesis is a decision waiting on the coordinator, so it
  * carries a counter in the bar exactly as the request queue does. The thesis
@@ -353,12 +372,20 @@ function deadline(expiresAt: string | null | undefined) {
               list on paper — for the minutes, which still circulate printed — was
               copying it out of the table. */}
           {studenti.length > 0 && (
-            <a
-              class="btn btn--secondary btn--sm"
-              href="/profesor/export-coordonari?doar_ale_mele=1"
-            >
-              Descarcă lista (CSV)
-            </a>
+            <span class="row" style="gap:var(--s-2)">
+              <a
+                class="btn btn--secondary btn--sm"
+                href="/profesor/export-coordonari?doar_ale_mele=1&format=xlsx"
+              >
+                Descarcă lista (Excel)
+              </a>
+              <a
+                class="btn btn--ghost btn--sm"
+                href="/profesor/export-coordonari?doar_ale_mele=1&format=csv"
+              >
+                CSV
+              </a>
+            </span>
           )}
         </div>
 
@@ -401,7 +428,20 @@ function deadline(expiresAt: string | null | undefined) {
                           </div>
                         </div>
                       </td>
-                      <td class="celula-title" title={s.title_ro}>{s.title_ro}</td>
+                      <td class="celula-title" title={s.title_ro}>
+                        <span class="celula-title__text">{s.title_ro}</span>
+                        {/* Lucrarea predată, acolo unde coordonatorul se uită
+                            oricum după titlu. Parity: studentul o vede pe
+                            ecranul lui, coordonatorul pe al lui. */}
+                        {lucrari.get(s.id) && (
+                          <a class="lucrare-link" href={`/fisiere/${lucrari.get(s.id)!.id}`}>
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" />
+                            </svg>
+                            Lucrarea · {formatDate(lucrari.get(s.id)!.created_at)}
+                          </a>
+                        )}
+                      </td>
                       <td>
                         <div class="progres">
                           <div class="bara" role="img" aria-label={`Progres ${percent}%`}>
@@ -1738,6 +1778,23 @@ function deadline(expiresAt: string | null | undefined) {
 </script>
 
 <style>
+  /* Lucrarea predată, sub titlu în rândul studentului. Culoarea și sublinierea
+     vin de la regula tabelului (`app.css`): într-un tabel, sublinierea este
+     ceea ce spune că un cuvânt se apasă. Aici se stabilesc doar mărimea și
+     așezarea. */
+  .lucrare-link {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--s-2);
+    margin-top: var(--s-1);
+    font-size: var(--t-xs);
+    font-weight: 600;
+  }
+  .lucrare-link svg {
+    width: 13px;
+    height: 13px;
+  }
+
   /* The fields start their label on the same line and end their control on the
      same line; the hint text grows downwards, it does not push the neighbour. */
   .invitatie__rand {
@@ -1887,8 +1944,13 @@ function deadline(expiresAt: string | null | undefined) {
     white-space: nowrap;
   }
 
+  /* Titlul se taie pe un rând; ce stă sub el — lucrarea predată — nu se taie
+     odată cu el, pentru că este o legătură, nu o continuare a frazei. */
   .celula-title {
     max-width: 34ch;
+  }
+  .celula-title__text {
+    display: block;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;

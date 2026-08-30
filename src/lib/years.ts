@@ -62,7 +62,7 @@ export async function openYear(
     copyStages: boolean
     copyTopics: boolean
     copyProgrammes: boolean
-    /** The same seat numbers per coordinator, not just the empty rows. */
+    /** Carry each coordinator's base over, not just the empty rows. */
     copySeats: boolean
   },
 ): Promise<string> {
@@ -72,10 +72,23 @@ export async function openYear(
     )
     await client.query(`UPDATE academic_years SET is_current = false WHERE is_current`)
 
+    /* The norm travels with the department, not with the calendar.
+     *
+     * Left to the column default, the first rollover after the seats rework
+     * would quietly reset every coordinator who is on the norm to 5 and 3,
+     * whatever the department had agreed. Carried over from the year being
+     * closed, and only falling back to the default when there is no year to
+     * carry it from. */
     const { rows } = await client.query<{ id: string }>(
-      `INSERT INTO academic_years (label, starts_on, ends_on, is_current)
-       VALUES ($1, $2::date, $3::date, true) RETURNING id`,
-      [label, startsOn, endsOn],
+      `INSERT INTO academic_years (label, starts_on, ends_on, is_current,
+                                   default_bachelor_seats, default_master_seats)
+       VALUES ($1, $2::date, $3::date, true,
+               COALESCE((SELECT default_bachelor_seats FROM academic_years
+                          WHERE id = $4::uuid), 5),
+               COALESCE((SELECT default_master_seats FROM academic_years
+                          WHERE id = $4::uuid), 3))
+       RETURNING id`,
+      [label, startsOn, endsOn, previous[0]?.id ?? null],
     )
     const yearId = rows[0].id
     const from = previous[0]?.id
@@ -118,12 +131,25 @@ export async function openYear(
       )
     }
     if (from && options.copyTopics) {
+      /* The programme travels by name, not by id: the new year has its own
+       * `study_programmes` rows, so the old id points at last year's list. The
+       * tuple `(level, name, language)` is the same one `users.programme_id` is
+       * re-pointed by above. A topic whose programme was not carried over
+       * arrives without one and is shown as such, rather than pointing at a
+       * programme from a session that has ended. */
       await client.query(
         `INSERT INTO topics (academic_year_id, teacher_id, title, description, level, language,
-                             methods, prerequisites, seats, is_active)
-         SELECT $1, teacher_id, title, description, level, language,
-                methods, prerequisites, seats, is_active
-           FROM topics WHERE academic_year_id = $2 AND is_active`,
+                             methodology, domain, programme_id, is_active)
+         SELECT $1, t.teacher_id, t.title, t.description, t.level, t.language,
+                t.methodology, t.domain, nou.id, t.is_active
+           FROM topics t
+           LEFT JOIN study_programmes vechi ON vechi.id = t.programme_id
+           LEFT JOIN study_programmes nou
+             ON nou.academic_year_id = $1
+            AND nou.level = vechi.level
+            AND nou.name = vechi.name
+            AND nou.language = vechi.language
+          WHERE t.academic_year_id = $2 AND t.is_active`,
         [yearId, from],
       )
     }
@@ -136,18 +162,26 @@ export async function openYear(
      * the first thing to do in a new year was to type back in forty numbers the
      * portal already knew. It stays an option, because sometimes they really are
      * renegotiated. */
+    /* Only the base travels. An extra was argued for one cohort, in one study
+     * programme, in the year it was granted — carrying it over would re-fuse
+     * exactly what the seats rework separated, and a coordinator would start
+     * October with reserved seats nobody had asked for again. The ledger of
+     * last year's grants stays where it is, attached to last year. */
     if (from && options.copySeats) {
       await client.query(
-        `INSERT INTO seat_allocations (teacher_id, academic_year_id, bachelor_seats, master_seats)
-         SELECT teacher_id, $1, bachelor_seats, master_seats
+        `INSERT INTO seat_allocations (teacher_id, academic_year_id, bachelor_base, master_base)
+         SELECT teacher_id, $1, bachelor_base, master_base
            FROM seat_allocations WHERE academic_year_id = $2
          ON CONFLICT (teacher_id, academic_year_id)
-         DO UPDATE SET bachelor_seats = EXCLUDED.bachelor_seats,
-                       master_seats   = EXCLUDED.master_seats`,
+         DO UPDATE SET bachelor_base = EXCLUDED.bachelor_base,
+                       master_base   = EXCLUDED.master_base`,
         [yearId, from],
       )
     }
 
+    /* A row with both bases NULL is not an empty allocation any more: it reads
+     * as „on the norm”, which is what a coordinator nobody has decided about
+     * should be. It exists so the director's table lists everybody. */
     await client.query(
       `INSERT INTO seat_allocations (teacher_id, academic_year_id)
        SELECT id, $1 FROM users WHERE role IN ('teacher', 'head')

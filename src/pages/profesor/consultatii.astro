@@ -2,6 +2,7 @@
 import AlegeData from '../../components/AlegeData.astro'
 import ProfesorLayout from '../../layouts/ProfesorLayout.astro'
 import RandSlot from '../../components/RandSlot.astro'
+import Taburi from '../../components/Taburi.astro'
 import {
   localDay,
   startOfWeek,
@@ -30,17 +31,25 @@ import { numar, officialName } from '../../lib/text'
 
 const u = Astro.locals.user!
 
-/** The columns migration 0017 added; `Slot` in `repo.ts` does not name them yet. */
-type SlotPlus = Slot & {
-  kind: 'open' | 'scheduled'
-  cancelled_reason: string | null
-  cancelled_at: string | null
-}
+const [sloturi, studenti] = await Promise.all([teacherSlots(u.id), supervisedStudents(u.id)])
 
-const [sloturi, studenti] = (await Promise.all([teacherSlots(u.id), supervisedStudents(u.id)])) as [
-  SlotPlus[],
-  Awaited<ReturnType<typeof supervisedStudents>>,
-]
+/**
+ * The two kinds of consultation, as two tabs.
+ *
+ * They are the same interval and the same form; what differs is who is on the
+ * other side of it, and that changes everything around it. A „finalizare
+ * studii” hour is for the students this person coordinates: it is announced to
+ * them by email, and nobody else can see it. A public hour is for whoever in
+ * the faculty has a question — so it is visible to every student in the portal
+ * and it is announced to nobody, because a notice to the whole faculty every
+ * time somebody opens an afternoon is a reason to switch notifications off.
+ *
+ * The schedule below stays whole, on purpose: „am I free on Thursday” is one
+ * question, not two, and a coordinator who had to add up two tabs to answer it
+ * would keep the answer in a paper diary instead.
+ */
+const tip = Astro.url.searchParams.get('tip') === 'publice' ? 'publice' : 'finalizare'
+const audienta = tip === 'publice' ? 'public' : 'thesis'
 
 const today = localDay(new Date())
 const withStudentId = Astro.url.searchParams.get('cu') ?? ''
@@ -58,6 +67,8 @@ const withStudentId = Astro.url.searchParams.get('cu') ?? ''
  */
 const acum = Date.now()
 const upcoming = sloturi.filter((s) => new Date(s.ends_at).getTime() >= acum)
+const viitoarePe = (a: 'public' | 'thesis') =>
+  upcoming.filter((s) => s.audience === a && !s.is_cancelled).length
 const past = sloturi
   .filter((s) => new Date(s.ends_at).getTime() < acum)
   .sort((a, b) => (a.starts_at < b.starts_at ? 1 : -1))
@@ -88,12 +99,12 @@ for (const s of upcoming) {
   const day = localDay(new Date(s.starts_at))
   hoursPerDay.set(day, (hoursPerDay.get(day) ?? 0) + 1)
 }
-const dayCount = (s: SlotPlus) => hoursPerDay.get(localDay(new Date(s.starts_at))) ?? 1
+const dayCount = (s: Slot) => hoursPerDay.get(localDay(new Date(s.starts_at))) ?? 1
 ---
 
 <ProfesorLayout
   title="Consultații"
-  lede="Aici îți deschizi orele în care primești studenți și vezi cine vine la fiecare. Studenții pe care îi coordonezi își rezervă singuri o oră deschisă; când ai nevoie de cineva anume, îl chemi tu."
+  lede="Orele în care primești studenți, și cine vine la fiecare. Pentru studenții pe care îi coordonezi sau pentru toată facultatea — alegi mai jos; când ai nevoie de cineva anume, îl chemi tu."
   active="consultatii"
 >
 <div class="stack stack--loose" id="consultatii">
@@ -108,23 +119,51 @@ const dayCount = (s: SlotPlus) => hoursPerDay.get(localDay(new Date(s.starts_at)
 
   {/* Opening hours comes first: it is what a coordinator does habitually, and
       it is the half of the screen the students actually depend on. */}
+  <Taburi
+    eticheta="Felul consultațiilor"
+    activ={tip}
+    taburi={[
+      {
+        key: 'finalizare',
+        text: 'Consultații finalizare studii',
+        href: '/profesor/consultatii?tip=finalizare#ore-deschise',
+        count: viitoarePe('thesis'),
+      },
+      {
+        key: 'publice',
+        text: 'Consultații publice',
+        href: '/profesor/consultatii?tip=publice#ore-deschise',
+        count: viitoarePe('public'),
+      },
+    ]}
+  />
+
   <section class="panel" id="ore-deschise">
     <div class="panel__header">
-      <h2 class="section-title">Deschide ore de consultație</h2>
-      <span class="muted text-sm">Le rezervă studenții coordonați</span>
+      <h2 class="section-title">
+        {tip === 'publice' ? 'Deschide ore pentru toată facultatea' : 'Deschide ore pentru studenții tăi'}
+      </h2>
+      <span class="muted text-sm">
+        {tip === 'publice' ? 'Le vede și le rezervă orice student din ASE' : 'Le rezervă studenții pe care îi coordonezi'}
+      </span>
     </div>
 
     <form method="POST" action="/api/sloturi" class="panel__body stack">
       <input type="hidden" name="actiune" value="publica" />
+      <input type="hidden" name="audienta" value={audienta} />
 
       <p class="explicatie">
         Alegi un interval, iar portalul îl taie în ore separate: de la 14:00 la 17:00 înseamnă
-        trei ore, pe care studenții le rezervă una câte una. Toți studenții pe care îi coordonezi
-        primesc pe email lista orelor noi, iar invitația în calendar le vine în momentul
-        rezervării, cu adresa și linkul completate mai jos.
+        trei ore, pe care studenții le rezervă una câte una. Invitația în calendar le vine în
+        momentul rezervării, cu adresa și linkul completate mai jos.
+        {
+          tip === 'publice'
+            ? ' Ora apare în „Consultații” la fiecare student din facultate, indiferent cine îl coordonează. Nu se trimite niciun email: ar pleca spre toată facultatea de fiecare dată când deschizi o după-amiază.'
+            : ' Toți studenții pe care îi coordonezi primesc pe email lista orelor noi. Nimeni altcineva nu le vede.'
+        }
       </p>
 
-      <div class="ore">
+      <div class="ore grila-campuri">
         <AlegeData id="ore-zi" name="zi" label="Ziua" min={today} required />
         <div class="field">
           <label class="label" for="ore-start">De la</label>
@@ -149,7 +188,7 @@ const dayCount = (s: SlotPlus) => hoursPerDay.get(localDay(new Date(s.starts_at)
         </div>
       </div>
 
-      <div class="ore__unde">
+      <div class="ore__unde grila-campuri">
         <div class="field" data-camp-locatie>
           <label class="label" for="ore-locatie">Clădirea, etajul și sala</label>
           <input class="input" id="ore-locatie" name="locatie" value={u.office ?? ''}
@@ -171,142 +210,148 @@ const dayCount = (s: SlotPlus) => hoursPerDay.get(localDay(new Date(s.starts_at)
     </form>
   </section>
 
-  {/* Summoning a named student is the occasional case, so it follows. The
-      anchor is what `/profesor/studenti` links to with `?cu=`; without it the
-      pre-ticked checkbox landed below the fold and the link appeared to do
-      nothing at all. */}
-  <section class="panel" id="cheama">
-    <div class="panel__header">
-      <h2 class="section-title">Cheamă un student la o consultație</h2>
-      <span class="muted text-sm">Rezervarea o faci tu, în locul lui</span>
-    </div>
+  {/* Summoning a named student is the occasional case, so it follows — and it
+      belongs to the coordinated tab alone: you can only summon somebody whose
+      thesis you are supervising, so on the public tab the panel would be a form
+      that always refuses. The anchor is what `/profesor/studenti` links to with
+      `?cu=`; without it the pre-ticked checkbox landed below the fold and the
+      link appeared to do nothing at all. */}
+  {
+    tip === 'finalizare' && (
+      <section class="panel" id="cheama">
+        <div class="panel__header">
+          <h2 class="section-title">Cheamă un student la o consultație</h2>
+          <span class="muted text-sm">Rezervarea o faci tu, în locul lui</span>
+        </div>
 
-    {studenti.length === 0 ? (
-      <div class="empty">
-        <p class="empty__title">Niciun student coordonat</p>
-        <p class="empty__text">
-          Poți chema la consultație doar studenții pe care îi coordonezi. Acceptă o cerere de
-          coordonare și lista apare aici. Orele deschise le poți publica de pe acum — le vede
-          oricine îți este repartizat.
-        </p>
-        <a class="btn btn--primary btn--sm" href="/profesor/studenti?sectiune=cereri">
-          Vezi cererile de coordonare
-        </a>
-      </div>
-    ) : (
-      <form method="POST" action="/api/sloturi" class="panel__body stack" id="form-programare">
-        <input type="hidden" name="actiune" value="programeaza" />
-
-        <p class="explicatie">
-          Consultația iese gata rezervată, nu oferită: fiecare student chemat primește pe loc
-          invitația în calendar și o notificare în firul lui de discuție. Când nu contează cine
-          vine, deschide ore și lasă-i pe ei să aleagă.
-        </p>
-
-        {withStudentId && (
-          <p class="hint">Studentul din care ai venit este deja bifat mai jos.</p>
-        )}
-
-        <div class="programare">
-          <div class="field programare__cine">
-            {/* A consultation can be with several students at once — three who
-                are working on the same chapter do not need three separate
-                hours. Multiple selection calls for checkboxes, not a drop-down
-                list. */}
-            <span class="label" id="et-cu-cine">Pe cine chemi</span>
-            <fieldset class="alege-studenti" aria-labelledby="et-cu-cine" aria-describedby="numar-alesi">
-              <label class="alege-studenti__toti">
-                <input type="checkbox" id="toti-studentii" />
-                <span>Alege toți studenții coordonați</span>
-              </label>
-              <div class="alege-studenti__lista">
-                {studenti.map((s) => (
-                  <label class="student-optiune">
-                    <input
-                      type="checkbox"
-                      name="student_id"
-                      value={s.student_id}
-                      checked={s.student_id === withStudentId}
-                    />
-                    <span class="student-optiune__corp">
-                      <strong>{officialName({ name: s.student_name, father_initial: s.father_initial })}</strong>
-                      <small class="muted">{s.title_ro}</small>
-                    </span>
-                  </label>
-                ))}
-              </div>
-              <p class="hint" id="numar-alesi" aria-live="polite" />
-            </fieldset>
+        {studenti.length === 0 ? (
+          <div class="empty">
+            <p class="empty__title">Niciun student coordonat</p>
+            <p class="empty__text">
+              Poți chema la consultație doar studenții pe care îi coordonezi. Acceptă o cerere de
+              coordonare și lista apare aici. Orele deschise le poți publica de pe acum — le vede
+              oricine îți este repartizat.
+            </p>
+            <a class="btn btn--primary btn--sm" href="/profesor/studenti?sectiune=cereri">
+              Vezi cererile de coordonare
+            </a>
           </div>
-          {/* The right-hand column is its own stack, not cells in the same grid
-              as the student list: otherwise the rows stretch to fill the height
-              of the list and gaps appear between „Ziua” and „Durata”. */}
-          <div class="programare__detalii">
-            <div class="programare__pereche programare__pereche--zi">
-              <AlegeData id="prog-zi" name="zi" label="Ziua" min={today} required />
-              {/* This was a numeric field with whole hours, and the SQL
-                  concatenated „hours”: a consultation at 14:30 simply could not
-                  be expressed. */}
-              <div class="field">
-                <label class="label" for="prog-ora">Ora de început</label>
-                <input class="input" id="prog-ora" name="ora_start" type="time" value="14:00" step="900" required />
-              </div>
-            </div>
+        ) : (
+          <form method="POST" action="/api/sloturi" class="panel__body stack" id="form-programare">
+            <input type="hidden" name="actiune" value="programeaza" />
 
-            <div class="programare__pereche">
-              <div class="field">
-                <label class="label" for="prog-durata">Cât ține</label>
-                <select class="select" id="prog-durata" name="durata">
-                  <option value="0.5">30 de minute</option>
-                  <option value="1" selected>1 oră</option>
-                  <option value="1.5">1 oră și jumătate</option>
-                  <option value="2">2 ore</option>
-                  <option value="3">3 ore</option>
-                </select>
-              </div>
-              <div class="field">
-                <label class="label" for="prog-mod">Cum are loc</label>
-                <select class="select" id="prog-mod" name="mod" data-mod>
-                  <option value="in_person">La facultate</option>
-                  <option value="online">Online</option>
-                </select>
-              </div>
-            </div>
+            <p class="explicatie">
+              Consultația iese gata rezervată, nu oferită: fiecare student chemat primește pe loc
+              invitația în calendar și o notificare în firul lui de discuție. Când nu contează cine
+              vine, deschide ore și lasă-i pe ei să aleagă.
+            </p>
 
-            <div class="field" data-camp-locatie>
-              <label class="label" for="prog-locatie">Clădirea, etajul și sala</label>
-              <input class="input" id="prog-locatie" name="locatie" value={u.office ?? ''}
-                placeholder="Clădirea Ion Angelescu, Piața Romană 6, etaj 2, sala 2203" />
+            {withStudentId && (
+              <p class="hint">Studentul din care ai venit este deja bifat mai jos.</p>
+            )}
+
+            <div class="programare">
+              <div class="field programare__cine">
+                {/* A consultation can be with several students at once — three who
+                    are working on the same chapter do not need three separate
+                    hours. Multiple selection calls for checkboxes, not a drop-down
+                    list. */}
+                <span class="label" id="et-cu-cine">Pe cine chemi</span>
+                <fieldset class="alege-studenti" aria-labelledby="et-cu-cine" aria-describedby="numar-alesi">
+                  <label class="alege-studenti__toti">
+                    <input type="checkbox" id="toti-studentii" />
+                    <span>Alege toți studenții coordonați</span>
+                  </label>
+                  <div class="alege-studenti__lista">
+                    {studenti.map((s) => (
+                      <label class="student-optiune">
+                        <input
+                          type="checkbox"
+                          name="student_id"
+                          value={s.student_id}
+                          checked={s.student_id === withStudentId}
+                        />
+                        <span class="student-optiune__corp">
+                          <strong>{officialName({ name: s.student_name, father_initial: s.father_initial })}</strong>
+                          <small class="muted">{s.title_ro}</small>
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                  <p class="hint" id="numar-alesi" aria-live="polite" />
+                </fieldset>
+              </div>
+              {/* The right-hand column is its own stack, not cells in the same grid
+                  as the student list: otherwise the rows stretch to fill the height
+                  of the list and gaps appear between „Ziua” and „Durata”. */}
+              <div class="programare__detalii">
+                <div class="programare__pereche programare__pereche--zi grila-campuri">
+                  <AlegeData id="prog-zi" name="zi" label="Ziua" min={today} required />
+                  {/* This was a numeric field with whole hours, and the SQL
+                      concatenated „hours”: a consultation at 14:30 simply could not
+                      be expressed. */}
+                  <div class="field">
+                    <label class="label" for="prog-ora">Ora de început</label>
+                    <input class="input" id="prog-ora" name="ora_start" type="time" value="14:00" step="900" required />
+                  </div>
+                </div>
+
+                <div class="programare__pereche grila-campuri">
+                  <div class="field">
+                    <label class="label" for="prog-durata">Cât ține</label>
+                    <select class="select" id="prog-durata" name="durata">
+                      <option value="0.5">30 de minute</option>
+                      <option value="1" selected>1 oră</option>
+                      <option value="1.5">1 oră și jumătate</option>
+                      <option value="2">2 ore</option>
+                      <option value="3">3 ore</option>
+                    </select>
+                  </div>
+                  <div class="field">
+                    <label class="label" for="prog-mod">Cum are loc</label>
+                    <select class="select" id="prog-mod" name="mod" data-mod>
+                      <option value="in_person">La facultate</option>
+                      <option value="online">Online</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div class="field" data-camp-locatie>
+                  <label class="label" for="prog-locatie">Clădirea, etajul și sala</label>
+                  <input class="input" id="prog-locatie" name="locatie" value={u.office ?? ''}
+                    placeholder="Clădirea Ion Angelescu, Piața Romană 6, etaj 2, sala 2203" />
+                </div>
+
+                <div class="field">
+                  <label class="label" for="prog-link">
+                    Link întâlnire <span class="muted" data-link-optional>(opțional)</span>
+                  </label>
+                  <input class="input" id="prog-link" name="link_online" type="url"
+                    placeholder="https://meet…" aria-describedby="ajutor-link" />
+                  <span class="hint" id="ajutor-link">Se trimite în invitația de calendar, alături de adresă.</span>
+                </div>
+              </div>
             </div>
 
             <div class="field">
-              <label class="label" for="prog-link">
-                Link întâlnire <span class="muted" data-link-optional>(opțional)</span>
-              </label>
-              <input class="input" id="prog-link" name="link_online" type="url"
-                placeholder="https://meet…" aria-describedby="ajutor-link" />
-              <span class="hint" id="ajutor-link">Se trimite în invitația de calendar, alături de adresă.</span>
+              <label class="label" for="prog-subiect">Despre ce discutați <span class="muted">(opțional)</span></label>
+              <input class="input" id="prog-subiect" name="subiect"
+                placeholder="Ex: discutăm metodologia și eșantionul" aria-describedby="ajutor-subiect" />
+              <span class="hint" id="ajutor-subiect">
+                Îl vede fiecare student chemat, în email și în invitația de calendar.
+              </span>
             </div>
-          </div>
-        </div>
 
-        <div class="field">
-          <label class="label" for="prog-subiect">Despre ce discutați <span class="muted">(opțional)</span></label>
-          <input class="input" id="prog-subiect" name="subiect"
-            placeholder="Ex: discutăm metodologia și eșantionul" aria-describedby="ajutor-subiect" />
-          <span class="hint" id="ajutor-subiect">
-            Îl vede fiecare student chemat, în email și în invitația de calendar.
-          </span>
-        </div>
-
-        <div class="row row--end">
-          <button class="btn btn--primary" type="submit" id="programeaza">
-            Programează consultația
-          </button>
-        </div>
-      </form>
-    )}
-  </section>
+            <div class="row row--end">
+              <button class="btn btn--primary" type="submit" id="programeaza">
+                Programează consultația
+              </button>
+            </div>
+          </form>
+        )}
+      </section>
+    )
+  }
 
   <section class="panel" id="program">
     <div class="panel__header">
@@ -448,22 +493,14 @@ const dayCount = (s: SlotPlus) => hoursPerDay.get(localDay(new Date(s.starts_at)
     scroll-margin-top: var(--s-4);
   }
 
-  /* The open-hours row: day, the two ends of the interval, seats, mode. */
+  /* The open-hours row: day, the two ends of the interval, seats, mode.
+     `.grila-campuri` (app.css) owns the rows, so a field with a hint under it
+     and one without still line up top and bottom. */
   .ore {
-    display: grid;
     grid-template-columns: minmax(0, 1.6fr) repeat(2, minmax(0, 0.8fr)) minmax(0, 1fr) minmax(0, 1.1fr);
-    gap: var(--s-4);
-    align-items: start;
   }
   .ore__unde {
-    display: grid;
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-    gap: var(--s-4);
-    align-items: start;
-  }
-  .ore .field,
-  .ore__unde .field {
-    min-width: 0;
   }
 
   @media (max-width: 1200px) {
@@ -511,7 +548,7 @@ const dayCount = (s: SlotPlus) => hoursPerDay.get(localDay(new Date(s.starts_at)
     gap: var(--s-4);
     align-items: start;
   }
-  .programare .field {
+  .programare :where(.field) {
     min-width: 0;
   }
   .programare__cine {

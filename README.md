@@ -9,14 +9,17 @@ Aplicație server-rendered (Astro + adaptorul Node) cu PostgreSQL. Interfața es
 
 | Rol | Ce vede |
 |---|---|
-| `student` | calendarul sesiunii, catalogul de coordonatori și teme, cererile proprii, propunerile primite, mesaje, consultații, coordonările întregii sesiuni, arhiva, profiluri, ghid |
-| `teacher` | dashboard, triaj cereri, studenți coordonați cu cronologie editabilă, propuneri trimise, teme, program și programare de consultații, mesaje, studenții facultății, arhivă și profil |
-| `head` | tot ce vede un cadru didactic, plus departamentul (acoperire, încărcare, alocarea locurilor), calendarul sesiunii și anul universitar |
+| `student` | calendarul sesiunii, catalogul de coordonatori și teme, coordonarea proprie, lucrarea (titlu, termene, fișierul predat), propunerile primite, mesaje, consultații — ale coordonatorului și cele publice —, coordonările întregii sesiuni, arhiva, profiluri, ghid |
+| `teacher` | dashboard, triaj cereri, studenți coordonați cu cronologie editabilă și lucrarea predată de fiecare, propuneri trimise, teme, program și programare de consultații, mesaje, profil |
+| `head` | tot ce vede un cadru didactic, plus registrul facultății: studenții facultății, arhiva sesiunilor, departamentul (acoperire, încărcare, alocarea locurilor), conturile, calendarul sesiunii și anul universitar |
 
-Rutele `/profesor/*` cer rolul `teacher` sau `head`; `/profesor/departament`,
-`/profesor/calendar` și `/profesor/an-universitar` cer `head`. Un utilizator
-fără drept primește 404, nu 403 — nu confirmăm existența unei zone pe care nu o
-poate folosi.
+Rutele `/profesor/*` cer rolul `teacher` sau `head`; `/profesor/facultate`,
+`/profesor/departament`, `/profesor/conturi`, `/profesor/calendar` și
+`/profesor/an-universitar` cer `head`, iar `/arhiva` — registrul întregii
+facultăți — se deschide studenților și directorului, nu și unui coordonator, a
+cărui activitate proprie stă pe `/profesor/activitatea-mea`. Un utilizator fără
+drept primește 404, nu 403 — nu confirmăm existența unei zone pe care nu o poate
+folosi.
 
 ## Acces
 
@@ -57,8 +60,20 @@ calendarului, temele active. Nu se șterge nimic; anul precedent devine arhivă.
 - **Invitațiile** merg în sens invers: cadrul didactic propune, studentul acceptă
   sau refuză motivat. Acceptarea nu creează coordonarea — studentul completează
   aceeași cerere, dar aprobată la depunere.
-- **Deciziile și invitațiile** ajung în firul de discuție ca `messages.kind =
-  'event'`, afișate ca înregistrare, nu ca replică.
+- **Deciziile, invitațiile, predarea lucrării** ajung în firul de discuție ca
+  `messages.kind = 'event'`, afișate ca înregistrare, nu ca replică.
+- **Temele** spun pentru cine sunt: nivel plus un program de studii din
+  `study_programmes` al anului curent, din care se ia și limba lucrării. Nu au
+  locuri proprii — locurile sunt ale coordonatorului, pe nivel și pe program.
+- **Consultațiile** au două publicuri: `audience = 'thesis'`, pentru studenții
+  coordonați, anunțate lor pe email; și `audience = 'public'`, pe care le vede și
+  le rezervă orice student din facultate, fără email — un anunț către toată
+  facultatea la fiecare după-amiază deschisă este motivul pentru care oamenii
+  închid notificările.
+- **Lucrarea** se predă în portal: `files.kind = 'thesis'`, legată de cerere, în
+  PDF, cel mult 40 MB. Versiunile nu se suprascriu; cea nouă este un rând nou.
+  O văd studentul, coordonatorul lui și directorul — ultimul, din arhiva
+  sesiunii.
 
 ## Autentificare
 
@@ -103,9 +118,10 @@ npm run dev
 migrations/        SQL aplicat în ordinea numelor de fișier
 scripts/           migrate.mjs, seed.mjs
 src/lib/           db, auth, ids, repo (interogări), years, lifecycle, chat,
-                   mail, doc, ics, files, http
+                   mail, doc, ics, files, sheet (csv + xlsx), zip, http
 src/layouts/       BaseLayout + chrome pentru student și cadru didactic
-src/components/    Chat.astro și Avatar.astro, folosite identic de ambele roluri
+src/components/    Erou.astro, Chat.astro, Avatar.astro — aceleași pentru ambele
+                   roluri
 src/pages/         rute (URL-urile rămân în română)
 src/styles/app.css sistemul de design
 ```

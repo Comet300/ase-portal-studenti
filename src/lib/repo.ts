@@ -1,4 +1,9 @@
 import { execute, query, queryOne } from './db'
+import { capacityOf, freeFor, isFullFor } from './seats'
+import type {
+  Level as SeatLevel,
+  TeacherCapacity as TeacherCapacityShape,
+} from './seats'
 
 /* Date formatting moved to `lib/date.ts` — it has nothing to do with the
  * database, and there it can be tested and imported in the browser. It is
@@ -66,6 +71,10 @@ export interface RequestRow {
   objectives: string
   motivation: string | null
   status: 'draft' | 'pending' | 'approved' | 'rejected' | 'expired' | 'withdrawn' | 'defended'
+  /* The programme the seat is charged to, pinned when the request was made.
+   * Read off the student until this release, so moving a student between
+   * programmes in March moved a seat consumed in October with them. */
+  programme_id: string | null
   rejection_reason: string | null
   decision_note: string | null
   expires_at: string | null
@@ -99,7 +108,7 @@ export interface RequestRow {
 const REQUEST_FIELDS = `
   r.id, r.number, r.title_ro, r.title_en, r.objectives, r.motivation,
   r.status, r.rejection_reason, r.decision_note, r.expires_at,
-  r.submitted_at, r.decided_at,
+  r.submitted_at, r.decided_at, r.programme_id,
   s.id AS student_id, s.name AS student_name, s.email AS student_email,
   s.student_number, s.program, s.specialization, s.father_initial,
   s.study_language, s.study_group, s.study_series, s.study_year, s.avatar_path AS student_avatar,
@@ -195,7 +204,158 @@ export function teacherStats(teacherId: string, yearId?: string) {
   )
 }
 
-/* --- seats: allocated by the director, spent by approvals ------------------- */
+/* --- seats: a base per coordinator, extras earmarked per programme ---------- */
+
+/**
+ * Capacity, read once and shared.
+ *
+ * Everything that decides whether a coordinator can take one more student goes
+ * through here: the three gates, the catalogue, the coordinator's dashboard and
+ * the director's table. The department screen used to carry a hand-copied
+ * duplicate of this SQL, which meant the one person who has to trust these
+ * numbers was the one person capable of seeing a different set.
+ *
+ * The arithmetic itself is in `lib/seats.ts`, without a database, because it is
+ * the part that has to be tested.
+ */
+export type { Capacity, Level, Pot, TeacherCapacity } from './seats'
+
+/** Whoever the availability is being computed for. A `User` satisfies it. */
+export interface SeatViewer {
+  programme_id: string | null
+  program: 'bachelor' | 'master' | null
+}
+
+interface BaseRow {
+  teacher_id: string
+  bachelor_base: number | null
+  master_base: number | null
+  norm_bachelor: number
+  norm_master: number
+}
+
+interface PotRow {
+  teacher_id: string
+  level: SeatLevel
+  programme_id: string | null
+  programme_name: string | null
+  granted: number
+  taken: number
+}
+
+/**
+ * Every coordinator's capacity for the year, keyed by coordinator.
+ *
+ * Two statements rather than one: the bases are one row per coordinator and the
+ * pots are one row per (coordinator, level, programme), and folding them into a
+ * single result would repeat each base once per programme and leave the caller
+ * to un-repeat it. Both are small — one row per member of staff, one per
+ * programme they have students in.
+ */
+export async function teacherCapacities(
+  teacherId?: string | null,
+  yearId?: string,
+): Promise<Map<string, TeacherCapacityShape>> {
+  const params = [teacherId ?? null, yearId ?? null]
+
+  const bases = await query<BaseRow>(
+    `SELECT t.id AS teacher_id, a.bachelor_base, a.master_base,
+            COALESCE(y.default_bachelor_seats, 0) AS norm_bachelor,
+            COALESCE(y.default_master_seats, 0)   AS norm_master
+       FROM users t
+       LEFT JOIN academic_years y ON y.id = ${thisYear(2)}
+       LEFT JOIN seat_allocations a
+         ON a.teacher_id = t.id AND a.academic_year_id = ${thisYear(2)}
+      WHERE t.role IN ('teacher', 'head')
+        AND ($1::uuid IS NULL OR t.id = $1)`,
+    params,
+  )
+
+  /* A grant and a supervision are counted on the same (level, programme) key,
+   * so the two halves are joined FULL OUTER: a programme can have an earmark
+   * nobody has used yet, and it can have students with no earmark at all.
+   *
+   * The level of a supervision comes from the pinned programme, and falls back
+   * to `users.program` only for the rows that predate `requests.programme_id`.
+   * „defended” counts as taken: a bachelor's thesis defended in the February
+   * session used to hand the seat back for the remaining seven months of the
+   * year, which nobody had decided. */
+  const pots = await query<PotRow>(
+    `WITH gr AS (
+       SELECT g.teacher_id, g.level, g.programme_id, SUM(g.seats)::int AS granted
+         FROM seat_grants g
+        WHERE g.academic_year_id = ${thisYear(2)} AND g.revoked_at IS NULL
+          AND ($1::uuid IS NULL OR g.teacher_id = $1)
+        GROUP BY 1, 2, 3
+     ), tk AS (
+       SELECT r.teacher_id, COALESCE(p.level, s.program) AS level, r.programme_id,
+              count(*)::int AS taken
+         FROM requests r
+         JOIN users s ON s.id = r.student_id
+         LEFT JOIN study_programmes p ON p.id = r.programme_id
+        WHERE r.academic_year_id = ${thisYear(2)}
+          AND r.status IN ('approved', 'defended')
+          AND COALESCE(p.level, s.program) IN ('bachelor', 'master')
+          AND ($1::uuid IS NULL OR r.teacher_id = $1)
+        GROUP BY 1, 2, 3
+     )
+     SELECT COALESCE(gr.teacher_id, tk.teacher_id)   AS teacher_id,
+            COALESCE(gr.level, tk.level)             AS level,
+            COALESCE(gr.programme_id, tk.programme_id) AS programme_id,
+            sp.name AS programme_name,
+            COALESCE(gr.granted, 0) AS granted,
+            COALESCE(tk.taken, 0)   AS taken
+       FROM gr
+       FULL OUTER JOIN tk
+         ON tk.teacher_id = gr.teacher_id AND tk.level = gr.level
+        AND tk.programme_id IS NOT DISTINCT FROM gr.programme_id
+       LEFT JOIN study_programmes sp ON sp.id = COALESCE(gr.programme_id, tk.programme_id)`,
+    params,
+  )
+
+  const byTeacher = new Map<string, { bachelor: PotRow[]; master: PotRow[] }>()
+  for (const row of pots) {
+    const entry = byTeacher.get(row.teacher_id) ?? { bachelor: [], master: [] }
+    entry[row.level].push(row)
+    byTeacher.set(row.teacher_id, entry)
+  }
+
+  const out = new Map<string, TeacherCapacityShape>()
+  for (const b of bases) {
+    const own = byTeacher.get(b.teacher_id) ?? { bachelor: [], master: [] }
+    out.set(b.teacher_id, {
+      teacher_id: b.teacher_id,
+      bachelor: capacityOf({
+        level: 'bachelor',
+        base: b.bachelor_base ?? b.norm_bachelor,
+        isNorm: b.bachelor_base === null,
+        pots: own.bachelor,
+      }),
+      master: capacityOf({
+        level: 'master',
+        base: b.master_base ?? b.norm_master,
+        isNorm: b.master_base === null,
+        pots: own.master,
+      }),
+    })
+  }
+  return out
+}
+
+/** One coordinator's capacity. Empty rather than absent when they have no row. */
+export async function teacherCapacity(
+  teacherId: string,
+  yearId?: string,
+): Promise<TeacherCapacityShape> {
+  const all = await teacherCapacities(teacherId, yearId)
+  return (
+    all.get(teacherId) ?? {
+      teacher_id: teacherId,
+      bachelor: capacityOf({ level: 'bachelor', base: 0, isNorm: false, pots: [] }),
+      master: capacityOf({ level: 'master', base: 0, isNorm: false, pots: [] }),
+    }
+  )
+}
 
 export interface Seats {
   bachelor_seats: number
@@ -204,40 +364,94 @@ export interface Seats {
   master_taken: number
   total_seats: number
   total_taken: number
+  /**
+   * Free at either level, ignoring who is asking.
+   *
+   * Kept for the screens that describe a coordinator to nobody in particular —
+   * their own profile page, their own dashboard header. It is NOT a gate: a
+   * gate knows which student is at the door and must call `freeFor` with their
+   * programme, because most of this number can be reserved for programmes that
+   * student is not in.
+   */
   free: number
 }
 
-/**
- * Seat counts for a coordinator, as SQL fragments.
- *
- * The year comes from the parameter rather than from the joined allocation row:
- * a coordinator the head has not allocated seats to yet has no row at all, and
- * reading the year off it would report zero students supervised rather than zero
- * seats available — two very different facts.
- */
-const seatColumns = (yearParam: number) => `
-  COALESCE(a.bachelor_seats, 0) AS bachelor_seats,
-  COALESCE(a.master_seats, 0)   AS master_seats,
-  (SELECT count(*)::int FROM requests r JOIN users s2 ON s2.id = r.student_id
-    WHERE r.teacher_id = t.id AND r.status = 'approved'
-      AND r.academic_year_id = ${thisYear(yearParam)} AND s2.program = 'bachelor') AS bachelor_taken,
-  (SELECT count(*)::int FROM requests r JOIN users s2 ON s2.id = r.student_id
-    WHERE r.teacher_id = t.id AND r.status = 'approved'
-      AND r.academic_year_id = ${thisYear(yearParam)} AND s2.program = 'master')   AS master_taken`
-
 export async function teacherSeats(teacherId: string, yearId?: string): Promise<Seats> {
-  const row = await queryOne<Omit<Seats, 'total_seats' | 'total_taken' | 'free'>>(
-    `SELECT ${seatColumns(2)}
-       FROM users t
-       LEFT JOIN seat_allocations a
-         ON a.teacher_id = t.id AND a.academic_year_id = ${thisYear(2)}
-      WHERE t.id = $1`,
-    [teacherId, yearId ?? null],
+  const cap = await teacherCapacity(teacherId, yearId)
+  return {
+    bachelor_seats: cap.bachelor.total,
+    master_seats: cap.master.total,
+    bachelor_taken: cap.bachelor.taken,
+    master_taken: cap.master.taken,
+    total_seats: cap.bachelor.total + cap.master.total,
+    total_taken: cap.bachelor.taken + cap.master.taken,
+    free: cap.bachelor.free_any + cap.master.free_any,
+  }
+}
+
+/**
+ * The programmes of the year in view, for the pickers that earmark seats.
+ *
+ * Inactive ones are still listed when they already hold grants, so the ledger
+ * can name what it is showing; the API refuses new grants to them.
+ */
+export interface SeatProgramme {
+  id: string
+  level: SeatLevel
+  name: string
+  language: string
+  is_active: boolean
+}
+
+export function seatProgrammes(yearId?: string): Promise<SeatProgramme[]> {
+  return query<SeatProgramme>(
+    `SELECT p.id, p.level, p.name, p.language, p.is_active
+       FROM study_programmes p
+      WHERE p.academic_year_id = ${thisYear(1)}
+      ORDER BY p.level, p.name, p.language`,
+    [yearId ?? null],
   )
-  const seats = row ?? { bachelor_seats: 0, master_seats: 0, bachelor_taken: 0, master_taken: 0 }
-  const total_seats = seats.bachelor_seats + seats.master_seats
-  const total_taken = seats.bachelor_taken + seats.master_taken
-  return { ...seats, total_seats, total_taken, free: Math.max(0, total_seats - total_taken) }
+}
+
+/** One entry of the grant ledger, as the director's screen reads it. */
+export interface SeatGrant {
+  id: string
+  teacher_id: string
+  teacher_name: string
+  programme_id: string | null
+  programme_name: string | null
+  programme_language: string | null
+  level: SeatLevel
+  seats: number
+  reason: string
+  seat_request_id: string | null
+  granted_by_name: string | null
+  granted_at: string
+  revoked_at: string | null
+  revoked_by_name: string | null
+  revoke_reason: string | null
+}
+
+export function seatGrants(
+  options: { teacherId?: string; yearId?: string; liveOnly?: boolean } = {},
+): Promise<SeatGrant[]> {
+  return query<SeatGrant>(
+    `SELECT g.id, g.teacher_id, t.name AS teacher_name,
+            g.programme_id, p.name AS programme_name, p.language AS programme_language,
+            g.level, g.seats, g.reason, g.seat_request_id,
+            gb.name AS granted_by_name, g.granted_at,
+            g.revoked_at, rb.name AS revoked_by_name, g.revoke_reason
+       FROM seat_grants g
+       JOIN users t ON t.id = g.teacher_id
+       LEFT JOIN study_programmes p ON p.id = g.programme_id
+       LEFT JOIN users gb ON gb.id = g.granted_by
+       LEFT JOIN users rb ON rb.id = g.revoked_by
+      WHERE g.academic_year_id = ${thisYear(2)}
+        AND ($1::uuid IS NULL OR g.teacher_id = $1)
+        AND ($3::boolean IS NOT TRUE OR g.revoked_at IS NULL)
+      ORDER BY g.granted_at DESC`,
+    [options.teacherId ?? null, options.yearId ?? null, options.liveOnly ?? null],
+  )
 }
 
 export interface SupervisedStudent extends RequestRow {
@@ -366,19 +580,25 @@ export interface Topic {
   description: string | null
   level: 'bachelor' | 'master'
   language: 'ro' | 'en' | 'fr' | 'de'
-  methods: string | null
-  prerequisites: string | null
-  seats: number
+  /** How the research is done: „anchetă, eșantion de 200”, not a method name. */
+  methodology: string | null
+  /** The field it belongs to: comportamentul consumatorului, retail, digital. */
+  domain: string | null
+  /** The study programme it is offered to; NULL on the topics written before
+   * programmes were asked for, and on those the coordinator has not reopened. */
+  programme_id: string | null
+  programme_name: string | null
   is_active: boolean
   taken: number
 }
 
 export function teacherTopics(teacherId: string, yearId?: string) {
   return query<Topic>(
-    `SELECT t.*,
+    `SELECT t.*, p.name AS programme_name,
             (SELECT count(*)::int FROM requests r
               WHERE r.topic_id = t.id AND r.status = 'approved') AS taken
        FROM topics t
+       LEFT JOIN study_programmes p ON p.id = t.programme_id
       WHERE t.teacher_id = $1 AND t.academic_year_id = ${thisYear(2)}
       ORDER BY t.is_active DESC, t.created_at DESC`,
     [teacherId, yearId ?? null],
@@ -401,6 +621,12 @@ export interface Slot {
   /** Set when the interval was scheduled with one named student. */
   student_id: string | null
   invited_name: string | null
+  /** Published for whoever books it, or scheduled with named students. */
+  kind: 'open' | 'scheduled'
+  /** Whom it is for: the whole faculty, or the students this person coordinates. */
+  audience: 'public' | 'thesis'
+  cancelled_reason: string | null
+  cancelled_at: string | null
 }
 
 /**
@@ -603,87 +829,152 @@ export interface Supervisor {
   master_seats: number
   bachelor_taken: number
   master_taken: number
-  /** No free seat left at either level — still listed, but no longer bookable. */
+  /** Free at each level with nobody in particular in mind — earmarks included. */
+  bachelor_free: number
+  master_free: number
+  /**
+   * Free for the student who is reading, at their own level and programme.
+   * `null` when nobody is signed in: the catalogue can then only state totals.
+   */
+  free_for_viewer: number | null
+  /**
+   * Nothing left for the reader. With no reader, nothing left for anybody —
+   * which is deliberately the weaker claim: greying out a coordinator who could
+   * still take somebody is a worse error than showing one who cannot take you.
+   */
   is_full: boolean
+  capacity: TeacherCapacityShape
 }
 
 /**
  * The public catalogue of coordinators.
  *
- * A coordinator who has run out of seats is not hidden: students need to see who
- * is already taken and by whom, so the list carries the counts and a `is_full`
- * flag instead of quietly shrinking.
+ * A coordinator who has run out of seats is not hidden: students need to see
+ * who is already taken and by whom, so the list carries the counts and a
+ * `is_full` flag instead of quietly shrinking.
+ *
+ * Availability is relative to the reader. Extras are reserved to one study
+ * programme, so „three seats free” is only true of somebody — the same
+ * coordinator is full for Marketing and open for Finance at the same moment.
+ * Pass the signed-in student and the answer is about them; pass nobody and the
+ * page has to say the per-level totals instead of a single verdict.
  */
-export function supervisors(yearId?: string): Promise<Supervisor[]> {
-  return query<Supervisor>(
+export async function supervisors(
+  options: { yearId?: string; viewer?: SeatViewer | null } = {},
+): Promise<Supervisor[]> {
+  const rows = await query<Omit<Supervisor,
+    'bachelor_free' | 'master_free' | 'free_for_viewer' | 'is_full' | 'capacity'>>(
     `SELECT t.id, t.name, t.email, t.academic_title, t.department, t.office,
             t.bio, t.avatar_path, t.interests,
             (SELECT count(*)::int FROM topics tp
               WHERE tp.teacher_id = t.id AND tp.is_active
                 AND tp.academic_year_id = ${thisYear(1)}) AS topic_count,
-            ${seatColumns(1)},
-            -- Counted exactly as seatColumns counts it, level by level: a
-            -- supervised student whose programme was never set would otherwise
-            -- fill a seat here and none there, and the two numbers on the same
-            -- card would disagree.
-            (COALESCE(a.bachelor_seats, 0) + COALESCE(a.master_seats, 0)) <= (
-              SELECT count(*)::int FROM requests r
-                JOIN users s3 ON s3.id = r.student_id
-               WHERE r.teacher_id = t.id AND r.status = 'approved'
-                 AND r.academic_year_id = ${thisYear(1)}
-                 AND s3.program IN ('bachelor', 'master')
-            ) AS is_full
+            0 AS bachelor_seats, 0 AS master_seats, 0 AS bachelor_taken, 0 AS master_taken
        FROM users t
-       LEFT JOIN seat_allocations a
-         ON a.teacher_id = t.id AND a.academic_year_id = ${thisYear(1)}
       WHERE t.role IN ('teacher', 'head')
       ORDER BY t.name`,
-    [yearId ?? null],
+    [options.yearId ?? null],
   )
+
+  const caps = await teacherCapacities(null, options.yearId)
+  const viewer = options.viewer
+  const viewerLevel = viewer?.program ?? null
+
+  return rows.map((r) => {
+    const cap = caps.get(r.id) ?? {
+      teacher_id: r.id,
+      bachelor: capacityOf({ level: 'bachelor', base: 0, isNorm: false, pots: [] }),
+      master: capacityOf({ level: 'master', base: 0, isNorm: false, pots: [] }),
+    }
+    const forViewer = viewerLevel
+      ? freeFor(viewerLevel === 'master' ? cap.master : cap.bachelor, viewer?.programme_id ?? null)
+      : null
+
+    return {
+      ...r,
+      bachelor_seats: cap.bachelor.total,
+      master_seats: cap.master.total,
+      bachelor_taken: cap.bachelor.taken,
+      master_taken: cap.master.taken,
+      bachelor_free: cap.bachelor.free_any,
+      master_free: cap.master.free_any,
+      free_for_viewer: forViewer,
+      is_full: forViewer !== null
+        ? forViewer === 0
+        : cap.bachelor.free_any + cap.master.free_any === 0,
+      capacity: cap,
+    }
+  })
 }
 
 export interface PublicTopic {
   id: string
   title: string
   description: string | null
-  level: 'bachelor' | 'master'
+  level: SeatLevel
   language: 'ro' | 'en' | 'fr' | 'de'
-  methods: string | null
-  prerequisites: string | null
-  seats: number
+  methodology: string | null
+  domain: string | null
+  programme_id: string | null
+  programme_name: string | null
   taken: number
   teacher_id: string
   teacher_name: string
   academic_title: string | null
   department: string | null
+  /** At this topic's level, for the reader if there is one. */
   teacher_is_full: boolean
+  /** Free at this topic's level, all programmes together. */
+  teacher_free_at_level: number
 }
 
 /**
  * Every topic on offer, with the coordinator who proposed it.
  *
  * This is the other way into the catalogue: a student who knows what they want
- * to write about finds the topic first and the coordinator through it.
+ * to write about finds the topic first and the coordinator through it. The
+ * fullness verdict is per topic, not per coordinator, because it is now decided
+ * at the topic's own level — a coordinator with no bachelor seats left and five
+ * master seats free was able to accept five bachelor students until this
+ * release, and the catalogue said so.
  */
-export function publicTopics(yearId?: string): Promise<PublicTopic[]> {
-  return query<PublicTopic>(
-    `SELECT t.id, t.title, t.description, t.level, t.language, t.methods, t.prerequisites, t.seats,
+export async function publicTopics(
+  options: { yearId?: string; viewer?: SeatViewer | null } = {},
+): Promise<PublicTopic[]> {
+  const rows = await query<Omit<PublicTopic, 'teacher_is_full' | 'teacher_free_at_level'>>(
+    `SELECT t.id, t.title, t.description, t.level, t.language, t.methodology, t.domain,
+            t.programme_id, p.name AS programme_name,
             (SELECT count(*)::int FROM requests r
-              WHERE r.topic_id = t.id AND r.status = 'approved') AS taken,
-            u.id AS teacher_id, u.name AS teacher_name, u.academic_title, u.department,
-            (COALESCE(a.bachelor_seats, 0) + COALESCE(a.master_seats, 0)) <= (
-              SELECT count(*)::int FROM requests r2
-               WHERE r2.teacher_id = u.id AND r2.status = 'approved'
-                 AND r2.academic_year_id = t.academic_year_id
-            ) AS teacher_is_full
+              WHERE r.topic_id = t.id AND r.status IN ('approved', 'defended')) AS taken,
+            u.id AS teacher_id, u.name AS teacher_name, u.academic_title, u.department
        FROM topics t
        JOIN users u ON u.id = t.teacher_id
-       LEFT JOIN seat_allocations a
-         ON a.teacher_id = u.id AND a.academic_year_id = t.academic_year_id
+       LEFT JOIN study_programmes p ON p.id = t.programme_id
       WHERE t.is_active = true AND t.academic_year_id = ${thisYear(1)}
       ORDER BY u.name, t.title`,
-    [yearId ?? null],
+    [options.yearId ?? null],
   )
+
+  const caps = await teacherCapacities(null, options.yearId)
+  const viewer = options.viewer
+
+  return rows.map((t) => {
+    const cap = caps.get(t.teacher_id)
+    const level = cap ? (t.level === 'master' ? cap.master : cap.bachelor) : null
+    if (!level) return { ...t, teacher_is_full: true, teacher_free_at_level: 0 }
+
+    /* Only the reader's own level is answered about them: a bachelor's student
+     * looking at a master's topic cannot apply to it anyway, and pretending the
+     * verdict is personal there would grey out a topic for the wrong reason. */
+    const personal = viewer?.program === t.level
+    return {
+      ...t,
+      teacher_is_full: personal
+        ? isFullFor(level, viewer?.programme_id ?? null)
+        : level.free_any === 0,
+      teacher_free_at_level: level.free_any,
+    }
+  })
 }
 
 /* --- transparency: who coordinates whom ------------------------------------- */
@@ -786,6 +1077,11 @@ export interface ArchiveRow {
   teacher_name: string
   title_ro: string
   defended_on: string | null
+  /** The newest handed-in file, when the thesis went through the portal. */
+  thesis_file_id: string | null
+  thesis_file_name: string | null
+  /** Its coordinator, so the screen can offer the file to them as well. */
+  teacher_id: string | null
 }
 
 /**
@@ -809,17 +1105,33 @@ export function archiveRows(yearId: string): Promise<ArchiveRow[]> {
      * the archive with March. They are two events months apart, and a faculty's
      * archive is exactly the place where the difference matters. When the defence
      * is not yet recorded, the column stays empty instead of lying. */
+    /* The handed-in paper travels with the row.
+     *
+     * `LATERAL` and not a join: what is wanted is the newest version, one per
+     * thesis, and a plain join would repeat the row once per version uploaded.
+     * Imported rows have no file and say so with two nulls — those sessions
+     * ended before the portal existed, and inventing a document for them would
+     * be the archive lying about what it holds. */
     `SELECT 'portal'::text AS source, s.name AS student_name, s.student_number,
             s.specialization AS programme, s.program AS level, s.study_language AS language,
-            t.name AS teacher_name, r.title_ro, r.defended_on::text AS defended_on
+            t.name AS teacher_name, r.title_ro, r.defended_on::text AS defended_on,
+            f.id::text AS thesis_file_id, f.original_name AS thesis_file_name,
+            t.id::text AS teacher_id
        FROM requests r
        JOIN users s ON s.id = r.student_id
        JOIN users t ON t.id = r.teacher_id
+       LEFT JOIN LATERAL (
+         SELECT id, original_name
+           FROM files
+          WHERE request_id = r.id AND kind = 'thesis'
+          ORDER BY created_at DESC
+          LIMIT 1
+       ) f ON true
       WHERE r.status IN ('approved', 'defended')
         AND COALESCE(r.graduation_year_id, r.academic_year_id) = $1
       UNION ALL
      SELECT 'import'::text, a.student_name, a.student_number, a.programme, a.level, a.language,
-            a.teacher_name, a.title_ro, a.defended_on::text
+            a.teacher_name, a.title_ro, a.defended_on::text, NULL, NULL, NULL
        FROM archive_entries a
       WHERE a.academic_year_id = $1
       ORDER BY teacher_name, student_name`,

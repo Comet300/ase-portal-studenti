@@ -25,6 +25,15 @@ import { LEVEL_LABELS, allYears, languageLabel, levelLabel } from '../lib/years'
 
 const u = Astro.locals.user!
 const isStudent = u.role === 'student'
+const isHead = u.role === 'head'
+
+/* The archive of the whole faculty is the department's register: it names every
+ * student of every past session, their coordinator and their title. It stays
+ * open to students — it is the catalogue they are told to read before choosing
+ * a direction — and to the director, who answers for it. A coordinator's own
+ * past sessions are on „Activitatea mea”, with the same rows for their own
+ * students. 404, not 403, like every other closed door here. */
+if (u.role === 'teacher') return Astro.rewrite('/404')
 
 const years = await allYears()
 const requested = Astro.url.searchParams.get('an') ?? ''
@@ -77,15 +86,6 @@ const Shell = isStudent ? StudentLayout : ProfesorLayout
   active="arhiva"
 >
   <div class="container stack stack--loose">
-    {
-      isStudent && (
-        <header class="stack stack--tight">
-          <h1 class="page-title">Arhivă</h1>
-          <p class="page-lede">{lede}</p>
-        </header>
-      )
-    }
-
     <div class="panel">
       <div class="panel__body row row--wrap" style="gap:var(--s-4);align-items:flex-end">
         <AlegeAn years={years} selected={year?.id ?? ''} base="/arhiva"
@@ -183,6 +183,18 @@ const Shell = isStudent ? StudentLayout : ProfesorLayout
                       <span class="muted text-xs">
                         {formatDate(r.defended_on)}
                       </span>
+                    )}
+                    {/* Lucrarea predată prin portal. O deschid cei care au
+                        dreptul să o citească — directorul, care răspunde de
+                        arhivă, și coordonatorul ei; ruta verifică din nou, ea
+                        este poarta. Pentru ceilalți nu există nici linkul. */}
+                    {r.thesis_file_id && (isHead || r.teacher_id === u.id) && (
+                      <a class="btn btn--ghost btn--sm" href={`/fisiere/${r.thesis_file_id}`}>
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" />
+                        </svg>
+                        Lucrarea
+                      </a>
                     )}
                     {r.source === 'import' && (
                       <span class="badge badge--ciorna">din evidență</span>

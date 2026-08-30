@@ -22,7 +22,7 @@ const links = u
       { href: '/', text: 'Acasă' },
       { href: '/coordonatori', text: 'Coordonatori & Teme' },
       ...(u.role === 'student'
-        ? [{ href: '/cererile-mele', text: 'Cererile mele' }]
+        ? [{ href: '/lucrarea-mea', text: 'Cererile mele' }]
         : [{ href: '/profesor', text: 'Zona cadrelor didactice' }]),
       { href: '/ghid', text: 'Ghid & Regulament' },
     ]
@@ -34,7 +34,7 @@ const links = u
     ]
 ---
 
-<StudentLayout title="Pagina nu a fost găsită" docTitle="404">
+<StudentLayout title="Pagina nu a fost găsită" docTitle="404" erou="fara">
   <div class="container">
     <div class="patru04">
       <p class="patru04__cod numeric">404</p>

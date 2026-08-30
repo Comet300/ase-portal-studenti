@@ -58,7 +58,9 @@ scattered email threads, spreadsheets and corridor conversations.
    student's side of that same interaction exists and looks like a sibling, not
    an afterthought.
 4. **Institutional, not corporate.** ASE red is the seal, not the theme. It marks
-   the primary action and the live state; it does not tint the furniture.
+   the primary action and the live state; it does not tint the furniture. It is
+   the faculty's own red, taken from mk.ase.ro, for the same reason the banner
+   is: a student moving between the two sites has not changed institutions.
 5. **Density where the work is.** Professor tables carry many rows and stay
    scannable. Student screens are calmer and carry fewer decisions per page.
 6. **Scarcity is stated, not hidden.** A coordinator with no seats left stays in
@@ -79,7 +81,10 @@ faculty actually uses (cerere, coordonator, temă, consultație, susținere).
 - **SaaS dashboard.** Gradient hero metrics, "Welcome back 👋", cards with big
   numbers and percentage deltas as decoration.
 - **University brochure.** Stock photography of smiling students, marketing copy,
-  hero imagery on authenticated screens.
+  a photograph carrying a claim. The banner every screen now opens with is the
+  faculty's own building on a dark band — the same one mk.ase.ro uses, so that
+  the portal and the faculty's site read as one institution. It carries the page
+  title and the actions of that page; it never carries a promise.
 - **Government portal.** Dense grey forms, unstyled tables, dead ends without
   explanation.
 - Anything that requires the reader to guess whether a thing was submitted.

@@ -89,7 +89,7 @@ export function sendChangeDecided(m: {
            de dinainte.</p>
            <p><strong>Motiv:</strong></p>${quote(m.note ?? '')}
            <p>Poți cere altă modificare oricând, sau poți discuta întâi în conversație.</p>`,
-      { text: 'Deschide lucrarea', url: `${m.baseUrl}/cererile-mele` },
+      { text: 'Deschide lucrarea', url: `${m.baseUrl}/lucrarea-mea` },
     ),
   })
 }
@@ -115,7 +115,7 @@ export function sendChangeApplied(m: {
        ${diffBlock(m.changes)}
        ${m.reason ? html`<p style="margin-top:20px"><strong>Explicația coordonatorului:</strong></p>${quote(m.reason)}` : ''}
        <p>Dacă nu ești de acord, scrie-i în conversație înainte de a cere altă modificare.</p>`,
-      { text: 'Vezi lucrarea', url: `${m.baseUrl}/cererile-mele` },
+      { text: 'Vezi lucrarea', url: `${m.baseUrl}/lucrarea-mea` },
     ),
   })
 }

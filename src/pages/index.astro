@@ -63,7 +63,7 @@ const intro = (() => {
             : ` Următorul termen: ${nextMilestone.title}, ${formatDate(nextMilestone.due_on)}.`
           : ''
       }`,
-      action: { href: '/cererile-mele', text: 'Vezi termenele lucrării' },
+      action: { href: '/lucrarea-mea', text: 'Vezi termenele lucrării' },
       secondary: { href: '/mesaje', text: 'Scrie coordonatorului' },
     }
   }
@@ -74,7 +74,7 @@ const intro = (() => {
       text: activeRequest.expires_at
         ? `Ai un răspuns până la ${formatDate(activeRequest.expires_at)}. Dacă nu vine până atunci, cererea se închide singură și poți depune alta.`
         : 'Aștepți răspunsul coordonatorului. Primești un email imediat ce decide.',
-      action: { href: '/cererile-mele', text: 'Vezi cererea' },
+      action: { href: '/lucrarea-mea', text: 'Vezi cererea' },
       secondary: { href: '/coordonatori', text: 'Vezi coordonatorii' },
     }
   }
@@ -96,23 +96,18 @@ const RESOURCES = [
 ---
 
 <StudentLayout
-  title="Acasă"
+  title={intro.title}
+  docTitle="Acasă"
   description={`Sesiunea de Finalizare a Studiilor ${yearLabel} — Facultatea de Marketing, ASE București`}
   active="acasa"
+  erou="amplu"
+  lede={intro.text}
 >
-  <div class="container stack stack--loose">
-    <section class="hero">
-      <div class="hero__text">
-        <p class="hero__session">Sesiunea de Finalizare a Studiilor {yearLabel}</p>
-        <h1 class="hero__title">{intro.title}</h1>
-        <p class="page-lede">{intro.text}</p>
-        <div class="row row--wrap" style="gap:var(--s-3)">
-          <a href={intro.action.href} class="btn btn--primary">{intro.action.text}</a>
-          <a href={intro.secondary.href} class="btn btn--secondary">{intro.secondary.text}</a>
-        </div>
-      </div>
+  <a href={intro.action.href} class="btn btn--primary" slot="actiuni">{intro.action.text}</a>
+  <a href={intro.secondary.href} class="btn btn--secondary" slot="actiuni">{intro.secondary.text}</a>
 
-      <aside class="situatie">
+  <div class="container stack stack--loose">
+    <aside class="situatie">
         <h2 class="situatie__titlu">Situația ta</h2>
         {
           activeRequest ? (
@@ -145,9 +140,8 @@ const RESOURCES = [
               <a href="/coordonatori" class="btn btn--primary btn--sm">Alege coordonator</a>
             </>
           )
-        }
-      </aside>
-    </section>
+      }
+    </aside>
 
     <section class="stack">
       <h2 class="section-title">Calendarul sesiunii</h2>
@@ -194,33 +188,11 @@ const RESOURCES = [
 </StudentLayout>
 
 <style>
-  .hero {
-    display: grid;
-    grid-template-columns: minmax(0, 1.6fr) minmax(260px, 1fr);
-    gap: var(--s-6);
-    align-items: start;
-  }
-
-  .hero__text {
-    display: flex;
-    flex-direction: column;
-    gap: var(--s-4);
-  }
-
-  .hero__session {
-    font-size: var(--t-sm);
-    font-weight: 600;
-    color: var(--red);
-  }
-
-  .hero__title {
-    font-family: var(--serif);
-    font-size: var(--t-3xl);
-    letter-spacing: -0.015em;
-    max-width: 22ch;
-  }
-
+  /* Titlul, fraza și cele două butoane stau acum pe banda de sus, care este
+     aceeași pe tot portalul. Aici rămâne doar cartonașul cu situația
+     cititorului — prima întrebare a fiecărui student: unde sunt cu cererea. */
   .situatie {
+    max-width: 34rem;
     display: flex;
     flex-direction: column;
     gap: var(--s-3);
@@ -331,9 +303,4 @@ const RESOURCES = [
     font-size: var(--t-xs);
   }
 
-  @media (max-width: 900px) {
-    .hero {
-      grid-template-columns: minmax(0, 1fr);
-    }
-  }
 </style>

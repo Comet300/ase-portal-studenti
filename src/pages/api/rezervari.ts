@@ -12,6 +12,17 @@ import { id as formId } from '../../lib/ids'
 export const POST: APIRoute = async ({ request, locals, url }) => {
   const u = locals.user
   if (!u) return sessionExpired()
+  /* Consultation places are for students. Until public hours existed the
+   * statement below said so by itself — it asked for an approved request — but
+   * a public hour has no such condition, and „Prof. Ionescu a rezervat ora
+   * dumneavoastră” is not a row anybody wants to read. */
+  if (u.role !== 'student') {
+    return redirectWithNotice(
+      '/profesor/consultatii',
+      'Locurile la consultații se rezervă de către studenți.',
+      true,
+    )
+  }
 
   const form = await request.formData()
   const action = formAction(form) || 'rezerva'
@@ -153,10 +164,22 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
         AND s.is_cancelled = false
         AND s.starts_at > now()
         AND (s.student_id IS NULL OR s.student_id = $1)
-        AND EXISTS (
-          SELECT 1 FROM requests r
-           WHERE r.student_id = $1 AND r.teacher_id = s.teacher_id AND r.status = 'approved'
+        /* A public hour is for anyone signed in as a student; one for the
+           coordinator's own students asks for the approved request that makes
+           somebody one of them. The condition is here and not on the page,
+           because the page is not an authorization. */
+        AND (
+          s.audience = 'public'
+          OR EXISTS (
+            SELECT 1 FROM requests r
+             WHERE r.student_id = $1 AND r.teacher_id = s.teacher_id AND r.status = 'approved'
+          )
         )
+        /* A summoned meeting is not on offer: its places belong to the students
+           named in it, who are booked into it the moment it is created. Without
+           this, a supervised student holding the id could take the spare seat of
+           a meeting arranged with somebody else. */
+        AND (s.kind = 'open' OR s.student_id = $1)
         AND (SELECT count(*) FROM bookings r WHERE r.slot_id = s.id AND r.status = 'booked') < s.capacity
      ON CONFLICT (slot_id, student_id) DO UPDATE SET status = 'booked'
      RETURNING id`,

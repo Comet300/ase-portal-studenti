@@ -4,7 +4,8 @@ import { postEvent } from '../../../lib/chat'
 import { queryOne, transaction } from '../../../lib/db'
 import { html, quote, sendEmail, template } from '../../../lib/mail'
 import { deadEnd, redirectWithNotice, sessionExpired } from '../../../lib/http'
-import { DEFAULT_MILESTONES, teacherSeats } from '../../../lib/repo'
+import { DEFAULT_MILESTONES, teacherCapacity } from '../../../lib/repo'
+import { freeFor } from '../../../lib/seats'
 import { id as formId } from '../../../lib/ids'
 
 /**
@@ -33,14 +34,45 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
     return redirectWithNotice(redirectTo, 'Motivul respingerii este obligatoriu (minimum 10 caractere).', true)
   }
 
+  /* Capacity is answered for THIS student, not for the coordinator in general.
+   *
+   * It used to be answered on the sum of both levels, so somebody with zero
+   * bachelor's seats and five master's seats could accept five bachelor's
+   * students. Now the level is the student's level and the seats reserved for
+   * other study programmes are not offered here — which means a coordinator who
+   * could accept yesterday may be refused today. The message says so, because
+   * otherwise this reads as the portal breaking. */
   if (decision === 'approved') {
-    const seats = await teacherSeats(u!.id)
-    if (seats.free === 0) {
-      return redirectWithNotice(
-        redirectTo,
-        `Nu mai ai locuri libere (${seats.total_taken}/${seats.total_seats}). Cere locuri suplimentare directorului înainte de a accepta.`,
-        true,
-      )
+    const target = await queryOne<{
+      programme_id: string | null
+      programme_name: string | null
+      level: 'bachelor' | 'master' | null
+    }>(
+      `SELECT COALESCE(r.programme_id, s.programme_id) AS programme_id,
+              p.name AS programme_name,
+              COALESCE(p.level, s.program) AS level
+         FROM requests r
+         JOIN users s ON s.id = r.student_id
+         LEFT JOIN study_programmes p ON p.id = COALESCE(r.programme_id, s.programme_id)
+        WHERE r.id = $1 AND r.teacher_id = $2 AND r.status = 'pending'`,
+      [requestId, u!.id],
+    )
+
+    if (target) {
+      const capacity = await teacherCapacity(u!.id)
+      const level = target.level === 'master' ? capacity.master : capacity.bachelor
+      const cohort = target.programme_name ?? (target.level === 'master' ? 'master' : 'licență')
+
+      if (freeFor(level, target.programme_id) === 0) {
+        const reserved = level.free_any - level.base_free
+        return redirectWithNotice(
+          redirectTo,
+          reserved > 0
+            ? `Nu mai ai locuri pentru ${cohort} (${level.taken} din ${level.total} ocupate la acest nivel). Cele ${reserved} locuri rămase sunt rezervate altor programe de studiu și nu pot fi folosite aici. Cere directorului locuri pentru ${cohort}.`
+            : `Nu mai ai locuri pentru ${cohort} (${level.taken} din ${level.total} ocupate la acest nivel). Locurile se numără separat pe nivel și pe program de studiu, așa că locurile de la celălalt nivel nu se pot folosi aici. Cere directorului locuri pentru ${cohort}.`,
+          true,
+        )
+      }
     }
   }
 
@@ -53,10 +85,19 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
       title_ro: string
       number: string
     }>(
+      /* The programme is pinned here, at the instant the seat is consumed.
+       * Read off the student at query time, it followed them: moving a student
+       * between programmes in March moved a seat spent in October with them,
+       * out of one coordinator's earmark and into another's. */
       `UPDATE requests
           SET status = $3,
               rejection_reason = CASE WHEN $3 = 'rejected' THEN NULLIF($4, '') ELSE rejection_reason END,
               decision_note = NULLIF($4, ''),
+              programme_id = CASE
+                WHEN $3 = 'approved'
+                  THEN COALESCE(requests.programme_id,
+                                (SELECT s.programme_id FROM users s WHERE s.id = requests.student_id))
+                ELSE requests.programme_id END,
               decided_at = now(),
               expires_at = NULL,
               updated_at = now()
@@ -136,7 +177,7 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
              „${cerere.title_ro}” a fost respinsă de ${u!.name}.</p>
              <p><strong>Motiv:</strong></p>${noteBlock}
              <p>Poți depune o cerere nouă, către același coordonator sau către altul.</p>`,
-        { text: 'Deschide portalul', url: `${baseUrl}/cererile-mele` },
+        { text: 'Deschide portalul', url: `${baseUrl}/lucrarea-mea` },
       ),
     })
   }

@@ -6,7 +6,8 @@ import { formAction } from '../../lib/forms'
 import { deadEnd, redirect, redirectWithNotice, sessionExpired } from '../../lib/http'
 import { INVITATION_WINDOW_DAYS, openInvitationFor } from '../../lib/lifecycle'
 import { html, quote, sendEmail, template } from '../../lib/mail'
-import { teacherSeats } from '../../lib/repo'
+import { teacherCapacity } from '../../lib/repo'
+import { freeFor } from '../../lib/seats'
 import { id as formId } from '../../lib/ids'
 
 /**
@@ -54,12 +55,16 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
       name: string
       email: string
       program: string | null
+      programme_id: string | null
+      programme_name: string | null
       supervised: boolean
     }>(
-      `SELECT u.id, u.name, u.email, u.program,
+      `SELECT u.id, u.name, u.email, u.program, u.programme_id, p.name AS programme_name,
               EXISTS (SELECT 1 FROM requests r
                        WHERE r.student_id = u.id AND r.status = 'approved') AS supervised
-         FROM users u WHERE u.id = $1 AND u.role = 'student'`,
+         FROM users u
+         LEFT JOIN study_programmes p ON p.id = u.programme_id
+        WHERE u.id = $1 AND u.role = 'student'`,
       [studentId],
     )
     if (!student) return redirectWithNotice(TEACHER_PAGE, 'Studentul nu există.', true)
@@ -67,11 +72,18 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
       return redirectWithNotice(TEACHER_PAGE, `${student.name} are deja un coordonator.`, true)
     }
 
-    const seats = await teacherSeats(u.id)
-    if (seats.free === 0) {
+    /* The seat has to exist for THIS student: at their level, and out of the
+     * pot their study programme can spend. Checked on the sum of both levels
+     * until now, which let somebody with no bachelor's seats invite bachelor's
+     * students on the strength of their master's ones. */
+    const capacity = await teacherCapacity(u.id)
+    const level = student.program === 'master' ? capacity.master : capacity.bachelor
+    const cohort = student.programme_name ?? (student.program === 'master' ? 'master' : 'licență')
+
+    if (freeFor(level, student.programme_id) === 0) {
       return redirectWithNotice(
         TEACHER_PAGE,
-        'Nu mai ai locuri libere. Cere locuri suplimentare directorului înainte de a invita.',
+        `Nu mai ai locuri pentru ${cohort} (${level.taken} din ${level.total} ocupate la acest nivel). Locurile se numără separat pe nivel și pe program de studiu. Cere directorului locuri pentru ${cohort} înainte de a invita.`,
         true,
       )
     }
@@ -113,7 +125,7 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
          lucrarea de finalizare a studiilor.</p>
          <p style="padding:12px 16px;background:#f8f9fa;border-radius:4px;white-space:pre-wrap">${message}</p>
          <p>Poți accepta sau refuza în portal. Propunerea expiră în ${INVITATION_WINDOW_DAYS} de zile.</p>`,
-        { text: 'Vezi propunerea', url: `${base}/cererile-mele` },
+        { text: 'Vezi propunerea', url: `${base}/lucrarea-mea` },
       ),
     })
 
@@ -135,12 +147,12 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
 
     const invitation = await openInvitationFor(u.id, invitationId)
     if (!invitation) {
-      return redirectWithNotice('/cererile-mele', 'Propunerea nu mai este disponibilă.', true)
+      return redirectWithNotice('/lucrarea-mea', 'Propunerea nu mai este disponibilă.', true)
     }
 
     if (answer === 'declined' && reason.length < 10) {
       return redirectWithNotice(
-        '/cererile-mele',
+        '/lucrarea-mea',
         'Scrie pe scurt de ce refuzi — coordonatorul primește motivul.',
         true,
       )
@@ -155,7 +167,7 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
       [u.id, invitationId, answer, reason],
     )
     if (!changed) {
-      return redirectWithNotice('/cererile-mele', 'Propunerea nu mai este disponibilă.', true)
+      return redirectWithNotice('/lucrarea-mea', 'Propunerea nu mai este disponibilă.', true)
     }
 
     const accepted = answer === 'accepted'
@@ -195,8 +207,8 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
     }
 
     return accepted
-      ? redirect(`/cererile-mele?invitatie=${invitationId}`)
-      : redirectWithNotice('/cererile-mele', 'Ai refuzat propunerea. Coordonatorul a fost anunțat.')
+      ? redirect(`/lucrarea-mea?invitatie=${invitationId}`)
+      : redirectWithNotice('/lucrarea-mea', 'Ai refuzat propunerea. Coordonatorul a fost anunțat.')
   }
 
   return deadEnd(400, 'Cerere neînțeleasă', 'Portalul nu a recunoscut acțiunea cerută. Reia pasul din interfață.')

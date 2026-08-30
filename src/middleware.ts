@@ -2,15 +2,15 @@ import { defineMiddleware } from 'astro:middleware'
 import { SESSION_COOKIE, getUserFromSession } from './lib/auth'
 import { touchPresence } from './lib/chat'
 import { sweepDeadlines } from './lib/lifecycle'
-import { isPublicPath } from './lib/routes'
+import { isHeadOnlyPath, isPublicPath } from './lib/routes'
 
 /**
- * The teacher area requires `teacher` or `head`, and the department view
- * requires `head`. A signed-in user without the right role gets 404 rather than
- * 403: we do not confirm an area they cannot use.
+ * The teacher area requires `teacher` or `head`; which screens belong to the
+ * head alone is written down in `lib/routes.ts`, next to the list of public
+ * paths and pinned by the same test. A signed-in user without the right role
+ * gets 404 rather than 403: we do not confirm an area they cannot use.
  */
 const TEACHER_AREA = '/profesor'
-const HEAD_ONLY = ['/profesor/departament', '/profesor/calendar', '/profesor/an-universitar', '/profesor/conturi']
 
 const UNSAFE = new Set(['POST', 'PUT', 'PATCH', 'DELETE'])
 
@@ -76,7 +76,7 @@ export const onRequest = defineMiddleware(async (context, next) => {
   /* The gate.
    *
    * `search` travels with the path. The catalogue hands out links of the form
-   * `/cererile-mele?coordonator=<id>&tema=<id>`; without the query a student
+   * `/lucrarea-mea?coordonator=<id>&tema=<id>`; without the query a student
    * who signed in on the way arrived at a generic page with the topic they had
    * clicked silently gone.
    *
@@ -93,7 +93,7 @@ export const onRequest = defineMiddleware(async (context, next) => {
     return context.rewrite('/404')
   }
 
-  if (HEAD_ONLY.some((p) => path.startsWith(p)) && user && user.role !== 'head') {
+  if (isHeadOnlyPath(path) && user && user.role !== 'head') {
     return context.rewrite('/404')
   }
 

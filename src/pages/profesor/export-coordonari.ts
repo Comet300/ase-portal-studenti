@@ -3,6 +3,7 @@ import { recordAccess } from '../../lib/audit'
 import { isDepartmentHead, isTeacher } from '../../lib/auth'
 import { query, queryOne } from '../../lib/db'
 import { id } from '../../lib/ids'
+import { type Column, sheetFormat, sheetResponse } from '../../lib/sheet'
 import { formatInitial, officialName } from '../../lib/text'
 import { languageLabel, levelLabel } from '../../lib/years'
 
@@ -14,42 +15,48 @@ import { languageLabel, levelLabel } from '../../lib/years'
  * still travels on paper. Which rows you get depends on your role, and the
  * condition is part of the query.
  *
- * Excel on a Romanian locale splits on `;`, not `,` — and these titles and names
- * are full of commas — so the separator is the semicolon and the file is written
- * with a BOM so the diacritics survive the double-click.
+ * Two files, one description of the columns (`lib/sheet.ts`): .xlsx by default,
+ * because that is what „Excel” means to a secretariat and it is UTF-8 by
+ * definition, and .csv for everything else — with the `;` a Romanian locale
+ * splits on and a BOM in front, so the diacritics survive the double-click.
  */
+
+type Row = Record<string, unknown>
+
+const day = (value: unknown) =>
+  value ? new Date(value as string).toISOString().slice(0, 10) : ''
 
 /* „Student” carries the name as it is written in the register, initial
  * included, and the initial also travels in a column of its own: the
  * secretariat matches this file against lists where the two are separate
  * fields. */
-const COLUMNS = [
-  'Nr. cerere',
-  'Student',
-  'Inițiala tatălui',
-  'Număr matricol',
-  'Nivel',
-  'Specializare',
-  'Limbă',
-  'An',
-  'Seria',
-  'Grupa',
-  'Email student',
-  'Coordonator',
-  'Titlu didactic',
-  'Titlul lucrării (RO)',
-  'Titlul lucrării (EN)',
-  'Aprobată la',
-  'Termene finalizate',
-  'Termene total',
+const COLUMNS: Column<Row>[] = [
+  { header: 'Nr. cerere', value: (r) => r.number as string },
+  {
+    header: 'Student',
+    value: (r) =>
+      officialName({
+        name: r.student_name as string,
+        father_initial: r.father_initial as string | null,
+      }),
+  },
+  { header: 'Inițiala tatălui', value: (r) => formatInitial(r.father_initial as string | null) },
+  { header: 'Număr matricol', value: (r) => r.student_number as string },
+  { header: 'Nivel', value: (r) => levelLabel(r.program as string | null) },
+  { header: 'Specializare', value: (r) => r.specialization as string },
+  { header: 'Limbă', value: (r) => languageLabel(r.study_language as string | null) },
+  { header: 'An', value: (r) => r.study_year as number },
+  { header: 'Seria', value: (r) => r.study_series as string },
+  { header: 'Grupa', value: (r) => r.study_group as string },
+  { header: 'Email student', value: (r) => r.student_email as string },
+  { header: 'Coordonator', value: (r) => r.teacher_name as string },
+  { header: 'Titlu didactic', value: (r) => r.academic_title as string },
+  { header: 'Titlul lucrării (RO)', value: (r) => r.title_ro as string },
+  { header: 'Titlul lucrării (EN)', value: (r) => r.title_en as string },
+  { header: 'Aprobată la', value: (r) => day(r.decided_at) },
+  { header: 'Termene finalizate', value: (r) => r.done as number },
+  { header: 'Termene total', value: (r) => r.total as number },
 ]
-
-function cell(value: unknown): string {
-  const text = value == null ? '' : String(value)
-  // A semicolon, quote or newline inside a field would otherwise shift every
-  // column after it.
-  return /[";\n\r]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text
-}
 
 export const GET: APIRoute = async ({ locals, url, request }) => {
   const u = locals.user
@@ -82,37 +89,6 @@ export const GET: APIRoute = async ({ locals, url, request }) => {
     [all, u!.id, yearId],
   )
 
-  const lines = [
-    COLUMNS.join(';'),
-    ...rows.map((r) =>
-      [
-        r.number,
-        officialName({
-          name: r.student_name as string,
-          father_initial: r.father_initial as string | null,
-        }),
-        formatInitial(r.father_initial as string | null),
-        r.student_number,
-        levelLabel(r.program as string | null),
-        r.specialization,
-        languageLabel(r.study_language as string | null),
-        r.study_year,
-        r.study_series,
-        r.study_group,
-        r.student_email,
-        r.teacher_name,
-        r.academic_title,
-        r.title_ro,
-        r.title_en,
-        r.decided_at ? new Date(r.decided_at as string).toISOString().slice(0, 10) : '',
-        r.done,
-        r.total,
-      ]
-        .map(cell)
-        .join(';'),
-    ),
-  ]
-
   /* The file name says which cohort is inside it: two exports from two years
      both landed as „coordonarile-mele.csv” in the Downloads folder. */
   const yearLabel = (
@@ -122,15 +98,13 @@ export const GET: APIRoute = async ({ locals, url, request }) => {
       [yearId],
     )
   )?.label
-  const suffix = yearLabel ? '-' + yearLabel.replace(/[^\x20-\x7e]+/g, '-') : ''
-  const filename = `${all ? 'coordonari-departament' : 'coordonarile-mele'}${suffix}.csv`
 
   await recordAccess({ userId: u!.id, action: 'export_coordonari', subject: url.pathname + url.search, rowCount: rows.length, request })
 
-  return new Response('﻿' + lines.join('\r\n') + '\r\n', {
-    headers: {
-      'content-type': 'text/csv; charset=utf-8',
-      'content-disposition': `attachment; filename="${filename}"`,
-    },
-  })
+  return sheetResponse(
+    sheetFormat(url.searchParams.get('format')),
+    COLUMNS,
+    rows,
+    `${all ? 'coordonari-departament' : 'coordonarile-mele'}${yearLabel ? '-' + yearLabel : ''}`,
+  )
 }

@@ -8,7 +8,23 @@ import { fileStore } from './container'
  * no change at the call sites.
  */
 
-export { MAX_BYTES } from './adapters/disk-files'
+export { MAX_BYTES, MAX_ABSOLUTE_BYTES } from './adapters/disk-files'
+
+/**
+ * What may be handed in as a finished thesis, and what may accompany it.
+ *
+ * The thesis is a PDF and nothing else: it is the form that reads the same on
+ * every machine, it is what the regulation asks for, and it is what goes into
+ * the anti-plagiarism platform. The declaration of originality is signed on
+ * paper, so a photograph of it counts.
+ */
+export const THESIS_EXTENSIONS = ['pdf'] as const
+export const DECLARATION_EXTENSIONS = ['pdf', 'jpg', 'jpeg', 'png'] as const
+
+export const THESIS_MAX_BYTES = 40 * 1024 * 1024
+
+export const THESIS_ACCEPT = THESIS_EXTENSIONS.map((e) => `.${e}`).join(',')
+export const DECLARATION_ACCEPT = DECLARATION_EXTENSIONS.map((e) => `.${e}`).join(',')
 
 /**
  * What can be attached in a conversation.

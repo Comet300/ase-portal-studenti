@@ -1,0 +1,312 @@
+---
+/**
+ * Banda de sus a fiecărui ecran: titlul paginii, pe fundal închis, cu clădirea
+ * facultății în dreapta.
+ *
+ * Forma vine de la mk.ase.ro, unde `.heroBanner` este o grilă 60/40 — text pe
+ * negru la stânga, fotografie la dreapta — pentru că portalul și site-ul
+ * facultății sunt ale aceleiași facultăți, iar un student care trece de pe unul
+ * pe celălalt nu are de ce să creadă că a schimbat instituția.
+ *
+ * Ce nu s-a copiat: 550px de bandă pe fiecare ecran. Acolo o pagină este un
+ * articol; aici este o listă de cereri deschisă între două cursuri, de obicei
+ * pe telefon. De aceea eroul are două mărimi — `compact`, cât să poarte titlul,
+ * pe ecranele de lucru, și `amplu` pe cele trei ecrane de intrare, unde este
+ * primul lucru pe care îl vezi.
+ *
+ * Fotografia este decor: stă în `background-image`, nu într-un `<img>`, și
+ * nimeni nu pierde nimic dacă nu se încarcă — sub ea rămâne fundalul întreg.
+ * De aceea nici nu are text alternativ.
+ */
+interface Props {
+  titlu: string
+  /** Fraza de sub titlu. O propoziție, nu un paragraf. */
+  lede?: string
+  /** Rândul de deasupra titlului: sesiunea, anul, secțiunea din care vii. */
+  supratitlu?: string
+  /** Legătura „înapoi”, când ecranul are un părinte firesc. */
+  inapoi?: { href: string; text: string }
+  variant?: 'compact' | 'amplu'
+  /** Când textul trebuie să se alinieze cu conținutul paginii dinăuntru. */
+  incadrat?: boolean
+  /** Alt fundal decât clădirea din Piața Romană. */
+  imagine?: string
+  /** Fără fotografie: bandă întreagă, pentru ecranele de eroare. */
+  faraImagine?: boolean
+}
+
+const {
+  titlu,
+  lede,
+  supratitlu,
+  inapoi,
+  variant = 'compact',
+  incadrat = false,
+  imagine = '/img/ase.jpg',
+  faraImagine = false,
+} = Astro.props
+
+/* `Astro.slots.has` decide dacă rândul de acțiuni există deloc: un `<div>` gol
+ * sub titlu ar adăuga spațiu pe fiecare ecran care nu are butoane. */
+const areActiuni = Astro.slots.has('actiuni')
+---
+
+<section class:list={['erou', `erou--${variant}`, { 'erou--simplu': faraImagine }]}>
+  {
+    !faraImagine && (
+      <div class="erou__imagine" style={`background-image: url('${imagine}')`} aria-hidden="true" />
+    )
+  }
+
+  <div class:list={['erou__interior', { container: incadrat }]}>
+    {
+      inapoi && (
+        <a class="erou__inapoi" href={inapoi.href}>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <path d="M15 18l-6-6 6-6" />
+          </svg>
+          {inapoi.text}
+        </a>
+      )
+    }
+    {supratitlu && <p class="erou__supratitlu">{supratitlu}</p>}
+    <h1 class="erou__titlu">{titlu}</h1>
+    {lede && <p class="erou__lede">{lede}</p>}
+    {
+      areActiuni && (
+        <div class="erou__actiuni">
+          <slot name="actiuni" />
+        </div>
+      )
+    }
+  </div>
+</section>
+
+<style>
+  .erou {
+    position: relative;
+    /* `clip` și nu `hidden`: bara de sus este lipicioasă, iar `overflow: hidden`
+       pe un strămoș ar rupe-o. */
+    overflow: clip;
+    background: var(--hero-ground);
+    /* Inelul de focus moștenește culoarea: roșul pe fundalul închis dă 1.9:1. */
+    --focus: #fff;
+  }
+
+  .erou__imagine {
+    position: absolute;
+    /* Pornește de la 35%, deși fotografia se vede abia de pe la jumătate:
+       gradientul de dedesubt are nevoie de drum ca să stingă imaginea în
+       fundal. Cu marginea imaginii pusă exact acolo unde începe să se vadă,
+       cerul tăia o dungă verticală vizibilă prin toată banda. */
+    inset: 0 0 0 35%;
+    background-size: cover;
+    background-position: center 38%;
+  }
+
+  /* Fotografia nu se termină cu o muchie dreaptă peste text: se stinge în
+     fundal. Fără gradient, un titlu lung ajunge peste zidul clădirii și devine
+     ilizibil exact la capătul rândului. */
+  .erou__imagine::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(
+      90deg,
+      var(--hero-ground) 0%,
+      var(--hero-ground) 22%,
+      color-mix(in srgb, var(--hero-ground) 78%, transparent) 45%,
+      color-mix(in srgb, var(--hero-ground) 30%, transparent) 72%,
+      transparent 100%
+    );
+  }
+
+  .erou__interior {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: var(--s-3);
+    /* 58%: titlul se oprește înainte de fotografie chiar și când are trei
+       rânduri. */
+    max-width: 58%;
+    min-height: 200px;
+    padding: var(--s-6);
+  }
+
+  .erou--amplu .erou__interior {
+    min-height: 400px;
+    gap: var(--s-4);
+  }
+
+  .erou--simplu .erou__interior {
+    max-width: 100%;
+  }
+
+  /* Când eroul stă într-un ecran cu `.container`, textul lui trebuie să înceapă
+     din același loc cu conținutul de dedesubt, altfel titlul și pagina par două
+     coloane diferite. `.container` centrează; jumătatea din dreapta a lățimii
+     lui rămâne fotografiei. */
+  .erou__interior.container {
+    max-width: min(var(--container), 100%);
+    padding-block: var(--s-6);
+  }
+  .erou__interior.container > * {
+    max-width: min(58%, 46rem);
+  }
+
+  .erou__supratitlu {
+    margin: 0;
+    font-size: var(--t-sm);
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    color: var(--dark-ink-muted);
+  }
+
+  .erou__titlu {
+    margin: 0;
+    font-family: var(--serif);
+    font-size: var(--t-3xl);
+    font-weight: 700;
+    line-height: 1.15;
+    color: #fff;
+    text-wrap: balance;
+  }
+
+  .erou--compact .erou__titlu {
+    font-size: var(--t-2xl);
+  }
+
+  .erou__lede {
+    margin: 0;
+    max-width: 60ch;
+    font-size: var(--t-body);
+    line-height: 1.55;
+    color: var(--dark-ink-soft);
+  }
+
+  .erou__inapoi {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--s-2);
+    align-self: flex-start;
+    min-height: var(--tap);
+    margin-block: calc(var(--s-3) * -1);
+    font-size: var(--t-sm);
+    font-weight: 600;
+    color: var(--dark-ink-muted);
+    text-decoration: none;
+  }
+  .erou__inapoi:hover {
+    color: #fff;
+  }
+  .erou__inapoi svg {
+    width: 14px;
+    height: 14px;
+  }
+
+  .erou__actiuni {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--s-3);
+    margin-top: var(--s-2);
+  }
+
+  /* Butoanele de pe bandă sunt aceleași butoane, pe alt fundal: secundarul își
+     ia conturul din alb, nu din `--border-strong`, care pe închis dispare. */
+  .erou__actiuni :global(.btn--secondary) {
+    background: transparent;
+    border-color: rgba(255, 255, 255, 0.45);
+    color: #fff;
+  }
+  .erou__actiuni :global(.btn--secondary:hover) {
+    background: rgba(255, 255, 255, 0.12);
+    color: #fff;
+  }
+  .erou__actiuni :global(.btn--ghost) {
+    color: var(--dark-ink-soft);
+  }
+  .erou__actiuni :global(.btn--ghost:hover) {
+    background: rgba(255, 255, 255, 0.1);
+    color: #fff;
+  }
+
+  @media (max-width: 900px) {
+    /* Pe telefon fotografia trece deasupra, ca la mk.ase.ro: o bandă de 120px
+       care spune unde ești, nu o jumătate de ecran înainte de primul rând de
+       text. */
+    .erou {
+      display: flex;
+      flex-direction: column;
+    }
+    .erou__imagine {
+      position: static;
+      height: 120px;
+      flex: none;
+    }
+    .erou__imagine::after {
+      background: linear-gradient(180deg, transparent 40%, var(--hero-ground) 100%);
+    }
+    .erou__interior,
+    .erou__interior.container {
+      max-width: 100%;
+      min-height: 0;
+      padding-block: var(--s-5);
+    }
+    .erou__interior.container > * {
+      max-width: 100%;
+    }
+    .erou--amplu .erou__interior {
+      min-height: 0;
+    }
+    .erou__titlu,
+    .erou--compact .erou__titlu {
+      font-size: var(--t-xl);
+    }
+  }
+
+  /* Pe telefon, fotografia pleacă de pe ecranele de lucru.
+   *
+   * Banda măsura 330px pe un ecran de 844: 120px de clădire plus titlul și
+   * fraza de sub el, adică patruzeci la sută din prima priveliște, înaintea
+   * primului rând de conținut — pe pagina pe care un student o deschide ca să
+   * verifice un singur lucru. Fotografia este decor și pleacă prima; fundalul
+   * închis rămâne, deci ecranul își păstrează antetul.
+   *
+   * Pe ecranele de intrare rămâne: acolo ea este primul lucru pe care îl vezi
+   * și singurul care spune unde ai ajuns. */
+  @media (max-width: 640px) {
+    .erou--compact .erou__imagine {
+      display: none;
+    }
+    .erou--amplu .erou__imagine {
+      height: 96px;
+    }
+  }
+
+  /* Pe hârtie banda nu are ce căuta: fundalul închis se tipărește ca o pată de
+     cerneală, iar titlul trebuie să rămână negru pe alb. */
+  @media print {
+    .erou {
+      background: none;
+    }
+    .erou__imagine,
+    .erou__actiuni,
+    .erou__inapoi {
+      display: none;
+    }
+    .erou__interior {
+      max-width: 100%;
+      min-height: 0;
+      padding: 0;
+    }
+    .erou__titlu {
+      color: #000;
+    }
+    .erou__lede,
+    .erou__supratitlu {
+      color: #333;
+    }
+  }
+</style>

@@ -28,22 +28,50 @@ export const GET: APIRoute = async ({ params, locals, url, request }) => {
   const fileId = routeId(params.id ?? null)
   if (!fileId) return new Response('Fișierul nu a fost găsit', { status: 404 })
 
+  /* Two kinds of file, two ways of being entitled to one.
+   *
+   * An attachment belongs to a conversation and is read by the two people in
+   * it. A thesis belongs to a supervision: the student who handed it in, the
+   * coordinator it was handed to, and the head of department, who answers for
+   * the session's archive and reads the papers in it.
+   *
+   * Both conditions are inside the statement rather than beside it. There is no
+   * row-level security here, and a check written next to the query is one a
+   * later edit can walk past.
+   *
+   * The folder a file lives in is its conversation or its request, which is why
+   * it is selected rather than assumed: they are two different columns, and
+   * exactly one of them is set (migration 0022). */
   const file = await queryOne<{
-    conversation_id: string
+    folder: string
     stored_name: string
     original_name: string
     mime: string | null
+    kind: string
   }>(
-    `SELECT f.conversation_id, f.stored_name, f.original_name, f.mime
+    `SELECT COALESCE(f.conversation_id, f.request_id)::text AS folder,
+            f.stored_name, f.original_name, f.mime, f.kind
        FROM files f
-       JOIN conversations c ON c.id = f.conversation_id
-      WHERE f.id = $2 AND (c.student_id = $1 OR c.teacher_id = $1)`,
+       LEFT JOIN conversations c ON c.id = f.conversation_id
+       LEFT JOIN requests r ON r.id = f.request_id
+      WHERE f.id = $2
+        AND (
+          (f.kind = 'attachment' AND (c.student_id = $1 OR c.teacher_id = $1))
+          OR (
+            f.kind <> 'attachment'
+            AND (
+              r.student_id = $1
+              OR r.teacher_id = $1
+              OR EXISTS (SELECT 1 FROM users h WHERE h.id = $1 AND h.role = 'head')
+            )
+          )
+        )`,
     [u.id, fileId],
   )
 
-  if (!file?.conversation_id) return new Response('Fișierul nu a fost găsit', { status: 404 })
+  if (!file?.folder) return new Response('Fișierul nu a fost găsit', { status: 404 })
 
-  const stored = await openFile(file.conversation_id, file.stored_name)
+  const stored = await openFile(file.folder, file.stored_name)
   if (!stored) return new Response('Fișierul nu a fost găsit', { status: 404 })
 
   const inline = url.searchParams.get('inline') === '1' && INLINE.has(file.mime ?? '')
@@ -54,7 +82,7 @@ export const GET: APIRoute = async ({ params, locals, url, request }) => {
   if (!inline) {
     await recordAccess({
       userId: u.id,
-      action: 'descarca_fisier',
+      action: file.kind === 'attachment' ? 'descarca_fisier' : 'descarca_lucrare',
       subject: `${fileId} · ${file.original_name}`,
       request,
     })

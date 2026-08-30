@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { PUBLIC_PATHS } from '../src/lib/routes.ts'
+import { HEAD_ONLY_PREFIXES, PUBLIC_PATHS, isHeadOnlyPath } from '../src/lib/routes.ts'
 import { SCREENS, screenName } from '../src/lib/navigation.ts'
 import { homeFor } from '../src/lib/http.ts'
 
@@ -38,6 +38,7 @@ describe('rutele publice', () => {
       '/',
       '/coordonatori',
       '/ghid',
+      '/lucrarea-mea',
       '/cererile-mele',
       '/mesaje',
       '/consultatii',
@@ -101,5 +102,48 @@ describe('homeFor', () => {
   it('trimite cadrul didactic și directorul în zona lor', () => {
     assert.equal(homeFor({ role: 'teacher' }), '/profesor')
     assert.equal(homeFor({ role: 'head' }), '/profesor')
+  })
+})
+
+/**
+ * The director's own screens, written down.
+ *
+ * These carry the register of the faculty: every student with their number and
+ * address, the load of every coordinator, the accounts. A coordinator has their
+ * own students one screen away and the public catalogue outside the shell —
+ * this list is what only the person answering for the session opens. Adding to
+ * it, or taking something out of it, costs a line here.
+ */
+describe('ecranele directorului', () => {
+  it('sunt exact acestea', () => {
+    assert.deepEqual(
+      [...HEAD_ONLY_PREFIXES],
+      [
+        '/profesor/facultate',
+        '/profesor/departament',
+        '/profesor/conturi',
+        '/profesor/calendar',
+        '/profesor/an-universitar',
+      ],
+    )
+  })
+
+  it('se potrivesc pe prefix, ca exportul să fie la fel de închis ca ecranul', () => {
+    assert.equal(isHeadOnlyPath('/profesor/facultate'), true)
+    assert.equal(isHeadOnlyPath('/profesor/facultate/export'), true)
+    assert.equal(isHeadOnlyPath('/profesor/departament/export-cereri'), true)
+  })
+
+  it('lasă deschis restul zonei cadrelor didactice', () => {
+    for (const path of [
+      '/profesor',
+      '/profesor/studenti',
+      '/profesor/teme',
+      '/profesor/consultatii',
+      '/profesor/mesaje',
+      '/profesor/activitatea-mea',
+    ]) {
+      assert.equal(isHeadOnlyPath(path), false, `${path} nu este doar al directorului`)
+    }
   })
 })

@@ -1,4 +1,5 @@
 ---
+import AlegeAn from '../../components/AlegeAn.astro'
 import Avatar from '../../components/Avatar.astro'
 import Metrica from '../../components/Metrica.astro'
 import ProfesorLayout from '../../layouts/ProfesorLayout.astro'
@@ -8,10 +9,12 @@ import { officialName } from '../../lib/text'
 import {
   LANGUAGE_LABELS,
   LEVEL_LABELS,
+  allYears,
   currentYear,
   languageLabel,
   levelLabel,
   programmes,
+  yearById,
 } from '../../lib/years'
 
 /**
@@ -33,13 +36,28 @@ const cont = Astro.url.searchParams.get('cont') ?? ''
 const stare = Astro.url.searchParams.get('stare') ?? ''
 const searchQuery = (Astro.url.searchParams.get('q') ?? '').trim().toLowerCase()
 
-const all = await studentDirectory()
+/* The year, and what changing it actually does.
+ *
+ * `users` carries no cohort: a student belongs to the faculty, not to a
+ * session. So the year does not decide *who* is in the list — it decides which
+ * session's coordination is shown next to each name. On „2023–2024” the same
+ * people appear with the coordinators they had then, and whoever had no request
+ * that year reads „Nu a depus cerere”, which is exactly what happened.
+ *
+ * For the years where that distinction matters, `stare=depusa` narrows the list
+ * to the students who did enter that session.
+ */
+const years = await allYears()
+const askedYear = Astro.url.searchParams.get('an')
+const year = (askedYear ? await yearById(askedYear) : null) ?? (await currentYear())
+
+const all = await studentDirectory(year?.id)
 
 /* Moving a student between programmes is an administrative task: it appears only
  * for the head of department, on the same screen where they are already looking
  * at who is in which group. */
 const canAssign = isDepartmentHead(Astro.locals.user)
-const an = canAssign ? await currentYear() : null
+const an = canAssign ? year : null
 const yearProgrammes = an ? (await programmes(an.id)).filter((p) => p.is_active) : []
 
 const filtered = all.filter((s) => {
@@ -110,6 +128,7 @@ const STATUS_OPTIONS = [
   { value: '', text: 'Toate stările' },
   { value: 'coordonat', text: 'Cu coordonator' },
   { value: 'asteptare', text: 'Cerere în așteptare' },
+  { value: 'depusa', text: 'A intrat în sesiunea aleasă' },
   { value: 'neinceput', text: 'Nu a depus cerere' },
 ]
 
@@ -127,6 +146,21 @@ const ACCOUNT_OPTIONS = [
  * current address travels with the form.
  */
 const backUrl = Astro.url.pathname + Astro.url.search
+
+/* The download is the screen, not the table underneath it: whoever filtered
+ * down to „master, seria B, fără cerere” expects those rows in the file. The
+ * export route reads the same parameters, so the link only has to carry the
+ * ones that are set. */
+const exportParams = new URLSearchParams()
+for (const [key, value] of Astro.url.searchParams) {
+  if (value) exportParams.set(key, value)
+}
+if (year) exportParams.set('an', year.id)
+const exportHref = (format: string) => {
+  const p = new URLSearchParams(exportParams)
+  p.set('format', format)
+  return `/profesor/facultate/export?${p.toString()}`
+}
 ---
 
 <ProfesorLayout
@@ -134,9 +168,13 @@ const backUrl = Astro.url.pathname + Astro.url.search
   lede="Toți studenții din sesiune, grupați pe program, specializare și limbă de studiu."
   active="facultate"
 >
-  <a slot="actiuni" class="btn btn--secondary btn--sm" href="/profesor/export-coordonari">
-    Export coordonări
+  <a slot="actiuni" class="btn btn--secondary btn--sm" href={exportHref('xlsx')}>
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" />
+    </svg>
+    Descarcă lista (Excel)
   </a>
+  <a slot="actiuni" class="btn btn--ghost btn--sm" href={exportHref('csv')}>CSV</a>
 
   <div class="stack stack--loose">
     <div class="grid-auto">
@@ -153,7 +191,20 @@ const backUrl = Astro.url.pathname + Astro.url.search
     </div>
 
     <form method="GET" class="panel">
+      {/* Filtrarea nu schimbă sesiunea: fără asta, orice căutare te readucea în
+          anul curent, tăcut. */}
+      <input type="hidden" name="an" value={year?.id ?? ''} />
       <div class="panel__body row row--wrap" style="gap:var(--s-3);align-items:flex-end">
+        <div class="field">
+          <span class="label">Sesiunea</span>
+          <AlegeAn
+            years={years}
+            selected={year?.id ?? ''}
+            base="/profesor/facultate"
+            label="An universitar"
+            keep={Object.fromEntries([...Astro.url.searchParams].filter(([k, v]) => k !== 'an' && v))}
+          />
+        </div>
         <div class="field" style="flex:2;min-width:220px">
           <label class="label" for="q">Caută</label>
           <input class="input" id="q" name="q" type="search" value={searchQuery}

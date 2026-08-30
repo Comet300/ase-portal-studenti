@@ -4,18 +4,23 @@ import { isDepartmentHead } from '../../../lib/auth'
 import { query } from '../../../lib/db'
 import { STATUS_LABELS, programLabel } from '../../../lib/repo'
 import { id } from '../../../lib/ids'
+import { type Column, sheetFormat, sheetResponse } from '../../../lib/sheet'
 import { formatInitial, officialName } from '../../../lib/text'
 import { currentYearLabel } from '../../../lib/years'
 
-/** CSV of the department's requests, honouring the filters shown on screen. */
+/**
+ * The department's requests, honouring the filters shown on screen.
+ *
+ * .xlsx by default and .csv on `?format=csv`, both written by `lib/sheet.ts` —
+ * the same writer as the two other exports, so a column defined once cannot
+ * drift between the files that are meant to be reconciled with each other.
+ */
 export const GET: APIRoute = async ({ locals, url, request }) => {
   if (!isDepartmentHead(locals.user)) {
     return new Response('Pagina nu a fost găsită', { status: 404 })
   }
 
-  // The year label contains an en dash, and a non-ASCII byte in a plain
-  // `filename=` is not valid per RFC 6266 — the browser silently kept the tail.
-  const sesiune = (await currentYearLabel()).replace(/[^\x20-\x7e]+/g, '-') || 'curenta'
+  const sesiune = (await currentYearLabel()) || 'curenta'
 
   const rows = await query<{
     number: string
@@ -57,42 +62,35 @@ export const GET: APIRoute = async ({ locals, url, request }) => {
     ],
   )
 
-  const cell = (v: string | null) => `"${(v ?? '').replace(/"/g, '""')}"`
   /* The two exports of the same cohort disagreed: this one carried neither the
    * year nor the group, so a row here could not be reconciled with a row in
-   * „Export coordonări”. The columns now line up. */
-  const header = [
-    'Numar cerere', 'Student', 'Inițiala tatălui', 'Numar matricol', 'Program', 'Specializare',
-    'An', 'Seria', 'Grupa',
-    'Coordonator', 'Titlul lucrarii', 'Stare', 'Depusa la', 'Decisa la',
+   * „Export coordonări”. The columns line up now. */
+  const COLUMNS: Column<(typeof rows)[number]>[] = [
+    { header: 'Număr cerere', value: (r) => r.number },
+    {
+      header: 'Student',
+      value: (r) => officialName({ name: r.student_name, father_initial: r.father_initial }),
+    },
+    { header: 'Inițiala tatălui', value: (r) => formatInitial(r.father_initial) },
+    { header: 'Număr matricol', value: (r) => r.student_number },
+    { header: 'Program', value: (r) => programLabel(r.program) },
+    { header: 'Specializare', value: (r) => r.specialization },
+    { header: 'An', value: (r) => r.study_year },
+    { header: 'Seria', value: (r) => r.study_series },
+    { header: 'Grupa', value: (r) => r.study_group },
+    { header: 'Coordonator', value: (r) => r.teacher_name },
+    { header: 'Titlul lucrării', value: (r) => r.title_ro },
+    { header: 'Stare', value: (r) => STATUS_LABELS[r.status] ?? r.status },
+    { header: 'Depusă la', value: (r) => r.submitted_at?.slice(0, 10) ?? '' },
+    { header: 'Decisă la', value: (r) => r.decided_at?.slice(0, 10) ?? '' },
   ]
-
-  const body = rows.map((r) =>
-    [
-      r.number,
-      officialName({ name: r.student_name, father_initial: r.father_initial }),
-      formatInitial(r.father_initial),
-      r.student_number, programLabel(r.program), r.specialization,
-      r.study_year === null ? '' : String(r.study_year), r.study_series, r.study_group,
-      r.teacher_name, r.title_ro, STATUS_LABELS[r.status] ?? r.status,
-      r.submitted_at?.slice(0, 10) ?? '', r.decided_at?.slice(0, 10) ?? '',
-    ].map(cell).join(';'),
-  )
-
-  /* Semicolon, the same as in the other export.
-   *
-   * The portal's two exports used different separators. In an Excel with
-   * Romanian settings the list separator is „;”, so the comma-separated file
-   * opened in a single column — which is exactly the file the head of
-   * department downloads. The BOM stays, for the diacritics. */
-  const csv = '﻿' + [header.map(cell).join(';'), ...body].join('\r\n') + '\r\n'
 
   await recordAccess({ userId: locals.user!.id, action: 'export_cereri', subject: url.pathname + url.search, rowCount: rows.length, request })
 
-  return new Response(csv, {
-    headers: {
-      'content-type': 'text/csv; charset=utf-8',
-      'content-disposition': `attachment; filename="cereri-sesiune-${sesiune}.csv"`,
-    },
-  })
+  return sheetResponse(
+    sheetFormat(url.searchParams.get('format')),
+    COLUMNS,
+    rows,
+    `cereri-sesiune-${sesiune}`,
+  )
 }

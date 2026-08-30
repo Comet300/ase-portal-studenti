@@ -88,6 +88,11 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
     // only shape.
     const requested = Number(form.get('locuri') ?? 1)
     const places = Number.isFinite(requested) ? Math.min(30, Math.max(1, Math.trunc(requested))) : 1
+    /* Whom the hour is for. Anything the form did not say is read as the
+     * narrower of the two: an hour meant for one's own students that is
+     * published to the whole faculty by a typo cannot be taken back — the
+     * students have already seen it. */
+    const audience = form.get('audienta') === 'public' ? 'public' : 'thesis'
 
     if (!day || !Number.isFinite(startHour) || !Number.isFinite(endHour) || endHour <= startHour) {
       return back('Alege ziua și un interval orar valid.', true)
@@ -113,18 +118,18 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
     for (let i = 0; i < hours; i++) {
       const slot = await queryOne<{ starts_at: string; ends_at: string }>(
         `INSERT INTO consultation_slots
-           (teacher_id, starts_at, ends_at, mode, location, meeting_url, capacity, kind)
+           (teacher_id, starts_at, ends_at, mode, location, meeting_url, capacity, kind, audience)
          SELECT $1,
                 ($2::date + ($3 || ' hours')::interval),
                 ($2::date + ($4 || ' hours')::interval),
-                $5, NULLIF($6, ''), NULLIF($7, ''), $8, 'open'
+                $5, NULLIF($6, ''), NULLIF($7, ''), $8, 'open', $9
           WHERE NOT EXISTS (
             SELECT 1 FROM consultation_slots s
              WHERE s.teacher_id = $1
                AND s.starts_at = ($2::date + ($3 || ' hours')::interval)
           )
          RETURNING starts_at, ends_at`,
-        [u!.id, day, String(startHour + i), String(startHour + i + 1), mode, location, meetingUrl, places],
+        [u!.id, day, String(startHour + i), String(startHour + i + 1), mode, location, meetingUrl, places, audience],
       )
       if (slot) created.push(slot)
     }
@@ -137,8 +142,14 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
      *
      * Sent whenever anything new appears — including a single interval, which is
      * the case most likely to be missed: a coordinator freeing up one hour is
-     * exactly when the students who need it are not looking at the portal. */
-    const students = await query<{ name: string; email: string }>(
+     * exactly when the students who need it are not looking at the portal.
+     *
+     * Only for one's own students. A public hour goes to everyone in the
+     * faculty, and mailing eleven hundred people every time somebody opens an
+     * afternoon is not a notification — it is the reason people switch
+     * notifications off. Those hours are found on „Consultații”, which is where
+     * a student looking for one already goes. */
+    const students = audience === 'public' ? [] : await query<{ name: string; email: string }>(
       `SELECT s.name, s.email
          FROM requests r JOIN users s ON s.id = r.student_id
         WHERE r.teacher_id = $1 AND r.status = 'approved'
@@ -179,9 +190,11 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
 
     return back(
       `${numar(created.length, 'oră deschisă', 'ore deschise')}. ` +
-        (students.length > 0
-          ? `${numar(students.length, 'student anunțat', 'studenți anunțați')} pe email.`
-          : 'Nu ai încă studenți coordonați de anunțat.'),
+        (audience === 'public'
+          ? 'Apar la orice student din facultate, fără email.'
+          : students.length > 0
+            ? `${numar(students.length, 'student anunțat', 'studenți anunțați')} pe email.`
+            : 'Nu ai încă studenți coordonați de anunțat.'),
     )
   }
 
@@ -233,12 +246,15 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
      * there is exactly one — with several, the slot is theirs collectively and
      * the bookings below are what record who is coming. */
     const slot = await queryOne<{ id: string; starts_at: string; ends_at: string }>(
+      /* `audience` is 'thesis' and not a choice: the students who can be
+         summoned are the ones this person supervises — checked in the lookup
+         above — so a summoned meeting is by construction not a public hour. */
       `INSERT INTO consultation_slots
-         (teacher_id, student_id, starts_at, ends_at, mode, location, meeting_url, note, capacity, kind)
+         (teacher_id, student_id, starts_at, ends_at, mode, location, meeting_url, note, capacity, kind, audience)
        VALUES ($1, $2,
                ($3::date + ($4 || ' hours')::interval),
                ($3::date + ($5 || ' hours')::interval),
-               $6, NULLIF($7, ''), NULLIF($8, ''), NULLIF($9, ''), $10, 'scheduled')
+               $6, NULLIF($7, ''), NULLIF($8, ''), NULLIF($9, ''), $10, 'scheduled', 'thesis')
        RETURNING id, starts_at, ends_at`,
       [
         u!.id, students.length === 1 ? students[0].id : null,

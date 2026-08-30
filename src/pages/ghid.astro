@@ -32,15 +32,13 @@ const DOCS = [
 ]
 ---
 
-<StudentLayout title="Ghid & Regulament" active="ghid">
+<StudentLayout
+  title="Ghid & Regulament"
+  active="ghid"
+  erou="amplu"
+  lede="Reguli de redactare, utilizarea instrumentelor de inteligență artificială, procedura antiplagiat și documentele de care ai nevoie."
+>
   <div class="container stack stack--loose">
-    <header class="stack stack--tight">
-      <h1 class="page-title">Ghid & Regulament</h1>
-      <p class="page-lede">
-        Reguli de redactare, utilizarea instrumentelor de inteligență artificială, procedura
-        antiplagiat și documentele de care ai nevoie.
-      </p>
-    </header>
 
     <div class="taburi" role="tablist" aria-label="Secțiuni ghid">
       <button class="tab is-activ" role="tab" aria-selected="true" aria-controls="p-redactare" id="t-redactare">
@@ -130,18 +128,19 @@ const DOCS = [
           decide dacă lucrarea poate fi susținută.
         </p>
 
-        {/* The guide described an upload that does not exist in the portal: the
-            first step sent the student off to look for a button that was not
-            there. The real process is described instead, with the link right
-            next to the instruction. */}
+        {/* Ghidul descria trimiterea pe email, pentru că portalul chiar nu avea
+            unde să primească lucrarea. Acum are, iar primul pas este butonul,
+            nu ocolul. */}
         <ol class="lista-num">
           <li>
-            Trimiți forma finală în format PDF coordonatorului, prin{' '}
-            <a class="link" href="/mesaje">Mesaje</a>, până la termenul din calendar.
+            Încarci forma finală în format PDF pe{' '}
+            <a class="link" href="/lucrarea-mea#lucrare">Lucrarea mea</a>, împreună cu declarația
+            de originalitate semnată, până la termenul din calendar. Coordonatorul este anunțat pe
+            loc; o poți înlocui oricând până la susținere.
           </li>
           <li>Coordonatorul o încarcă în platforma antiplagiat a universității.</li>
           <li>Raportul ajunge la coordonator, care îl analizează împreună cu tine.</li>
-          <li>Dacă sunt necesare corecturi, primești un termen nou și trimiți din nou fișierul.</li>
+          <li>Dacă sunt necesare corecturi, primești un termen nou și încarci versiunea nouă.</li>
         </ol>
 
         <h3 class="section-title" style="font-size:var(--t-md)">Ce contează în raport</h3>

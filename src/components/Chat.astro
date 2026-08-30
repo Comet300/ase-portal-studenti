@@ -26,6 +26,9 @@ const EVENT_LABELS: Record<string, string> = {
      thread read-only from one second to the next, and until the vocabulary of
      migration 0016 there was no way to write down why. */
   coordination_ended: 'Coordonare încheiată',
+  /* Predarea lucrării. Este cel mai mare lucru care se întâmplă într-o
+     coordonare și, până acum, firul nu îl consemna deloc. */
+  thesis_uploaded: 'Lucrare încărcată',
   /* „Locuri alocate” was taken out: nothing ever writes it. Seats are granted
      between the director and the coordinator, while the portal's threads are
      (student, coordinator) — the event would have nowhere to exist. The notice
@@ -35,6 +38,7 @@ const EVENT_LABELS: Record<string, string> = {
 const EVENT_TONE: Record<string, string> = {
   request_approved: 'is-bine',
   invitation_accepted: 'is-bine',
+  thesis_uploaded: 'is-bine',
   request_rejected: 'is-rau',
   request_expired: 'is-rau',
   invitation_declined: 'is-rau',

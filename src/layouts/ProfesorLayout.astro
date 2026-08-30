@@ -1,6 +1,7 @@
 ---
 import BaseLayout from './BaseLayout.astro'
 import Clopotel from '../components/Clopotel.astro'
+import Erou from '../components/Erou.astro'
 import { initials, DEMO_MODE } from '../lib/auth'
 import { SCREENS } from '../lib/navigation'
 import { currentYearLabel } from '../lib/years'
@@ -10,6 +11,8 @@ interface Props {
   /** The title in the browser bar, when the one on the page is a greeting, not a screen name. */
   docTitle?: string
   lede?: string
+  /** The way back, when the screen has a parent worth naming. */
+  inapoi?: { href: string; text: string }
   active?: string
   /**
    * Screens that fill the viewport instead of growing with their content.
@@ -22,7 +25,7 @@ interface Props {
   fill?: boolean
 }
 
-const { title, docTitle, lede, active, fill = false } = Astro.props
+const { title, docTitle, lede, inapoi, active, fill = false } = Astro.props
 const u = Astro.locals.user!
 const yearLabel = await currentYearLabel()
 
@@ -46,22 +49,23 @@ const navGroups = [
       { href: '/profesor/activitatea-mea', key: 'activitate', text: SCREENS['/profesor/activitatea-mea'], icon: 'activity' },
     ],
   },
-  {
-    titlu: 'Facultate',
-    links: [
-      { href: '/profesor/facultate', key: 'facultate', text: SCREENS['/profesor/facultate'], icon: 'list' },
-      /* The faculty's archive of defended theses — the one a coordinator is
-         told to read before answering a student. It had no link anywhere in
-         this shell: the only way to it was the „Portalul studenților” exit. */
-      { href: '/arhiva', key: 'arhiva', text: SCREENS['/arhiva'], icon: 'archive' },
-      ...(u.role === 'head'
-        ? [{ href: '/profesor/departament', key: 'departament', text: SCREENS['/profesor/departament'], icon: 'chart' }]
-        : []),
-      ...(u.role === 'head'
-        ? [{ href: '/profesor/conturi', key: 'conturi', text: SCREENS['/profesor/conturi'], icon: 'users' }]
-        : []),
-    ],
-  },
+  /* The faculty as a whole — the cohort, the archive of past sessions, the
+     department's load — is the director's group. A coordinator has their own
+     students one group above and the public catalogue outside the shell; this
+     one is the register, and the middleware refuses it to anyone else. */
+  ...(u.role === 'head'
+    ? [
+        {
+          titlu: 'Facultate',
+          links: [
+            { href: '/profesor/facultate', key: 'facultate', text: SCREENS['/profesor/facultate'], icon: 'list' },
+            { href: '/arhiva', key: 'arhiva', text: SCREENS['/arhiva'], icon: 'archive' },
+            { href: '/profesor/departament', key: 'departament', text: SCREENS['/profesor/departament'], icon: 'chart' },
+            { href: '/profesor/conturi', key: 'conturi', text: SCREENS['/profesor/conturi'], icon: 'users' },
+          ],
+        },
+      ]
+    : []),
   ...(u.role === 'head'
     ? [
         {
@@ -197,11 +201,9 @@ const iconPaths: Record<string, string> = {
               ><path d="M3 6h18M3 12h18M3 18h18"></path></svg
             >
           </button>
-          <div>
-            <h1 class="page-title">{title}</h1>
-            {lede && <p class="page-lede">{lede}</p>}
-          </div>
-          <slot name="actiuni" />
+          <Erou titlu={title} lede={lede} inapoi={inapoi} supratitlu={`Sesiunea ${yearLabel}`}>
+            <slot name="actiuni" slot="actiuni" />
+          </Erou>
         </header>
 
         {
@@ -438,18 +440,22 @@ const iconPaths: Record<string, string> = {
     overflow: hidden;
   }
 
+  /* Antetul ecranului este acum banda închisă a portalului, iar butonul de
+     meniu stă peste ea: pe telefon este singura cale către bara laterală, deci
+     nu poate să dispară, dar nici să împingă titlul cu un rând mai jos. */
   .content__header {
-    display: flex;
-    align-items: flex-start;
-    gap: var(--s-4);
-    padding: var(--s-6) var(--s-6) var(--s-5);
-    background: var(--surface);
-    border-bottom: 1px solid var(--border);
+    position: relative;
+    flex: none;
   }
 
-  .content__header > div {
-    flex: 1;
-    min-width: 0;
+  .content__header .hamburger {
+    position: absolute;
+    top: var(--s-4);
+    left: var(--s-4);
+    z-index: 1;
+    border-color: rgba(255, 255, 255, 0.45);
+    background: rgba(0, 0, 0, 0.45);
+    color: #fff;
   }
 
   .content__body {
@@ -627,26 +633,18 @@ const iconPaths: Record<string, string> = {
     .hamburger {
       display: inline-flex;
     }
-    .content__header,
     .content__body {
       padding-inline: var(--s-4);
     }
-    /* At phone width a serif display title and an action button cannot share a
-       row: the title wraps to three lines and collides with the button. */
-    .content__header {
-      flex-wrap: wrap;
-      gap: var(--s-3);
+    /* Butonul de meniu stă peste bandă, iar pe telefon banda nu mai are
+       fotografie: fără spațiul de mai jos ar cădea peste supratitlu. Se rezervă
+       exact înălțimea lui. */
+    .content__header .hamburger {
+      top: var(--s-3);
+      left: var(--s-3);
     }
-    .content__header > div {
-      flex: 1 1 100%;
-      order: 2;
-    }
-    .content__header :global(.row) {
-      order: 3;
-      flex: 1 1 100%;
-    }
-    .content__header .page-title {
-      font-size: var(--t-xl);
+    .content__header :global(.erou__interior) {
+      padding-top: calc(var(--s-3) + var(--tap) + var(--s-2));
     }
     .demo-note {
       margin-inline: var(--s-4);

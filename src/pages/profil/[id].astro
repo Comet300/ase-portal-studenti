@@ -71,12 +71,20 @@ const hasActiveRequest =
   (await studentRequests(me.id)).some((c) => c.status === 'pending' || c.status === 'approved')
 
 const topics = isTeacherProfile
-  ? await query<{ id: string; title: string; level: string; language: string; methods: string | null }>(
-      `SELECT id, title, level, language, methods
-         FROM topics
-        WHERE teacher_id = $1 AND is_active
-          AND academic_year_id = (SELECT id FROM academic_years WHERE is_current)
-        ORDER BY title`,
+  ? await query<{
+      id: string
+      title: string
+      level: string
+      language: string
+      domain: string | null
+      programme_name: string | null
+    }>(
+      `SELECT t.id, t.title, t.level, t.language, t.domain, p.name AS programme_name
+         FROM topics t
+         LEFT JOIN study_programmes p ON p.id = t.programme_id
+        WHERE t.teacher_id = $1 AND t.is_active
+          AND t.academic_year_id = (SELECT id FROM academic_years WHERE is_current)
+        ORDER BY t.title`,
       [person.id],
     )
   : []
@@ -148,6 +156,10 @@ const referrerPath = (() => {
     return ''
   }
 })()
+/* The way back knows where it leads, so it says so: „Înapoi” on its own asks
+ * you to remember where you came from, which is exactly what you do not do
+ * after three profiles opened. It rides on the banner now, next to the title,
+ * instead of being the first line of the page body. */
 const inapoi = referrerPath
 
 // The page depends on the header it came from, so that header enters the cache
@@ -155,26 +167,21 @@ const inapoi = referrerPath
 Astro.response.headers.set('vary', 'referer')
 ---
 
-<Shell title={person.name} description={`Profilul ${person.name}`} lede={undefined}>
+<Shell
+  title={officialName(person)}
+  docTitle={person.name}
+  description={`Profilul ${person.name}`}
+  lede={ROLE_LABELS[person.role] + (person.department ? ` · ${person.department}` : '')}
+  inapoi={inapoi ? { href: inapoi, text: screenName(inapoi) ? `Înapoi la ${screenName(inapoi)}` : 'Înapoi' } : undefined}
+>
   <div class="container stack stack--loose">
-    {inapoi && (
-      <a class="inapoi" href={inapoi}>
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-          <path d="M19 12H5M12 19l-7-7 7-7" />
-        </svg>
-        {/* The button knows where it leads, so it says so: „Înapoi” on its own
-            asks you to remember where you came from, exactly what you do not do
-            after three profiles opened. */}
-        {screenName(inapoi) ? `Înapoi la ${screenName(inapoi)}` : 'Înapoi'}
-      </a>
-    )}
     <section class="panel">
       <div class="panel__body identitate">
         <Avatar name={person.name} src={person.avatar_path} size="lg" />
         <div class="stack stack--tight" style="gap:4px;flex:1;min-width:0">
           {/* A student's own official name, the one the register carries; a
               teacher has no initial on record, so this is their plain name. */}
-          <h1 class="identitate__nume">{officialName(person)}</h1>
+          <p class="identitate__nume">{officialName(person)}</p>
           <p class="muted">
             {ROLE_LABELS[person.role]}
             {person.department ? ` · ${person.department}` : ''}
@@ -214,7 +221,7 @@ Astro.response.headers.set('vary', 'referer')
                   {person.name} nu mai are locuri libere în această sesiune.
                 </span>
               ) : (
-                <a class="btn btn--primary btn--sm" href={`/cererile-mele?coordonator=${person.id}`}>
+                <a class="btn btn--primary btn--sm" href={`/lucrarea-mea?coordonator=${person.id}`}>
                   Depune cerere
                 </a>
               )
@@ -307,8 +314,11 @@ Astro.response.headers.set('vary', 'referer')
                 <li>
                   <div class="stack stack--tight" style="gap:2px">
                     <strong>{t.title}</strong>
-                    {t.methods && (
-                      <span class="muted text-xs">Metode: {t.methods}</span>
+                    {t.domain && t.domain !== '—' && (
+                      <span class="muted text-xs">Domeniu: {t.domain}</span>
+                    )}
+                    {t.programme_name && (
+                      <span class="muted text-xs">{t.programme_name}</span>
                     )}
                   </div>
                   <span class="badge badge--taxon">
@@ -384,26 +394,6 @@ Astro.response.headers.set('vary', 'referer')
 </Shell>
 
 <style>
-  /* The way back, when the page was opened from another part of the portal. */
-  .inapoi {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--s-2);
-    align-self: flex-start;
-    min-height: var(--tap);
-    font-size: var(--t-sm);
-    font-weight: 500;
-    color: var(--ink-soft);
-    text-decoration: none;
-  }
-  .inapoi:hover {
-    color: var(--red);
-  }
-  .inapoi svg {
-    width: 15px;
-    height: 15px;
-  }
-
   .identitate {
     display: flex;
     align-items: center;

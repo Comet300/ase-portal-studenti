@@ -46,7 +46,7 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
 
   const form = await request.formData()
   const action = formAction(form)
-  const redirectTo = String(form.get('redirect') ?? (isTeacher(u) ? '/profesor/studenti' : '/cererile-mele'))
+  const redirectTo = String(form.get('redirect') ?? (isTeacher(u) ? '/profesor/studenti' : '/lucrarea-mea'))
   const baseUrl = process.env.APP_BASE_URL ?? url.origin
 
   const back = (message: string, isError = false) =>

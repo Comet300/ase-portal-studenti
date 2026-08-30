@@ -2,6 +2,7 @@
 import BaseLayout from './BaseLayout.astro'
 import Avatar from '../components/Avatar.astro'
 import Clopotel from '../components/Clopotel.astro'
+import Erou from '../components/Erou.astro'
 import { SCREENS } from '../lib/navigation'
 import { currentYearLabel } from '../lib/years'
 import { hasApprovedRequest } from '../lib/repo'
@@ -13,9 +14,22 @@ interface Props {
   docTitle?: string
   description?: string
   active?: string
+  /** The sentence under the title, on the banner. One sentence, not a paragraph. */
+  lede?: string
+  /** The way back, when the screen has a parent worth naming. */
+  inapoi?: { href: string; text: string }
+  /**
+   * The banner at the top of the screen.
+   *
+   * Every screen carries one, because the faculty's own site does and the two
+   * are read as one place. `amplu` is for the screens somebody arrives at —
+   * home, the guide; `fara` is for the ones that write their own opening, like
+   * a public profile.
+   */
+  erou?: 'compact' | 'amplu' | 'fara'
 }
 
-const { title, docTitle, description, active } = Astro.props
+const { title, docTitle, description, active, lede, inapoi, erou = 'compact' } = Astro.props
 const u = Astro.locals.user
 const yearLabel = await currentYearLabel()
 
@@ -34,8 +48,8 @@ const navLinks = u
       { href: '/', text: SCREENS['/'], key: 'acasa' },
       { href: '/coordonatori', text: SCREENS['/coordonatori'], key: 'coordonatori' },
       {
-        href: '/cererile-mele',
-        text: hasThesis ? 'Lucrarea mea' : SCREENS['/cererile-mele'],
+        href: '/lucrarea-mea',
+        text: hasThesis ? SCREENS['/lucrarea-mea'] : 'Cererea mea',
         key: 'cereri',
       },
       { href: '/mesaje', text: SCREENS['/mesaje'], key: 'mesaje' },
@@ -145,30 +159,47 @@ const accountLinks = [
         )}
       </div>
     </div>
-
-    <nav class="meniu-mobil" id="meniu-mobil" aria-label="Navigație mobilă" hidden>
-      {
-        [...navLinks, ...(u ? accountLinks : [])].map((l) => (
-          <a
-            href={l.href}
-            class:list={['meniu-mobil__link', { 'is-active': active === l.key }]}
-            aria-current={active === l.key ? 'page' : undefined}
-          >
-            {l.text}
-          </a>
-        ))
-      }
-      {/* Signing out has to exist here as well: on a phone the menu is the
-          only place from which it is reached. */}
-      {u && (
-        <form method="POST" action="/api/deconectare">
-          <button class="meniu-mobil__link meniu-mobil__iesire" type="submit">Deconectare</button>
-        </form>
-      )}
-    </nav>
   </header>
 
-  <main id="continut">
+  {/* The drawer is a sibling of the bar, not a child of it, and that is the
+      whole of a bug that made the phone menu useless: `.topbar` is
+      `position: sticky` with a `z-index`, so it opens a stacking context, and
+      the curtain the menu script appends to `<body>` sits above everything
+      inside it — including a drawer that asks for a higher layer. Every tap on
+      a link landed on the curtain, whose only listener closes the menu, so the
+      menu shut and the page never changed. The teacher sidebar never had the
+      bug because it hangs off the shell, not off the bar. Moving it out also
+      takes a `position: fixed` element out from under `view-transition-name`,
+      which suppresses fixed positioning while a transition runs. */}
+  <nav class="meniu-mobil" id="meniu-mobil" aria-label="Navigație mobilă" hidden>
+    {
+      [...navLinks, ...(u ? accountLinks : [])].map((l) => (
+        <a
+          href={l.href}
+          class:list={['meniu-mobil__link', { 'is-active': active === l.key }]}
+          aria-current={active === l.key ? 'page' : undefined}
+        >
+          {l.text}
+        </a>
+      ))
+    }
+    {/* Signing out has to exist here as well: on a phone the menu is the
+        only place from which it is reached. */}
+    {u && (
+      <form method="POST" action="/api/deconectare">
+        <button class="meniu-mobil__link meniu-mobil__iesire" type="submit">Deconectare</button>
+      </form>
+    )}
+  </nav>
+
+  <main id="continut" class:list={{ 'main--erou': erou !== 'fara' }}>
+    {
+      erou !== 'fara' && (
+        <Erou titlu={title} lede={lede} inapoi={inapoi} supratitlu={`Sesiunea de Finalizare a Studiilor ${yearLabel}`} variant={erou} incadrat>
+          <slot name="actiuni" slot="actiuni" />
+        </Erou>
+      )
+    }
     <slot />
   </main>
 
@@ -463,10 +494,33 @@ const accountLinks = [
     padding-block: var(--s-6) var(--s-7);
   }
 
+  /* Banda începe lipită de bară — ea este antetul paginii, nu primul element
+     din conținut. Aerul de sub ea îl ține banda însăși. */
+  .main--erou {
+    padding-top: 0;
+  }
+  .main--erou :global(.erou) {
+    margin-bottom: var(--s-6);
+  }
+
+  /* Subsolul este banda închisă de pe mk.ase.ro: aceeași culoare cu care se
+     termină site-ul facultății, ca portalul să se închidă la fel cum se
+     deschide — cu titlul pe fundal închis, sus. */
   .footer {
-    border-top: 1px solid var(--border);
-    background: var(--surface);
+    background: var(--hero-ground);
     padding-block: var(--s-5);
+    /* Roșul pe fundalul închis dă 1.9:1: inelul de focus se moștenește alb,
+       exact ca în bara laterală. */
+    --focus: #fff;
+  }
+  .footer :global(.muted) {
+    color: var(--dark-ink-muted);
+  }
+  .footer :global(a.link) {
+    color: var(--dark-ink-soft);
+  }
+  .footer :global(a.link:hover) {
+    color: #fff;
   }
 
   @media (max-width: 900px) {

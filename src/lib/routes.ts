@@ -37,3 +37,28 @@ const PUBLIC = new Set<string>(PUBLIC_PATHS)
 export function isPublicPath(path: string): boolean {
   return PUBLIC.has(path)
 }
+
+/**
+ * The screens only the head of department opens.
+ *
+ * Here for the same reason as the list above: it decides who sees the whole
+ * cohort — names, student numbers, addresses, who is still unassigned — and a
+ * list that consequential is worth pinning in a test a reviewer reads
+ * (`test/routes.test.ts`). `middleware.ts` imports it; it cannot be the other
+ * way round, because that module imports `astro:middleware`, which no test
+ * runner can load.
+ *
+ * Matched on the prefix, not on the exact path: `/profesor/facultate/export`
+ * has to be as closed as the screen that links to it.
+ */
+export const HEAD_ONLY_PREFIXES = [
+  '/profesor/facultate',
+  '/profesor/departament',
+  '/profesor/conturi',
+  '/profesor/calendar',
+  '/profesor/an-universitar',
+] as const
+
+export function isHeadOnlyPath(path: string): boolean {
+  return HEAD_ONLY_PREFIXES.some((p) => path.startsWith(p))
+}

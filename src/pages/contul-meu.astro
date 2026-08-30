@@ -35,22 +35,13 @@ const lede = isStudent
 
 /* The page renders in the shell of whoever is reading it, as the profile does:
  * a coordinator sent into the student top bar loses their navigation and reads
- * it as a different portal. `ProfesorLayout` prints the title and the lede in
- * its own header, `StudentLayout` does not — hence the header below. */
+ * it as a different portal. Both shells now print the title and the lede on the
+ * banner, so the page starts straight at its first panel. */
 const Shell = isStudent ? StudentLayout : ProfesorLayout
 ---
 
 <Shell title="Contul meu" description="Datele contului și profilul public" lede={lede} active="cont">
   <div class="container stack stack--loose">
-    {
-      isStudent && (
-        <header class="stack stack--tight">
-          <h1 class="page-title">Contul meu</h1>
-          <p class="page-lede">{lede}</p>
-        </header>
-      )
-    }
-
     <section class="panel">
       <div class="panel__body identity">
         <Avatar name={u.name} src={u.avatar_path} size="lg" />
@@ -290,7 +281,7 @@ const Shell = isStudent ? StudentLayout : ProfesorLayout
         <section class="panel">
           <div class="panel__header">
             <h2 class="section-title">Cererile mele</h2>
-            <a href="/cererile-mele" class="btn btn--ghost btn--sm">
+            <a href="/lucrarea-mea" class="btn btn--ghost btn--sm">
               Vezi toate
             </a>
           </div>

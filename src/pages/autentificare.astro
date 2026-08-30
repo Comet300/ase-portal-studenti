@@ -224,6 +224,10 @@ if (Astro.locals.user && !trimis) {
 </script>
 
 <style>
+  /* Singura pagină pe care o vede cineva fără sesiune, deci singura care spune
+     unde a ajuns înainte să scrie ceva. Clădirea din Piața Romană stă sub un
+     strat închis, aceleași două culori ca banda din interiorul portalului —
+     cardul rămâne pe alb, unde se citește. */
   .screen {
     min-height: 100svh;
     display: grid;
@@ -231,12 +235,22 @@ if (Astro.locals.user && !trimis) {
     justify-items: center;
     gap: var(--s-4);
     padding: var(--s-5);
-    background: var(--bg);
+    background:
+      linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--hero-ground) 92%, transparent),
+        color-mix(in srgb, var(--hero-ground) 78%, transparent)
+      ),
+      url('/img/ase.jpg') center / cover no-repeat;
+    background-color: var(--hero-ground);
   }
 
   .subsol {
     font-size: var(--t-sm);
-    color: var(--ink-muted);
+    color: var(--dark-ink-soft);
+  }
+  .subsol :global(a) {
+    color: inherit;
   }
 
   .card {

@@ -15,11 +15,25 @@
 /* --- tokens -------------------------------------------------------------- */
 
 :root {
-  /* identitate */
-  --red: #990000;
-  --red-hover: #7d0000;
-  --red-tint: #fff0ee;
+  /* identitate
+   *
+   * Roșul este cel de pe mk.ase.ro (`--mkRed`), nu unul apropiat: portalul și
+   * site-ul facultății sunt ale aceleiași facultăți, iar un student care trece
+   * de pe unul pe celălalt vede acum aceeași culoare, nu două roșuri care se
+   * bat cap în cap. #c60000 dă 6.1:1 pe alb, deci rămâne peste pragul pentru
+   * text, nu doar pentru un fundal de buton.
+   *
+   * Ce nu se schimbă: roșul marchează acțiunea principală și starea vie. Nu
+   * colorează mobilierul. */
+  --red: #c60000;
+  --red-hover: #951200; /* `--mkDarkRed` */
+  --red-tint: #fdeeec;
   --navy: #1a1e23;
+
+  /* Fundalul închis al eroului și al subsolului — `--footerBg` de pe mk.ase.ro.
+   * Este singura suprafață mare de culoare din portal și nu poartă nicio
+   * informație: dacă imaginea lipsește, banda rămâne întreagă. */
+  --hero-ground: #212934;
 
   /* suprafețe: conținutul este cald-neutru, bara laterală este stratul închis */
   --bg: #f8f9fa;
@@ -61,7 +75,10 @@
    * unei note de subsol. Podeaua urcă la 16px, iar `--t-body` spune explicit ce
    * treaptă folosește un text care chiar se citește. */
   --sans: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
-  --serif: 'Source Serif 4', Georgia, 'Times New Roman', serif;
+  /* Serifa este acum Zilla Slab, cea de pe mk.ase.ro. Source Serif 4 rămâne în
+   * spatele ei ca rezervă: fișierele lui sunt deja aici și, dacă Zilla nu se
+   * încarcă, textul cade pe o serifă apropiată, nu pe Times. */
+  --serif: 'Zilla Slab', 'Source Serif 4', Georgia, 'Times New Roman', serif;
   --t-xs: 0.75rem;
   --t-sm: 0.875rem;
   --t-base: 1rem;
@@ -1511,6 +1528,36 @@ dialog[open]::backdrop {
  * un câmp, de pildă — își pune `align-items` pe el și câștigă. */
 .row:has(> .field) {
   align-items: flex-start;
+}
+
+/* O grilă de câmpuri, aliniată pe toate cele trei linii ale unui câmp.
+ *
+ * Alinierea la vârf rezolvă doar jumătate: câmpurile încep de la aceeași înălțime,
+ * dar cel care are un text ajutător dedesubt se termină cu un rând mai jos, iar
+ * rândul arată strâmb exact în locul unde te uiți — sub controale. «Locuri pe
+ * oră» era singurul cu ajutor din cinci, și tot rândul părea prost aliniat.
+ *
+ * `subgrid` pune eticheta, controlul și ajutorul fiecărui câmp pe aceleași trei
+ * linii ale grilei părinte, deci toate cele trei se aliniază între ele — și
+ * rândul rămâne aliniat și când un câmp are ajutor, iar altul nu.
+ *
+ * `:where(.field)` prinde și câmpurile venite din componente (`AlegeData` își
+ * scrie stilurile global și nu are atributul de scop al paginii, deci o regulă
+ * scrisă în pagină nu ajungea niciodată la el — de aceea „Ziua” își împingea
+ * vecinii).
+ */
+.grila-campuri {
+  display: grid;
+  gap: var(--s-4);
+  grid-template-rows: auto auto auto;
+  align-items: start;
+}
+.grila-campuri > :where(.field) {
+  display: grid;
+  grid-row: span 3;
+  grid-template-rows: subgrid;
+  gap: var(--s-2);
+  min-width: 0;
 }
 .row--between {
   justify-content: space-between;

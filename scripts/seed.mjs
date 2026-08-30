@@ -52,12 +52,23 @@ const olderYear = await pastYear(2)
 
 /* --- study programmes ------------------------------------------------------ */
 
+/* The faculty's real programmes, the same list migration 0020 writes into the
+ * current year. At licență the programme is Marketing and what distinguishes
+ * one student from another is the form of study; at master they are separate
+ * programmes. The demo data has to name the same things the portal does, or
+ * every screenshot of it teaches the wrong vocabulary. */
 const PROGRAMMES = [
-  ['bachelor', 'Marketing', 'ro', 3],
-  ['bachelor', 'Marketing', 'en', 3],
-  ['master', 'Marketing strategic', 'ro', 2],
+  ['bachelor', 'Învățământ cu frecvență — RO', 'ro', 3],
+  ['bachelor', 'Învățământ cu frecvență — EN', 'en', 3],
+  ['bachelor', 'Învățământ fără frecvență', 'ro', 3],
+  ['bachelor', 'Învățământ la distanță — București', 'ro', 3],
+  ['bachelor', 'Învățământ la distanță — Buzău', 'ro', 3],
   ['master', 'Cercetări de marketing', 'ro', 2],
-  ['master', 'Marketing digital', 'en', 2],
+  ['master', 'Marketing și comunicare în afaceri', 'ro', 2],
+  ['master', 'Marketing online', 'ro', 2],
+  ['master', 'Relații publice în marketing', 'ro', 2],
+  ['master', 'Marketing strategic', 'ro', 2],
+  ['master', 'Managementul relațiilor cu clienții', 'ro', 2],
 ]
 
 const programmeIds = new Map()
@@ -172,30 +183,36 @@ const FATHER_INITIALS = ['I', 'Gh', 'C', 'M', 'D', 'N']
 
 /** Each student's programme: [level, specialization, language, year]. */
 const BACHELOR_GROUPS = [
-  ['bachelor', 'Marketing', 'ro', 3],
-  ['bachelor', 'Marketing', 'en', 3],
+  ['bachelor', 'Învățământ cu frecvență — RO', 'ro', 3],
+  ['bachelor', 'Învățământ cu frecvență — EN', 'en', 3],
+  ['bachelor', 'Învățământ la distanță — București', 'ro', 3],
 ]
 const MASTER_GROUPS = [
   ['master', 'Marketing strategic', 'ro', 2],
   ['master', 'Cercetări de marketing', 'ro', 2],
-  ['master', 'Marketing digital', 'en', 2],
+  ['master', 'Marketing online', 'ro', 2],
 ]
 
 /* --- topics ---------------------------------------------------------------- */
 
+/* Title, level, language, methodology, domain.
+ *
+ * No seat count: capacity belongs to the coordinator, per level and per study
+ * programme, and a topic never had a pot of its own. The programme is picked
+ * below, from the year's own list, by level and language. */
 const TOPICS = [
-  ['Comportamentul consumatorului în comerțul electronic românesc', 'bachelor', 'ro', 'Cantitativă, SPSS, modelare structurală', 'Marketing cantitativ, nota minimă 8', 3],
-  ['Transformarea digitală a strategiilor B2B', 'master', 'ro', 'Studii de caz multiple, interviuri semi-structurate', 'Management strategic', 2],
-  ['Credibilitatea influencerilor și decizia de cumpărare la generația Z', 'bachelor', 'ro', 'Chestionar online, analiză factorială', 'Statistică descriptivă', 4],
-  ['Marketingul sustenabil în industria FMCG', 'bachelor', 'ro', 'Analiză de conținut, interviuri', '—', 3],
-  ['Personalizarea prin inteligență artificială în retail', 'master', 'en', 'Experiment, A/B testing', 'Marketing digital', 2],
-  ['Loialitatea față de brand în serviciile bancare', 'bachelor', 'ro', 'Sondaj, regresie logistică', 'Statistică aplicată', 3],
-  ['Comunicarea de criză pe rețelele sociale', 'master', 'ro', 'Netnografie, analiză tematică', 'Comunicare de marketing', 2],
-  ['Prețul de referință intern și percepția valorii', 'bachelor', 'ro', 'Experiment de laborator', 'Comportamentul consumatorului', 2],
-  ['Marketingul experiențial în turismul cultural', 'master', 'ro', 'Observație participativă, interviuri', '—', 2],
-  ['Adopția plăților contactless în mediul rural', 'bachelor', 'ro', 'Sondaj față în față, analiză descriptivă', '—', 3],
-  ['Strategii de internaționalizare pentru IMM-uri românești', 'master', 'ro', 'Studii de caz comparative', 'Marketing internațional', 2],
-  ['Impactul recenziilor online asupra vânzărilor', 'bachelor', 'en', 'Analiză de date secundare, regresie', 'Econometrie', 3],
+  ['Comportamentul consumatorului în comerțul electronic românesc', 'bachelor', 'ro', 'Anchetă pe bază de chestionar, SPSS, modelare structurală', 'Comportamentul consumatorului'],
+  ['Transformarea digitală a strategiilor B2B', 'master', 'ro', 'Studii de caz multiple, interviuri semi-structurate', 'Marketing B2B'],
+  ['Credibilitatea influencerilor și decizia de cumpărare la generația Z', 'bachelor', 'ro', 'Chestionar online, analiză factorială', 'Comunicare de marketing'],
+  ['Marketingul sustenabil în industria FMCG', 'bachelor', 'ro', 'Analiză de conținut, interviuri', 'Marketing sustenabil'],
+  ['Personalizarea prin inteligență artificială în retail', 'master', 'en', 'Experiment, testare A/B', 'Marketing digital'],
+  ['Loialitatea față de brand în serviciile bancare', 'bachelor', 'ro', 'Sondaj, regresie logistică', 'Marketingul serviciilor'],
+  ['Comunicarea de criză pe rețelele sociale', 'master', 'ro', 'Netnografie, analiză tematică', 'Comunicare de marketing'],
+  ['Prețul de referință intern și percepția valorii', 'bachelor', 'ro', 'Experiment de laborator', 'Politici de preț'],
+  ['Marketingul experiențial în turismul cultural', 'master', 'ro', 'Observație participativă, interviuri', 'Marketing experiențial'],
+  ['Adopția plăților contactless în mediul rural', 'bachelor', 'ro', 'Sondaj față în față, analiză descriptivă', 'Comportamentul consumatorului'],
+  ['Strategii de internaționalizare pentru IMM-uri românești', 'master', 'ro', 'Studii de caz comparative', 'Marketing internațional'],
+  ['Impactul recenziilor online asupra vânzărilor', 'bachelor', 'en', 'Analiză de date secundare, regresie', 'Marketing digital'],
 ]
 
 const REQUEST_TITLES = [
@@ -365,8 +382,8 @@ await q(
 const unassignedStudentId = await upsertUser([
   'ana.lupu@stud.ase.ro', 'Ana-Maria Lupu', 'student',
   `MK-${startYear}-0099`,
-  'bachelor', 'Marketing', 3,
-  programmeIds.get('bachelor|Marketing|ro'), 'ro', 'RO-1503', 'A', 'V',
+  'bachelor', 'Învățământ cu frecvență — RO', 3,
+  programmeIds.get('bachelor|Învățământ cu frecvență — RO|ro'), 'ro', 'RO-1503', 'A', 'V',
   null, 'Marketing', null, null, null,
   true,
 ])
@@ -379,17 +396,20 @@ await q(`DELETE FROM requests WHERE student_id = $1`, [unassignedStudentId])
 await q(`DELETE FROM invitations WHERE student_id = $1 AND status <> 'pending'`, [unassignedStudentId])
 
 console.log('[seed] teme')
-for (const [i, [titlu, level, limba, methods, prereq, locuri]] of TOPICS.entries()) {
+for (const [i, [titlu, level, limba, metodologie, domeniu]] of TOPICS.entries()) {
   const teacherId = teacherIds[i % teacherIds.length]
   await q(
     `INSERT INTO topics (academic_year_id, teacher_id, title, description, level, language,
-                         methods, prerequisites, seats)
-     SELECT $1,$2,$3,$4,$5,$6,$7,$8,$9
+                         methodology, domain, programme_id)
+     SELECT $1,$2,$3,$4,$5,$6,$7,$8,
+            (SELECT id FROM study_programmes
+              WHERE academic_year_id = $1 AND level = $5 AND language = $6 AND is_active
+              ORDER BY name LIMIT 1)
       WHERE NOT EXISTS (
         SELECT 1 FROM topics WHERE academic_year_id = $1 AND teacher_id = $2 AND title = $3
       )`,
-    [currentYear.id, teacherId, titlu, `Direcție de cercetare propusă pentru sesiunea în curs. ${methods}.`,
-     level, limba, methods, prereq, locuri],
+    [currentYear.id, teacherId, titlu, `Direcție de cercetare propusă pentru sesiunea în curs. ${metodologie}.`,
+     level, limba, metodologie, domeniu],
   )
 }
 

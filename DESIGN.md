@@ -12,16 +12,22 @@ de Astro.
 
 ## Ce hotărăște identitatea
 
-**Roșul ASE este un sigiliu, nu o culoare de decor.** `--red: #990000` marchează
-acțiunea principală și starea vie. Nu colorează mobilierul: fundaluri, borduri și
-bare rămân neutre. Un ecran în care jumătate din elemente sunt roșii nu mai are o
-acțiune principală.
+**Roșul ASE este un sigiliu, nu o culoare de decor.** `--red: #c60000` — roșul de
+pe mk.ase.ro, nu unul apropiat — marchează acțiunea principală și starea vie. Nu
+colorează mobilierul: fundaluri, borduri și bare rămân neutre. Un ecran în care
+jumătate din elemente sunt roșii nu mai are o acțiune principală.
+
+**Portalul și site-ul facultății sunt același loc.** `mk.ase.ro` este pagina pe
+care o deschide un student înainte de a ajunge aici, iar cele două arătau ca două
+instituții. De acolo vin trei lucruri, și numai trei: roșul, serifa (Zilla Slab)
+și banda închisă de sus, cu clădirea din Piața Romană — `--hero-ground: #212934`,
+care este `--footerBg` de acolo. Restul rămâne al portalului.
 
 **Registrul este instituțional.** Colțuri aproape drepte (`--r-sm: 2px`,
 `--r-md: 4px`, `--r-lg: 8px`), nu carduri rotunjite. Titlurile de pagină sunt cu
-serife (Source Serif 4); tot restul este Inter. Serifa apare **doar** la titlu de
-pagină și la cifra unei metrici — dacă ajunge și în tabele, portalul începe să
-arate a broșură.
+serife (Zilla Slab, cu Source Serif 4 ca rezervă); tot restul este Inter. Serifa
+apare **doar** la titlu de pagină, în erou și la cifra unei metrici — dacă ajunge
+și în tabele, portalul începe să arate a broșură.
 
 ---
 
@@ -88,6 +94,13 @@ secțiuni" și „între rânduri" arată la fel.
 A înlocuit 33 de corecturi punctuale. Când un câmp are un mesaj de ajutor
 dedesubt, alinierea la mijloc ridică vecinii lui cu jumătate din înălțimea acelui
 mesaj.
+
+**Într-o grilă, alinierea la vârf nu ajunge.** `.grila-campuri` pune eticheta,
+controlul și textul de ajutor ale fiecărui câmp pe aceleași trei linii, cu
+`subgrid`: rândul rămâne aliniat și când un singur câmp are ajutor sub el — cazul
+care făcea rândul „De la · Până la · Locuri · Unde” să arate strâmb. `:where(.field)`
+prinde și câmpurile venite din componente, care nu poartă atributul de scop al
+paginii.
 
 ---
 
@@ -157,7 +170,8 @@ Ce se repetă pe trei ecrane devine componentă. Nu mai devreme.
 | `Clopotel` | Notificările, cu destinația calculată din subiectul evenimentului și rolul cititorului. |
 | `AlegeAn` | Selectorul de an universitar. |
 | `AlegeData` | Un `<input type="date">` îmbrăcat: declanșator propriu, grilă de lună în românește, valoarea citită ca proză peste câmp. Cu `pereche`, capătul unui interval — `min` urmărește începutul și eticheta numără zilele. |
-| `RandSlot` | Un interval de consultație, ca rând de tabel. |
+| `RandSlot` | Un interval de consultație, ca rând de tabel — cu felul lui (deschisă sau programată) și cu publicul lui (toată facultatea sau studenții coordonați). |
+| `Erou` | Banda de sus a fiecărui ecran: supratitlu, titlu cu serife, o frază și rândul de acțiuni, pe fundal închis, cu clădirea la dreapta. Două mărimi: `compact` pe ecranele de lucru, `amplu` pe cele de intrare. |
 | `Icon` | Pictogramele, dintr-un singur set. |
 
 ---

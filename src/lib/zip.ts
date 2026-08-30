@@ -81,14 +81,23 @@ function uniqueNames(nume: string[]): string[] {
   })
 }
 
-export function buildZip(entries: ZipEntry[]): Buffer {
+/**
+ * The archive, from entries whose names are or are not to be trusted.
+ *
+ * `caiRealeDeFisier` turns off both the cleaning and the uniquing: an .xlsx is
+ * a ZIP whose entries *are* paths — `xl/worksheets/sheet1.xml` — and a slash
+ * replaced with a dash there produces a file no spreadsheet opens. It is only
+ * ever set by code that writes the names itself; anything coming from a person
+ * goes through the default.
+ */
+export function buildZip(entries: ZipEntry[], caiRealeDeFisier = false): Buffer {
   const parts: Buffer[] = []
   const directory: Buffer[] = []
   let offset = 0
 
-  const cleanNames = uniqueNames(
-    entries.map((i, idx) => safeName(i.nume, `fisier-${idx + 1}.bin`)),
-  )
+  const cleanNames = caiRealeDeFisier
+    ? entries.map((i) => i.nume)
+    : uniqueNames(entries.map((i, idx) => safeName(i.nume, `fisier-${idx + 1}.bin`)))
 
   entries.forEach((entry, idx) => {
     const nume = Buffer.from(cleanNames[idx], 'utf8')

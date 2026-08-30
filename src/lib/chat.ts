@@ -341,7 +341,7 @@ export async function postEvent(e: {
    * a runtime error either — `postEvent` swallows it — it is an event that
    * never reaches anybody, which is why the two lists are kept in step.
    */
-  subjectKind?: 'request' | 'invitation' | 'slot' | 'change'
+  subjectKind?: 'request' | 'invitation' | 'slot' | 'change' | 'file'
   subjectId?: string | null
 }): Promise<string | null> {
   // Never rejects. Every caller reaches this *after* committing the decision it
@@ -362,7 +362,7 @@ async function writeEvent(e: {
   eventType: string
   body: string
   createConversation?: boolean
-  subjectKind?: 'request' | 'invitation' | 'slot' | 'change'
+  subjectKind?: 'request' | 'invitation' | 'slot' | 'change' | 'file'
   subjectId?: string | null
 }): Promise<string | null> {
   const conversation = e.createConversation

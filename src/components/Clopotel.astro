@@ -34,6 +34,7 @@ const EVENT_LABELS: Record<string, string> = {
   invitation_declined: 'Propunere refuzată',
   consultation_scheduled: 'Consultație programată',
   consultation_cancelled: 'Consultație anulată',
+  thesis_uploaded: 'Lucrare încărcată',
 }
 
 /**
@@ -57,15 +58,20 @@ function destination(e: { subject_kind: string | null; subject_id: string | null
   switch (e.subject_kind) {
     case 'request':
       return isStudent
-        ? `/cererile-mele${e.subject_id ? `#cerere-${e.subject_id}` : ''}`
+        ? `/lucrarea-mea${e.subject_id ? `#cerere-${e.subject_id}` : ''}`
         : `/profesor/studenti?sectiune=cereri${e.subject_id ? `#cerere-${e.subject_id}` : ''}`
     /* No anchor: proposals are shown only while they are open, at the top of
        the page. An accepted or declined one no longer has a row, and a fragment
        pointing at it would be a link that leads nowhere. */
     case 'invitation':
-      return isStudent ? '/cererile-mele' : '/profesor/studenti?sectiune=invitatii'
+      return isStudent ? '/lucrarea-mea' : '/profesor/studenti?sectiune=invitatii'
     case 'slot':
       return isStudent ? '/consultatii' : '/profesor/consultatii'
+    /* Fișierul predat: studentul îl vede pe ecranul lucrării lui, coordonatorul
+       în rândul studentului din lista de coordonați. Aceeași subiect, două
+       adrese — de asta se păstrează felul, nu un URL. */
+    case 'file':
+      return isStudent ? '/lucrarea-mea#lucrare' : '/profesor/studenti?sectiune=studenti'
     default:
       return threadHref
   }

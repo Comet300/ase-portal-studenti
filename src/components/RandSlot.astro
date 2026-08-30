@@ -12,15 +12,8 @@ import { numar } from '../lib/text'
  */
 interface Props {
   /* Not `slot`: that one is a reserved attribute in Astro, and the component's
-     own type ends up intersected with `string`.
-
-     The three columns migration 0017 added are optional here because `Slot` in
-     `repo.ts` does not name them yet; `teacherSlots` selects `s.*`, so they do
-     arrive. */
-  interval: Slot & {
-    kind?: 'open' | 'scheduled'
-    cancelled_reason?: string | null
-  }
+     own type ends up intersected with `string`. */
+  interval: Slot
   /** An hour that has ended is no longer cancelled and asks no attention. */
   incheiat?: boolean
   /**
@@ -54,6 +47,11 @@ const whoComes =
           exactly like an open hour that had filled up. */}
       <span class="muted text-xs">
         {s.kind === 'scheduled' ? 'consultație programată de tine' : 'oră deschisă'}
+        {/* Cine o vede. Cele două feluri stau în același program, iar fără un
+            cuvânt aici o oră publică arată exact ca una pentru studenții
+            coordonați — până când se prezintă cineva la ea. */}
+        {' · '}
+        {s.audience === 'public' ? 'toată facultatea' : 'studenții coordonați'}
       </span>
     </div>
   </td>

@@ -88,6 +88,11 @@ export interface SeatRequest {
   teacher_id: string
   teacher_name: string
   level: 'bachelor' | 'master'
+  /* Which study programme the extra seats are asked for. Extras are reserved
+   * to one programme, so an ask that does not name one cannot be granted —
+   * only the requests filed before this release have it empty. */
+  programme_id: string | null
+  programme_name: string | null
   extra_seats: number
   reason: string
   status: 'pending' | 'approved' | 'rejected'
@@ -99,9 +104,11 @@ export interface SeatRequest {
 export function seatRequests(options: { teacherId?: string } = {}): Promise<SeatRequest[]> {
   return query<SeatRequest>(
     `SELECT sr.id, sr.teacher_id, sr.level, sr.extra_seats, sr.reason, sr.status,
-            sr.decision_note, sr.decided_at, sr.created_at, t.name AS teacher_name
+            sr.decision_note, sr.decided_at, sr.created_at, t.name AS teacher_name,
+            sr.programme_id, p.name AS programme_name
        FROM seat_requests sr
        JOIN users t ON t.id = sr.teacher_id
+       LEFT JOIN study_programmes p ON p.id = sr.programme_id
       WHERE ($1::uuid IS NULL OR sr.teacher_id = $1)
         AND sr.academic_year_id = (SELECT id FROM academic_years WHERE is_current)
       ORDER BY CASE sr.status WHEN 'pending' THEN 0 ELSE 1 END, sr.created_at DESC`,
@@ -112,35 +119,54 @@ export function seatRequests(options: { teacherId?: string } = {}): Promise<Seat
 /**
  * Grants the seats and closes the request in one statement.
  *
- * The allocation row and the decision have to move together: a granted request
- * whose seats were never added is the kind of discrepancy nobody notices until a
- * coordinator is turned away from a student they were told they could take.
+ * The ledger row and the decision have to move together: a granted request
+ * whose seats were never added is the kind of discrepancy nobody notices until
+ * a coordinator is turned away from a student they were told they could take.
+ *
+ * The seats no longer land in `seat_allocations`. They used to be added into
+ * the very column the director's form overwrites, so a coordinator at 43 lost
+ * three seats — with a success notice — the next time that row was saved, and
+ * afterwards nothing could say which of their seats were the norm and which
+ * were granted. Extras live in `seat_grants` now, earmarked for the programme
+ * the request named, and the base is a separate column no grant ever touches.
+ *
+ * Returns `null` when the request is no longer pending, and `'no-programme'`
+ * when it predates the earmark and therefore cannot be granted as it stands:
+ * an extra with no programme would be spendable by anyone, which is exactly
+ * what this release removed.
  */
 export async function grantSeats(
   headId: string,
   seatRequestId: string | null,
   note: string,
-): Promise<SeatRequest | null> {
+): Promise<SeatRequest | 'no-programme' | null> {
   return transaction(async (client) => {
-    const { rows } = await client.query<SeatRequest>(
+    const { rows: open } = await client.query<{ programme_id: string | null }>(
+      `SELECT programme_id FROM seat_requests WHERE id = $1 AND status = 'pending'`,
+      [seatRequestId],
+    )
+    if (!open[0]) return null
+    if (!open[0].programme_id) return 'no-programme'
+
+    const { rows } = await client.query<SeatRequest & { academic_year_id: string }>(
       `UPDATE seat_requests
           SET status = 'approved', decision_note = NULLIF($3, ''), decided_by = $1, decided_at = now()
         WHERE id = $2 AND status = 'pending'
-        RETURNING id, teacher_id, academic_year_id, level, extra_seats, reason, status,
-                  decision_note, decided_at, created_at`,
+        RETURNING id, teacher_id, academic_year_id, level, programme_id, extra_seats, reason,
+                  status, decision_note, decided_at, created_at`,
       [headId, seatRequestId, note],
     )
-    const sr = rows[0] as (SeatRequest & { academic_year_id: string }) | undefined
+    const sr = rows[0]
     if (!sr) return null
 
-    const column = sr.level === 'master' ? 'master_seats' : 'bachelor_seats'
     await client.query(
-      `INSERT INTO seat_allocations (teacher_id, academic_year_id, ${column}, set_by)
-       VALUES ($1, $2, $3, $4)
-       ON CONFLICT (teacher_id, academic_year_id)
-       DO UPDATE SET ${column} = seat_allocations.${column} + EXCLUDED.${column},
-                     set_by = EXCLUDED.set_by, updated_at = now()`,
-      [sr.teacher_id, sr.academic_year_id, sr.extra_seats, headId],
+      `INSERT INTO seat_grants (academic_year_id, teacher_id, programme_id, level, seats,
+                                reason, seat_request_id, granted_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+      [
+        sr.academic_year_id, sr.teacher_id, sr.programme_id, sr.level, sr.extra_seats,
+        sr.reason, sr.id, headId,
+      ],
     )
 
     return sr
@@ -441,7 +467,7 @@ async function sendReminders(baseUrl: string): Promise<number> {
          mai puțin de două zile.</p>
          <p>Dacă o accepți, cererea ta este aprobată direct. Dacă o refuzi, locul se eliberează
          pentru altcineva — iar dacă nu răspunzi deloc, se închide singură.</p>`,
-        { text: 'Vezi propunerea', url: `${baseUrl}/cererile-mele` },
+        { text: 'Vezi propunerea', url: `${baseUrl}/lucrarea-mea` },
       ),
     })
     sent++
@@ -485,7 +511,7 @@ async function sendReminders(baseUrl: string): Promise<number> {
          ${t.zile === 0 ? 'este astăzi' : 'este peste 3 zile'}.</p>
          <p>Dacă l-ai încheiat deja, scrie-i coordonatorului în conversație — el îl marchează
          ca finalizat.</p>`,
-        { text: 'Vezi termenele', url: `${baseUrl}/cererile-mele` },
+        { text: 'Vezi termenele', url: `${baseUrl}/lucrarea-mea` },
       ),
     })
     sent++
