@@ -1041,6 +1041,8 @@ export interface DirectoryStudent {
   teacher_id: string | null
   teacher_name: string | null
   request_status: string | null
+  /** The programme they are enrolled in, so a screen can filter by it. */
+  programme_id: string | null
 }
 
 /** Every student in the session with their coordinator, if the request went through. */
@@ -1048,7 +1050,7 @@ export function studentDirectory(yearId?: string): Promise<DirectoryStudent[]> {
   return query<DirectoryStudent>(
     `SELECT s.id, s.name, s.email, s.student_number, s.program, s.specialization,
             s.study_language, s.study_group, s.study_series, s.study_year,
-            s.father_initial, s.first_login_at::text, s.avatar_path,
+            s.father_initial, s.first_login_at::text, s.avatar_path, s.programme_id::text,
             t.id AS teacher_id, t.name AS teacher_name, r.status AS request_status
        FROM users s
        LEFT JOIN requests r

@@ -29,11 +29,20 @@ import {
  * cohort is a URL somebody can send to a colleague.
  */
 
+/* Filtrele se aplică în browser, nu la server.
+ *
+ * „Seria” și „Grupa” trebuie să ofere doar valorile care mai există după
+ * celelalte filtre — altfel alegi o serie și rămâi cu zero rânduri, fără să
+ * înțelegi de ce. Asta cere ca lista să se îngusteze la fiecare apăsare, iar
+ * un drum la server pentru fiecare tastă ar fi o pagină care clipește.
+ *
+ * Serverul trimite promoția întreagă a anului ales — sunt sute de rânduri, nu
+ * zeci de mii — și tot el o grupează pe programe. Browserul ascunde rândurile
+ * care nu se potrivesc, numără la loc fiecare grup și scrie filtrele în adresă,
+ * ca o listă filtrată să rămână un link pe care îl poți trimite. Fără
+ * JavaScript, pagina rămâne întreagă și de citit: se pierde îngustarea, nu
+ * conținutul. */
 const nivel = Astro.url.searchParams.get('nivel') ?? ''
-const limba = Astro.url.searchParams.get('limba') ?? ''
-const serie = Astro.url.searchParams.get('serie') ?? ''
-const cont = Astro.url.searchParams.get('cont') ?? ''
-const stare = Astro.url.searchParams.get('stare') ?? ''
 const searchQuery = (Astro.url.searchParams.get('q') ?? '').trim().toLowerCase()
 
 /* The year, and what changing it actually does.
@@ -60,23 +69,9 @@ const canAssign = isDepartmentHead(Astro.locals.user)
 const an = canAssign ? year : null
 const yearProgrammes = an ? (await programmes(an.id)).filter((p) => p.is_active) : []
 
-const filtered = all.filter((s) => {
-  if (nivel && s.program !== nivel) return false
-  if (limba && s.study_language !== limba) return false
-  if (serie && (s.study_series ?? '') !== serie) return false
-  if (cont === 'folosit' && !s.first_login_at) return false
-  if (cont === 'neintrat' && s.first_login_at) return false
-  if (stare === 'coordonat' && s.request_status !== 'approved') return false
-  if (stare === 'asteptare' && s.request_status !== 'pending') return false
-  if (stare === 'neinceput' && s.request_status) return false
-  if (searchQuery) {
-    /* The official name, not the plain one: a head of department looking for
-       „Popescu I.” in a year with four Popescu is looking for the initial. */
-    const haystack = `${officialName(s)} ${s.student_number ?? ''} ${s.specialization ?? ''} ${s.study_series ?? ''} ${s.teacher_name ?? ''}`
-    if (!haystack.toLowerCase().includes(searchQuery)) return false
-  }
-  return true
-})
+/* Ce ajunge în pagină este promoția întreagă; îngustarea o face browserul.
+ * Gruparea rămâne aici pentru că este a serverului: el știe programele. */
+const filtered = all
 
 /** The groups: level · specialization · language — exactly the key the timetable uses. */
 const groups = new Map<string, typeof filtered>()
@@ -106,12 +101,6 @@ const grouped = [...groups.entries()]
       a.language.localeCompare(b.language),
   )
 
-const languages = [...new Set(all.map((s) => s.study_language))]
-
-/* Only the series that exist. The column is free text typed from the
- * registrar's sheet, so there is no list to offer other than the one the cohort
- * actually contains. */
-const series = [...new Set(all.map((s) => s.study_series).filter(Boolean))].sort() as string[]
 
 const totals = {
   toti: all.length,
@@ -124,19 +113,7 @@ const totals = {
 }
 const neinceput = totals.toti - totals.supervised - totals.asteptare
 
-const STATUS_OPTIONS = [
-  { value: '', text: 'Toate stările' },
-  { value: 'coordonat', text: 'Cu coordonator' },
-  { value: 'asteptare', text: 'Cerere în așteptare' },
-  { value: 'depusa', text: 'A intrat în sesiunea aleasă' },
-  { value: 'neinceput', text: 'Nu a depus cerere' },
-]
 
-const ACCOUNT_OPTIONS = [
-  { value: '', text: 'Toate conturile' },
-  { value: 'folosit', text: 'A intrat în portal' },
-  { value: 'neintrat', text: 'Nu a intrat niciodată' },
-]
 
 /* Where a save comes back to.
  *
@@ -197,7 +174,7 @@ const exportHref = (format: string) => {
       {/* Filtrarea nu schimbă sesiunea: fără asta, orice căutare te readucea în
           anul curent, tăcut. */}
       <input type="hidden" name="an" value={year?.id ?? ''} />
-      <div class="panel__body row row--wrap" style="gap:var(--s-3);align-items:flex-end">
+      <div class="panel__body filtre-rand">
         <div class="field">
           <span class="label">Sesiunea</span>
           <AlegeAn
@@ -208,55 +185,78 @@ const exportHref = (format: string) => {
             keep={Object.fromEntries([...Astro.url.searchParams].filter(([k, v]) => k !== 'an' && v))}
           />
         </div>
-        <div class="field" style="flex:2;min-width:220px">
+
+        <div class="field filtre__cauta">
           <label class="label" for="q">Caută</label>
           <input class="input" id="q" name="q" type="search" value={searchQuery}
-            placeholder="Nume, număr matricol sau coordonator…" />
+            placeholder="Nume, număr matricol sau coordonator…" autocomplete="off" />
         </div>
-        <div class="field" style="min-width:150px">
-          <label class="label" for="nivel">Nivel</label>
-          <select class="select" id="nivel" name="nivel">
-            <option value="">Licență și master</option>
-            {
-              Object.entries(LEVEL_LABELS).map(([v, t]) => (
-                <option value={v} selected={nivel === v}>{t}</option>
-              ))
-            }
-          </select>
-        </div>
-        <div class="field" style="min-width:150px">
-          <label class="label" for="limba">Limbă</label>
-          <select class="select" id="limba" name="limba">
-            <option value="">Toate limbile</option>
-            {
-              languages.map((l) => (
-                <option value={l} selected={limba === l}>{LANGUAGE_LABELS[l] ?? l}</option>
-              ))
-            }
-          </select>
-        </div>
-        <div class="field" style="min-width:130px">
-          <label class="label" for="serie">Serie</label>
-          <select class="select" id="serie" name="serie">
-            <option value="">Toate seriile</option>
-            {series.map((v) => <option value={v} selected={serie === v}>{v}</option>)}
-          </select>
-        </div>
-        <div class="field" style="min-width:200px">
-          <label class="label" for="cont">Cont</label>
-          <select class="select" id="cont" name="cont">
-            {ACCOUNT_OPTIONS.map((o) => (
-              <option value={o.value} selected={cont === o.value}>{o.text}</option>
+
+        {/* Două niveluri, deci „multiselect” înseamnă două casete: un
+            `<select multiple>` cu două rânduri cere apăsat Ctrl ca să alegi
+            amândouă, ceea ce nimeni nu ghicește. Nimic bifat = amândouă. */}
+        <fieldset class="field filtre__nivel">
+          <legend class="label">Nivel</legend>
+          <div class="filtre__casete">
+            {Object.entries(LEVEL_LABELS).map(([v, t]) => (
+              <label class="filtre__caseta">
+                <input type="checkbox" name="nivel" value={v} checked={nivel.split(',').includes(v)} />
+                <span>{t}</span>
+              </label>
+            ))}
+          </div>
+        </fieldset>
+
+        <div class="field filtre__program">
+          <label class="label" for="program">Program de studii</label>
+          <select class="select" id="program" name="program" data-programe>
+            <option value="">Toate programele</option>
+            {yearProgrammes.map((p) => (
+              <option value={p.id} data-nivel={p.level}>
+                {p.name}
+                {p.language !== 'ro' ? ` · ${LANGUAGE_LABELS[p.language]}` : ''}
+              </option>
             ))}
           </select>
         </div>
-        <div class="field" style="min-width:190px">
-          <label class="label" for="stare">Stare</label>
-          <select class="select" id="stare" name="stare">
-            {STATUS_OPTIONS.map((s) => <option value={s.value} selected={stare === s.value}>{s.text}</option>)}
+
+        {/* Seria și grupa se îngustează după celelalte filtre: valorile lor
+            vin din rândurile rămase, nu dintr-o listă fixă. */}
+        <div class="field filtre__scurt">
+          <label class="label" for="serie">Serie</label>
+          <select class="select" id="serie" name="serie" data-derivat="serie">
+            <option value="">Toate</option>
           </select>
         </div>
-        <button class="btn btn--secondary" type="submit">Filtrează</button>
+
+        <div class="field filtre__scurt">
+          <label class="label" for="grupa">Grupa</label>
+          <select class="select" id="grupa" name="grupa" data-derivat="grupa">
+            <option value="">Toate</option>
+          </select>
+        </div>
+
+        {/* Contul și starea erau două liste care se citeau împreună: „a intrat
+            în portal” și „nu a depus cerere” descriu același student, din două
+            unghiuri. Una singură, cu starea sub „a intrat”, pentru că a nu fi
+            intrat în portal face restul întrebărilor fără obiect. */}
+        <div class="field filtre__stare">
+          <label class="label" for="stare">Stare</label>
+          <select class="select" id="stare" name="stare">
+            <option value="">Toți studenții</option>
+            <option value="neintrat">Nu a intrat în portal</option>
+            <optgroup label="A intrat în portal">
+              <option value="intrat">Oricare</option>
+              <option value="coordonat">Cu coordonator</option>
+              <option value="asteptare">Cerere în așteptare</option>
+              <option value="depusa">A intrat în sesiunea aleasă</option>
+              <option value="neinceput">Nu a depus cerere</option>
+            </optgroup>
+          </select>
+        </div>
+
+        <button class="btn btn--secondary" type="submit" data-fara-js>Filtrează</button>
+        <button class="btn btn--ghost" type="button" id="goleste-filtre" hidden>Golește filtrele</button>
       </div>
       {/* The marker is written on sign-in, and it started being written with
           this version: nothing reconstructs the sign-ins that happened before
@@ -268,6 +268,27 @@ const exportHref = (format: string) => {
         și nefolosit de atunci apare ca „nu a intrat niciodată”, chiar dacă a fost folosit înainte.
       </p>
     </form>
+
+    {/* Numărul de rânduri rămase după filtre, și starea goală pe care browserul
+        o aprinde când nu mai rămâne niciunul. Serverul nu le poate ști: el
+        trimite promoția întreagă. */}
+    {all.length > 0 && (
+      <p class="muted text-sm" aria-live="polite">
+        <strong data-contor-total>{all.length}</strong> din {all.length} studenți
+      </p>
+    )}
+
+    <section class="panel" data-fara-rezultate hidden>
+      <div class="empty">
+        <p class="empty__title">Niciun student pentru filtrele alese</p>
+        <p class="empty__text">
+          Cei {all.length} studenți ai facultății nu se potrivesc cu filtrele active.
+        </p>
+        <button class="btn btn--secondary btn--sm" type="button" data-goleste-din-gol>
+          Golește filtrele
+        </button>
+      </div>
+    </section>
 
     {
       grouped.length === 0 ? (
@@ -290,8 +311,7 @@ const exportHref = (format: string) => {
             <div class="empty">
               <p class="empty__title">Niciun student pentru filtrele alese</p>
               <p class="empty__text">
-                Cei {all.length} studenți din sesiune nu se potrivesc cu filtrele active. Schimbă
-                nivelul, limba, seria, contul sau starea, ori golește căutarea.
+                Cei {all.length} studenți din sesiune nu se potrivesc cu filtrele active.
               </p>
               <a class="btn btn--secondary btn--sm" href="/profesor/facultate">Golește filtrele</a>
             </div>
@@ -299,13 +319,13 @@ const exportHref = (format: string) => {
         </section>
       ) : (
         grouped.map((g) => (
-          <section class="panel">
+          <section class="panel" data-grup>
             <div class="panel__header">
               <h2 class="section-title">
                 {levelLabel(g.level)} · {g.specialization}
                 {g.language !== 'ro' ? ` · ${languageLabel(g.language).toLowerCase()}` : ''}
               </h2>
-              <span class="muted text-sm">
+              <span class="muted text-sm" data-contor-grup data-total={g.students.length}>
                 {g.supervised} din {g.students.length} au coordonator
               </span>
             </div>
@@ -404,7 +424,17 @@ const exportHref = (format: string) => {
                 <tbody>
                   {g.students.map((s) => (
                     <>
-                    <tr id={`student-${s.id}`}>
+                    <tr
+                      id={`student-${s.id}`}
+                      data-rand
+                      data-nivel={s.program ?? 'bachelor'}
+                      data-program={s.programme_id ?? ''}
+                      data-serie={s.study_series ?? ''}
+                      data-grupa={s.study_group ?? ''}
+                      data-cont={s.first_login_at ? 'intrat' : 'neintrat'}
+                      data-stare={s.request_status === 'approved' ? 'coordonat' : s.request_status === 'pending' ? 'asteptare' : 'neinceput'}
+                      data-cauta={`${officialName(s)} ${s.student_number ?? ''} ${s.specialization ?? ''} ${s.study_series ?? ''} ${s.study_group ?? ''} ${s.teacher_name ?? ''}`.toLowerCase()}
+                    >
                       <td>
                         <div class="row" style="gap:var(--s-3)">
                           {/* The checkbox is outside the row form, inside the
@@ -566,6 +596,175 @@ const exportHref = (format: string) => {
 </ProfesorLayout>
 
 <script>
+  /* Filtrarea listei, în pagină.
+   *
+   * Serverul trimite promoția întreagă; aici se ascunde ce nu se potrivește. Se
+   * face în browser dintr-un singur motiv: „Seria” și „Grupa” trebuie să ofere
+   * doar valorile care mai există după celelalte filtre, iar asta cere ca
+   * listele să se refacă la fiecare apăsare.
+   *
+   * Fiecare listă derivată se calculează din rândurile care trec de toate
+   * filtrele *în afară de a ei*. Altfel, alegând seria B, lista de serii ar
+   * rămâne cu o singură intrare și nu te-ai mai putea întoarce.
+   */
+  const form = document.querySelector<HTMLFormElement>('form.panel')
+  const randuri = [...document.querySelectorAll<HTMLTableRowElement>('[data-rand]')]
+
+  if (form && randuri.length > 0) {
+    const cauta = form.querySelector<HTMLInputElement>('#q')!
+    const niveluri = [...form.querySelectorAll<HTMLInputElement>('input[name="nivel"]')]
+    const program = form.querySelector<HTMLSelectElement>('#program')!
+    const serie = form.querySelector<HTMLSelectElement>('#serie')!
+    const grupa = form.querySelector<HTMLSelectElement>('#grupa')!
+    const stare = form.querySelector<HTMLSelectElement>('#stare')!
+    const goleste = form.querySelector<HTMLButtonElement>('#goleste-filtre')!
+    const butonFaraJs = form.querySelector<HTMLButtonElement>('[data-fara-js]')
+
+    /* Butonul „Filtrează” este pentru pagina fără JavaScript. Aici filtrarea
+       se întâmplă la tastă, deci butonul ar fi un control care nu face nimic. */
+    if (butonFaraJs) butonFaraJs.hidden = true
+
+    const nivelAles = () => niveluri.filter((c) => c.checked).map((c) => c.value)
+
+    type Cheie = 'nivel' | 'program' | 'serie' | 'grupa' | 'stare' | 'cauta'
+
+    const trece = (r: HTMLElement, ignora?: Cheie) => {
+      const n = nivelAles()
+      if (ignora !== 'nivel' && n.length > 0 && !n.includes(r.dataset.nivel ?? '')) return false
+      if (ignora !== 'program' && program.value && r.dataset.program !== program.value) return false
+      if (ignora !== 'serie' && serie.value && (r.dataset.serie ?? '') !== serie.value) return false
+      if (ignora !== 'grupa' && grupa.value && (r.dataset.grupa ?? '') !== grupa.value) return false
+
+      if (ignora !== 'stare' && stare.value) {
+        const cont = r.dataset.cont
+        const st = r.dataset.stare
+        if (stare.value === 'neintrat' && cont !== 'neintrat') return false
+        if (stare.value === 'intrat' && cont !== 'intrat') return false
+        if (stare.value === 'coordonat' && st !== 'coordonat') return false
+        if (stare.value === 'asteptare' && st !== 'asteptare') return false
+        if (stare.value === 'neinceput' && st !== 'neinceput') return false
+        // „a intrat în sesiunea aleasă” = are o cerere, indiferent de starea ei
+        if (stare.value === 'depusa' && st === 'neinceput') return false
+      }
+
+      if (ignora !== 'cauta') {
+        const q = cauta.value.trim().toLowerCase()
+        if (q && !(r.dataset.cauta ?? '').includes(q)) return false
+      }
+      return true
+    }
+
+    /* O listă derivată păstrează valoarea aleasă chiar dacă nu mai apare în
+       rândurile rămase: altfel filtrul s-ar șterge singur sub degete. */
+    const reface = (el: HTMLSelectElement, cheie: 'serie' | 'grupa') => {
+      const valori = [
+        ...new Set(
+          randuri
+            .filter((r) => trece(r, cheie))
+            .map((r) => r.dataset[cheie] ?? '')
+            .filter(Boolean),
+        ),
+      ].sort()
+      if (el.value && !valori.includes(el.value)) valori.push(el.value)
+
+      const ales = el.value
+      el.replaceChildren()
+      el.append(new Option('Toate', ''))
+      for (const v of valori.sort()) el.append(new Option(v, v, false, v === ales))
+      el.value = ales
+    }
+
+    const scrieAdresa = () => {
+      const p = new URLSearchParams(location.search)
+      const set = (k: string, v: string) => (v ? p.set(k, v) : p.delete(k))
+      set('q', cauta.value.trim())
+      set('nivel', nivelAles().join(','))
+      set('program', program.value)
+      set('serie', serie.value)
+      set('grupa', grupa.value)
+      set('stare', stare.value)
+      const q = p.toString()
+      history.replaceState({}, '', q ? `${location.pathname}?${q}` : location.pathname)
+    }
+
+    const aplica = () => {
+      /* Programele urmează nivelul, ca la „Teme propuse”. */
+      const n = nivelAles()
+      for (const o of program.options) {
+        const seVede = !o.dataset.nivel || n.length === 0 || n.includes(o.dataset.nivel)
+        o.hidden = !seVede
+        o.disabled = !seVede
+      }
+      if (program.selectedOptions[0]?.hidden) program.value = ''
+
+      reface(serie, 'serie')
+      reface(grupa, 'grupa')
+
+      let vizibile = 0
+      for (const r of randuri) {
+        const seVede = trece(r)
+        r.hidden = !seVede
+        if (seVede) vizibile++
+        /* Editorul deschis sub un rând ascuns nu are ce căuta pe ecran. */
+        const editor = document.getElementById(`editor-${r.id.replace('student-', '')}`)
+        if (editor && !seVede) editor.hidden = true
+      }
+
+      /* Fiecare grup își numără rândurile rămase, iar cel golit dispare: un
+         panou cu antet și zero rânduri arată ca un tabel stricat. */
+      for (const grup of document.querySelectorAll<HTMLElement>('[data-grup]')) {
+        const aleGrupului = [...grup.querySelectorAll<HTMLElement>('[data-rand]')]
+        const ramase = aleGrupului.filter((r) => !r.hidden)
+        const coordonati = ramase.filter((r) => r.dataset.stare === 'coordonat').length
+        grup.hidden = ramase.length === 0
+        const contor = grup.querySelector<HTMLElement>('[data-contor-grup]')
+        if (contor) contor.textContent = `${coordonati} din ${ramase.length} au coordonator`
+      }
+
+      const activ =
+        Boolean(cauta.value.trim() || program.value || serie.value || grupa.value || stare.value) ||
+        nivelAles().length > 0
+      goleste.hidden = !activ
+
+      const gol = document.querySelector<HTMLElement>('[data-fara-rezultate]')
+      if (gol) gol.hidden = vizibile > 0
+      const contorTotal = document.querySelector<HTMLElement>('[data-contor-total]')
+      if (contorTotal) contorTotal.textContent = String(vizibile)
+    }
+
+    for (const el of [cauta, program, serie, grupa, stare, ...niveluri]) {
+      el.addEventListener('input', () => {
+        aplica()
+        scrieAdresa()
+      })
+    }
+
+    const golesteTot = () => {
+      cauta.value = ''
+      program.value = ''
+      serie.value = ''
+      grupa.value = ''
+      stare.value = ''
+      niveluri.forEach((c) => (c.checked = false))
+      aplica()
+      scrieAdresa()
+      cauta.focus()
+    }
+
+    goleste.addEventListener('click', golesteTot)
+    document
+      .querySelector<HTMLButtonElement>('[data-goleste-din-gol]')
+      ?.addEventListener('click', golesteTot)
+
+    /* Adresa lipită în bară arată exact lista pe care o descrie. */
+    const p = new URLSearchParams(location.search)
+    program.value = p.get('program') ?? ''
+    serie.value = p.get('serie') ?? ''
+    grupa.value = p.get('grupa') ?? ''
+    stare.value = p.get('stare') ?? ''
+    aplica()
+  }
+
   /* «Nivel» decide ce programe se pot alege, ca la „Teme propuse”.
    *
    * Perechea apare de două ori pe ecran — o dată pe bara de selecție a fiecărei
@@ -668,6 +867,59 @@ const exportHref = (format: string) => {
 </script>
 
 <style>
+  /* --- bara de filtre ------------------------------------------------------ */
+
+  .filtre-rand {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--s-3);
+    align-items: flex-end;
+  }
+  .filtre__cauta {
+    flex: 2;
+    min-width: 220px;
+  }
+  .filtre__program {
+    min-width: 220px;
+  }
+  .filtre__stare {
+    min-width: 200px;
+  }
+  .filtre__scurt {
+    min-width: 110px;
+  }
+
+  /* Caseta de nivel: `fieldset` pentru că cele două opțiuni sunt un singur
+     control, cu o singură etichetă citită cu voce tare. */
+  .filtre__nivel {
+    border: 0;
+    margin: 0;
+    padding: 0;
+    min-inline-size: 0;
+  }
+  .filtre__casete {
+    display: flex;
+    gap: var(--s-2);
+  }
+  .filtre__caseta {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--s-2);
+    min-height: var(--tap);
+    padding: 0 var(--s-3);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--r-md);
+    background: var(--surface);
+    font-size: var(--t-sm);
+    white-space: nowrap;
+    cursor: pointer;
+  }
+  .filtre__caseta:has(input:checked) {
+    border-color: var(--red);
+    color: var(--red);
+    font-weight: 600;
+  }
+
   /* Read as prose, not as metadata: it is the sentence that decides whether the
      „nu a intrat niciodată” column can be acted on, so it keeps the 16px floor. */
   .nota-cont {
