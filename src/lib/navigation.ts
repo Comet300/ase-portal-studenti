@@ -38,7 +38,10 @@ export const SCREENS: Record<string, string> = {
   '/profesor/arhiva': 'Panoul meu',
   '/profesor/activitatea-mea': 'Panoul meu',
   '/profesor/departament': 'Departament',
-  '/profesor/conturi': 'Conturi',
+  /* Ecranul „Conturi” a fost împărțit între studenții facultății și
+   * departament. Adresa lui rămâne numită, ca un „?de_la=” venit dintr-un
+   * email deja trimis să nu redea un „Înapoi” gol. */
+  '/profesor/conturi': 'Studenții facultății',
   '/profesor/calendar': 'Calendarul sesiunii',
   '/profesor/an-universitar': 'An universitar',
 }

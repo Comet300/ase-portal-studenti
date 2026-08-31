@@ -6,7 +6,7 @@ import Taburi from '../../components/Taburi.astro'
 import { query, queryOne } from '../../lib/db'
 import { seatRequests } from '../../lib/lifecycle'
 import { STATUS_CLASS, STATUS_LABELS, formatDate, programLabel, timeAgo } from '../../lib/repo'
-import { officialName } from '../../lib/text'
+import { numar, officialName } from '../../lib/text'
 import { LEVEL_LABELS, currentYear } from '../../lib/years'
 
 /**
@@ -21,7 +21,7 @@ import { LEVEL_LABELS, currentYear } from '../../lib/years'
 /* An unknown `?sectiune` left the page with the tab bar, the header and zero
  * content: both guards were false and nothing took over. Any unrecognised
  * value falls back to the default section. */
-const SECTIONS = ['situatie', 'locuri'] as const
+const SECTIONS = ['situatie', 'cadre'] as const
 const requestedSection = Astro.url.searchParams.get('sectiune') ?? ''
 const sectiune = (SECTIONS as readonly string[]).includes(requestedSection) ? requestedSection : 'situatie'
 
@@ -160,9 +160,46 @@ const exportUrl = `/profesor/departament/export-cereri?${new URLSearchParams({
   ...(seriesFilter ? { serie: seriesFilter } : {}),
 }).toString()}`
 
+const currentPath = Astro.url.pathname + Astro.url.search
+
+/* Conturile corpului didactic.
+ *
+ * Stăteau pe „Conturi”, un ecran care ținea la un loc studenții și cadrele
+ * didactice — două administrări care nu se fac de aceeași persoană, în același
+ * moment. Studenții au plecat pe „Studenții facultății”, unde sunt oricum
+ * listați; cadrele didactice stau aici, lângă locurile pe care le primesc.
+ *
+ * `coordonari` spune ce se pierde dacă li se închide accesul, ca decizia să nu
+ * fie luată pe nevăzute. */
+const cadre = await query<{
+  id: string
+  name: string
+  email: string
+  role: 'student' | 'teacher' | 'head'
+  academic_title: string | null
+  first_login_at: string | null
+  avatar_path: string | null
+  is_active: boolean
+  deactivated_at: string | null
+  coordonari: number
+}>(
+  `SELECT u.id, u.name, u.email, u.role, u.academic_title,
+          u.first_login_at::text, u.avatar_path, u.is_active, u.deactivated_at::text,
+          (SELECT count(*)::int FROM requests r
+            WHERE r.teacher_id = u.id AND r.status IN ('approved', 'defended')) AS coordonari
+     FROM users u
+    WHERE u.role <> 'student'
+    ORDER BY u.is_active DESC, u.role, u.name`,
+)
+
+const ROLE_TEXT: Record<string, string> = {
+  teacher: 'Cadru didactic',
+  head: 'Director de departament',
+}
+
 const sections = [
-  { key: 'situatie', text: 'Situația sesiunii', count: null },
-  { key: 'locuri', text: 'Locuri', count: pendingSeatRequests.length },
+  { key: 'situatie', text: 'Situația sesiunii', count: pendingSeatRequests.length },
+  { key: 'cadre', text: 'Cadre didactice', count: null },
 ]
 ---
 
@@ -260,11 +297,13 @@ const sections = [
                   <th scope="col">Total</th>
                   <th scope="col">În așteptare</th>
                   <th scope="col">Teme nepreluate</th>
+                  <th scope="col"><span class="visually-hidden">Alocare</span></th>
                 </tr>
               </thead>
               <tbody>
                 {withSeats.map((t) => (
-                  <tr>
+                  <>
+                  <tr id={`coordonator-${t.id}`}>
                     <td>
                       <div class="row" style="gap:var(--s-3)">
                         <Avatar name={t.name} src={t.avatar_path} size="xs" href={`/profil/${t.id}`} />
@@ -286,7 +325,54 @@ const sections = [
                       )}
                     </td>
                     <td class="numeric muted">{t.free_topics}</td>
+                    <td style="text-align:right">
+                      <button
+                        class="btn btn--secondary btn--sm"
+                        type="button"
+                        data-editeaza={t.id}
+                        aria-expanded="false"
+                        aria-controls={`locuri-rand-${t.id}`}
+                      >
+                        Alocă locuri
+                      </button>
+                    </td>
                   </tr>
+
+                  {/* Alocarea stă pe rândul coordonatorului, nu pe o filă
+                      separată: erau două tabele cu aceleași nume, unul care
+                      spunea câte locuri sunt ocupate și altul unde se scria
+                      câte sunt — și trebuia ținut minte de la unul la altul. */}
+                  <tr class="editor-rand" id={`locuri-rand-${t.id}`} hidden>
+                    <td colspan="7">
+                      <form method="POST" action="/api/locuri" class="alocare">
+                        <input type="hidden" name="actiune" value="aloca" />
+                        <input type="hidden" name="profesor_id" value={t.id} />
+                        <input type="hidden" name="redirect" value={`${currentPath}#coordonator-${t.id}`} />
+
+                        <div class="field">
+                          <label class="label" for={`lic-${t.id}`}>Locuri licență</label>
+                          <input class="input input--num" id={`lic-${t.id}`} name="locuri_licenta"
+                            type="number" min="0" max="40" value={t.bachelor_seats} />
+                          <span class="hint">{t.bachelor_taken} ocupate acum</span>
+                        </div>
+
+                        <div class="field">
+                          <label class="label" for={`mas-${t.id}`}>Locuri master</label>
+                          <input class="input input--num" id={`mas-${t.id}`} name="locuri_master"
+                            type="number" min="0" max="40" value={t.master_seats} />
+                          <span class="hint">{t.master_taken} ocupate acum</span>
+                        </div>
+
+                        <p class="hint alocare__nota">
+                          Locurile se resetează la fiecare an universitar. Un coordonator cu toate
+                          locurile ocupate rămâne în catalog, estompat, cu studenții lui vizibili.
+                        </p>
+
+                        <button class="btn btn--primary btn--sm" type="submit">Salvează</button>
+                      </form>
+                    </td>
+                  </tr>
+                  </>
                 ))}
               </tbody>
             </table>
@@ -395,14 +481,7 @@ const sections = [
             </div>
           )}
         </section>
-      </div>
-    )
-  }
 
-  {/* -------------------------------------------------------------- seats */}
-  {
-    sectiune === 'locuri' && (
-      <div class="stack stack--loose">
         <section class="panel">
           <div class="panel__header">
             <h2 class="section-title">Cereri de locuri suplimentare</h2>
@@ -457,98 +536,6 @@ const sections = [
           )}
         </section>
 
-        <section class="panel">
-          <div class="panel__header">
-            <h2 class="section-title">Alocarea locurilor</h2>
-            <span class="muted text-sm">{year?.label}</span>
-          </div>
-
-          <p class="panel__body hint">
-            Locurile se resetează la fiecare an universitar. Un coordonator cu toate locurile
-            ocupate apare în catalogul studenților ca indisponibil, dar rămâne vizibil împreună cu
-            studenții pe care îi coordonează.
-          </p>
-
-          {/* A form cannot span table cells, so each row's form lives outside the
-              table and its fields point at it by id. That keeps every input in
-              the column its header names — the alternative, one cell spanning
-              three columns, put the numbers under the wrong titles. */}
-          {
-            withSeats.map((t) => (
-              <form id={`locuri-${t.id}`} method="POST" action="/api/locuri" hidden>
-                <input type="hidden" name="actiune" value="aloca" />
-                <input type="hidden" name="profesor_id" value={t.id} />
-              </form>
-            ))
-          }
-
-          <div class="table-wrap" tabindex="0" role="region" aria-label="Cererile de coordonare din departament">
-            <table class="table">
-              <thead>
-                <tr>
-                  <th scope="col">Coordonator</th>
-                  <th scope="col">Ocupate</th>
-                  <th scope="col">Locuri licență</th>
-                  <th scope="col">Locuri master</th>
-                  <th scope="col"><span class="visually-hidden">Salvează</span></th>
-                </tr>
-              </thead>
-              <tbody>
-                {withSeats.map((t) => (
-                  <tr>
-                    <td>
-                      <div class="row" style="gap:var(--s-3)">
-                        <Avatar name={t.name} src={t.avatar_path} size="xs" />
-                        {t.name}
-                      </div>
-                    </td>
-                    <td class="numeric">
-                      <span class:list={{ 'at-capacity': t.seats > 0 && t.taken === t.seats, 'over-capacity': t.seats > 0 && t.taken > t.seats }}>
-                        {t.taken} / {t.seats}
-                      </span>
-                    </td>
-                    <td>
-                      <label class="visually-hidden" for={`lic-${t.id}`}>
-                        Locuri licență pentru {t.name}
-                      </label>
-                      <input
-                        class="input input--num"
-                        id={`lic-${t.id}`}
-                        form={`locuri-${t.id}`}
-                        name="locuri_licenta"
-                        type="number"
-                        min="0"
-                        max="40"
-                        value={t.bachelor_seats}
-                      />
-                    </td>
-                    <td>
-                      <label class="visually-hidden" for={`mas-${t.id}`}>
-                        Locuri master pentru {t.name}
-                      </label>
-                      <input
-                        class="input input--num"
-                        id={`mas-${t.id}`}
-                        form={`locuri-${t.id}`}
-                        name="locuri_master"
-                        type="number"
-                        min="0"
-                        max="40"
-                        value={t.master_seats}
-                      />
-                    </td>
-                    <td style="text-align:right">
-                      <button class="btn btn--secondary btn--sm" type="submit" form={`locuri-${t.id}`}>
-                        Salvează
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </section>
-
         {seatRequestRows.filter((r) => r.status !== 'pending').length > 0 && (
           <section class="panel">
             <div class="panel__header">
@@ -596,9 +583,264 @@ const sections = [
       </div>
     )
   }
+
+  {/* -------------------------------------------------------------- seats */}
+
+  {
+    sectiune === 'cadre' && (
+      <div class="stack stack--loose">
+        <section class="panel">
+          <div class="panel__header">
+            <h2 class="section-title">Cadrele didactice</h2>
+            <span class="muted text-sm">
+              {numar(cadre.filter((o) => o.is_active).length, 'cont deschis', 'conturi deschise')}
+            </span>
+          </div>
+
+          <div class="table-wrap" tabindex="0" role="region" aria-label="Conturile cadrelor didactice">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th scope="col">Nume</th>
+                  <th scope="col">Adresă de email</th>
+                  <th scope="col">Rol</th>
+                  <th scope="col">Coordonări</th>
+                  <th scope="col">Acces</th>
+                  <th scope="col"><span class="visually-hidden">Editează</span></th>
+                </tr>
+              </thead>
+              <tbody>
+                {cadre.map((o) => (
+                  <>
+                  <tr id={`cont-${o.id}`} class:list={{ 'is-inactive': !o.is_active }}>
+                    <td>
+                      <div class="row" style="gap:var(--s-3)">
+                        <Avatar name={o.name} src={o.avatar_path} size="xs" href={`/profil/${o.id}`} />
+                        {o.name}
+                      </div>
+                    </td>
+                    <td class="muted">{o.email}</td>
+                    <td class="muted">{ROLE_TEXT[o.role]}</td>
+                    <td class="numeric muted">{o.coordonari}</td>
+                    <td>
+                      {o.is_active ? (
+                        <span class="stack stack--tight" style="gap:2px">
+                          <span class="badge badge--aprobata">Acces</span>
+                          {/* Un cont deschis și niciodată folosit este, de
+                              obicei, o literă greșită în adresă — iar omul de la
+                              celălalt capăt așteaptă un link care nu poate veni. */}
+                          {!o.first_login_at && (
+                            <span class="badge badge--asteptare">Nu a intrat niciodată</span>
+                          )}
+                        </span>
+                      ) : (
+                        <span class="badge badge--neutru" title={`Închis ${formatDate(o.deactivated_at)}`}>
+                          Închis
+                        </span>
+                      )}
+                    </td>
+                    <td style="text-align:right">
+                      <button class="btn btn--ghost btn--sm" type="button"
+                        data-editeaza={o.id} aria-expanded="false" aria-controls={`editor-${o.id}`}>
+                        Editează
+                      </button>
+                    </td>
+                  </tr>
+
+                  <tr class="editor-rand" id={`editor-${o.id}`} hidden>
+                    <td colspan="6">
+                      <div class="editor">
+                        <form method="POST" action="/api/conturi" class="editor__adresa">
+                          <input type="hidden" name="actiune" value="schimba_email" />
+                          <input type="hidden" name="utilizator_id" value={o.id} />
+                          <input type="hidden" name="redirect" value={`${currentPath}#cont-${o.id}`} />
+                          <div class="field" style="flex:1;min-width:240px">
+                            <label class="label" for={`email-${o.id}`}>Adresă de email</label>
+                            <input class="input" id={`email-${o.id}`} name="email" type="email"
+                              value={o.email} required />
+                            <span class="hint">
+                              Autentificarea trece exclusiv prin ea. Schimbarea invalidează linkurile
+                              de acces trimise până acum.
+                            </span>
+                          </div>
+                          <button class="btn btn--primary btn--sm" type="submit">Salvează adresa</button>
+                        </form>
+
+                        <form method="POST" action="/api/conturi" class="editor__acces">
+                          <input type="hidden" name="actiune"
+                            value={o.is_active ? 'dezactiveaza' : 'reactiveaza'} />
+                          <input type="hidden" name="utilizator_id" value={o.id} />
+                          <input type="hidden" name="redirect" value={`${currentPath}#cont-${o.id}`} />
+                          <p class="hint" style="margin:0">
+                            {o.is_active
+                              ? `Închiderea accesului nu șterge nimic: cele ${o.coordonari} coordonări și tot ce a scris rămân în arhivă.`
+                              : 'Redeschiderea accesului îi permite din nou să ceară un link de intrare.'}
+                          </p>
+                          <button
+                            class:list={['btn', 'btn--sm', o.is_active ? 'btn--danger' : 'btn--secondary']}
+                            type="submit"
+                          >
+                            {o.is_active ? 'Închide accesul' : 'Redeschide accesul'}
+                          </button>
+                        </form>
+                      </div>
+                    </td>
+                  </tr>
+                  </>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel__header">
+            <h2 class="section-title">Adaugă un cadru didactic</h2>
+          </div>
+          <form method="POST" action="/api/conturi" class="panel__body stack">
+            <input type="hidden" name="actiune" value="adauga" />
+            <input type="hidden" name="redirect" value="/profesor/departament?sectiune=cadre" />
+
+            <div class="row row--wrap" style="gap:var(--s-3)">
+              <div class="field" style="flex:2;min-width:220px">
+                <label class="label" for="nume">Nume complet</label>
+                <input class="input" id="nume" name="nume" required
+                  placeholder="Ex: Conf. univ. dr. Elena Dumitrescu" />
+                <span class="hint">Titlul didactic face parte din nume, așa cum apare în catalog.</span>
+              </div>
+              <div class="field" style="flex:2;min-width:240px">
+                <label class="label" for="email">Adresă de email</label>
+                <input class="input" id="email" name="email" type="email" required
+                  placeholder="elena.dumitrescu@ase.ro" />
+              </div>
+              <div class="field" style="min-width:210px">
+                <label class="label" for="rol">Rol</label>
+                <select class="select" id="rol" name="rol">
+                  <option value="teacher">Cadru didactic</option>
+                  <option value="head">Director de departament</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="row row--end">
+              <button class="btn btn--primary" type="submit">Deschide contul</button>
+            </div>
+          </form>
+        </section>
+      </div>
+    )
+  }
+
 </ProfesorLayout>
 
+<script>
+  /* Rândul de editare se deschide unul singur, ca pe „Studenții facultății”:
+     alocarea locurilor și adresa unui cadru didactic folosesc același tipar,
+     iar două rânduri deschise deodată împing tabelul de două ori. */
+  document.querySelectorAll<HTMLButtonElement>('[data-editeaza]').forEach((b) => {
+    b.addEventListener('click', () => {
+      const id = b.getAttribute('aria-controls') ?? ''
+      const rand = document.getElementById(id)
+      if (!rand) return
+
+      const eraDeschis = !rand.hidden
+      document.querySelectorAll<HTMLElement>('.editor-rand').forEach((r) => (r.hidden = true))
+      document
+        .querySelectorAll<HTMLButtonElement>('[data-editeaza]')
+        .forEach((x) => x.setAttribute('aria-expanded', 'false'))
+      if (eraDeschis) return
+
+      rand.hidden = false
+      b.setAttribute('aria-expanded', 'true')
+      rand.querySelector<HTMLInputElement>('input:not([type="hidden"])')?.focus()
+    })
+  })
+</script>
+
 <style>
+  /* Alocarea, pe rândul coordonatorului: două numere, o notă și butonul, pe o
+     singură linie. Stivuite, rândul creștea cât jumătate de tabel. */
+  .alocare {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: var(--s-4);
+    padding: var(--s-4) 0;
+  }
+  .alocare .field {
+    min-width: 120px;
+  }
+  .alocare__nota {
+    flex: 1;
+    min-width: 260px;
+    max-width: 62ch;
+    margin: 0;
+  }
+
+  @media (max-width: 900px) {
+    .alocare__nota {
+      order: 3;
+      flex-basis: 100%;
+    }
+  }
+
+/* A closed account stays legible — it is part of the register — but no longer
+     asks for attention the way an active one does. */
+  .is-inchis td {
+    color: var(--ink-muted);
+  }
+
+.is-inchis strong {
+    font-weight: 500;
+  }
+
+.celula-email {
+    font-size: var(--t-xs);
+    word-break: break-all;
+  }
+
+.editor-rand td {
+    background: var(--surface-sunken);
+  }
+
+/* The address and the access, side by side: both decide whether the person
+     can get in. */
+  .editor {
+    display: grid;
+    grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+    gap: var(--s-5);
+    padding: var(--s-4) 0;
+    align-items: start;
+  }
+
+.editor__adresa,
+  .editor__acces {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: var(--s-3);
+  }
+
+.editor__acces {
+    flex-direction: column;
+    align-items: flex-start;
+    border-left: 1px solid var(--border);
+    padding-left: var(--s-5);
+  }
+
+@media (max-width: 900px) {
+    .editor {
+      grid-template-columns: minmax(0, 1fr);
+      gap: var(--s-4);
+    }
+    .editor__acces {
+      border-left: 0;
+      padding-left: 0;
+      border-top: 1px solid var(--border);
+      padding-top: var(--s-4);
+    }
+  }
+
   .taburi {
     display: flex;
     gap: var(--s-1);
