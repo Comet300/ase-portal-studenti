@@ -103,7 +103,7 @@ const iconPaths: Record<string, string> = {
   <div class:list={['shell', { 'shell--fill': fill }]}>
     <aside class="sidebar" id="sidebar">
       <a href="/profesor" class="brand">
-        <span class="brand__mark" aria-hidden="true">A</span>
+        <img class="brand__mark" src="/img/logo-mk.png" alt="" width="240" height="107" />
         <span class="brand__text">
           <strong>SFS {yearLabel}</strong>
           <small>Facultatea de Marketing</small>
@@ -255,7 +255,10 @@ const iconPaths: Record<string, string> = {
     flex-direction: column;
     gap: var(--s-6);
     padding: var(--s-5) var(--s-4);
-    background: var(--dark-surface);
+    /* Aceeași închisă ca banda și ca subsolul. Bara laterală era cu o treaptă
+       mai închisă decât eroul de lângă ea, iar cusătura dintre ele se vedea ca
+       o greșeală, nu ca o intenție. */
+    background: var(--hero-ground);
     color: var(--dark-ink-soft);
     position: sticky;
     top: 0;
@@ -272,17 +275,15 @@ const iconPaths: Record<string, string> = {
     padding-inline: var(--s-2);
   }
 
+  /* Sigla facultății, pe plăcuța ei albă: vișiniul ei dă 1.38:1 pe fundalul
+     închis al barei, deci pe el nu s-ar vedea deloc. */
   .brand__mark {
-    display: grid;
-    place-items: center;
-    width: 32px;
-    height: 32px;
-    background: var(--red);
-    color: #fff;
-    border-radius: var(--r-md);
-    font-family: var(--serif);
-    font-weight: 700;
+    width: auto;
+    height: 30px;
     flex: none;
+    padding: 3px var(--s-2);
+    background: #fff;
+    border-radius: var(--r-md);
   }
 
   .brand__text {
