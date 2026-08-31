@@ -75,6 +75,13 @@ const searchLabel = search.length > 40 ? `${search.slice(0, 40)}…` : search
 const lede =
   'Lucrările de finalizare susținute în sesiunile anterioare, cu coordonatorii lor. Citește-o înainte să scrii cuiva: aici se vede ce direcții a coordonat efectiv un cadru didactic.'
 
+const exportHref = (format: string) =>
+  `/arhiva/export?${new URLSearchParams({
+    ...(year ? { an: year.id } : {}),
+    ...(search ? { q: search } : {}),
+    format,
+  }).toString()}`
+
 const Shell = isStudent ? StudentLayout : ProfesorLayout
 ---
 
@@ -84,6 +91,15 @@ const Shell = isStudent ? StudentLayout : ProfesorLayout
   lede={lede}
   active="arhiva"
 >
+  {/* Sesiunea aleasă, ca fișier: aceleași rânduri, același an, aceeași
+      căutare. Pentru minute, care încă circulă tipărite. */}
+  <a slot="actiuni" class="btn btn--secondary btn--sm" href={exportHref('xlsx')}>
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" />
+    </svg>
+    Descarcă arhiva (Excel)
+  </a>
+  <a slot="actiuni" class="btn btn--ghost btn--sm" href={exportHref('csv')}>CSV</a>
   <div class="container stack stack--loose">
     <div class="panel">
       <div class="panel__body row row--wrap" style="gap:var(--s-4);align-items:flex-end">
@@ -183,18 +199,40 @@ const Shell = isStudent ? StudentLayout : ProfesorLayout
                         {formatDate(r.defended_on)}
                       </span>
                     )}
-                    {/* Lucrarea predată prin portal. O deschid cei care au
-                        dreptul să o citească — directorul, care răspunde de
-                        arhivă, și coordonatorul ei; ruta verifică din nou, ea
-                        este poarta. Pentru ceilalți nu există nici linkul. */}
-                    {r.thesis_file_id && (isHead || r.teacher_id === u.id) && (
-                      <a class="btn btn--ghost btn--sm" href={`/fisiere/${r.thesis_file_id}`}>
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-                          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" />
-                        </svg>
-                        Lucrarea
-                      </a>
-                    )}
+                    {/* Lucrarea predată prin portal.
+                        O deschid cei care au dreptul să o citească — directorul,
+                        care răspunde de arhivă, și coordonatorul ei; ruta
+                        verifică din nou, ea este poarta. Ceilalți văd doar că a
+                        fost predată: faptul este al sesiunii, fișierul este al
+                        studentului. */}
+                    {r.thesis_file_id &&
+                      (isHead || r.teacher_id === u.id ? (
+                        <span class="lucrare-actiuni">
+                          <a
+                            class="btn btn--ghost btn--sm"
+                            href={`/fisiere/${r.thesis_file_id}?inline=1`}
+                            target="_blank"
+                            rel="noopener"
+                          >
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                              <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z" />
+                              <circle cx="12" cy="12" r="3" />
+                            </svg>
+                            Vezi
+                          </a>
+                          <a class="btn btn--ghost btn--sm" href={`/fisiere/${r.thesis_file_id}`}>
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" />
+                            </svg>
+                            Descarcă
+                          </a>
+                        </span>
+                      ) : (
+                        <span class="muted text-xs">
+                          lucrare predată
+                          {r.thesis_uploaded_at ? ` ${formatDate(r.thesis_uploaded_at)}` : ''}
+                        </span>
+                      ))}
                     {r.source === 'import' && (
                       <span class="badge badge--ciorna">din evidență</span>
                     )}
@@ -222,6 +260,14 @@ const Shell = isStudent ? StudentLayout : ProfesorLayout
 </Shell>
 
 <style>
+  /* Cele două acțiuni ale unei lucrări stau împreună și nu se despart pe două
+     rânduri: „Vezi” fără „Descarcă” sub el arată ca o listă, nu ca o pereche. */
+  .lucrare-actiuni {
+    display: inline-flex;
+    gap: var(--s-1);
+    white-space: nowrap;
+  }
+
   .lucrari {
     list-style: none;
     margin: 0;

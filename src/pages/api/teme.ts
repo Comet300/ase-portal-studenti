@@ -3,6 +3,7 @@ import { isTeacher } from '../../lib/auth'
 import { execute, queryOne } from '../../lib/db'
 import { deadEnd, redirectWithNotice, sessionExpired } from '../../lib/http'
 import { formAction } from '../../lib/forms'
+import { numar } from '../../lib/text'
 import { id as formId } from '../../lib/ids'
 
 /** The topics proposed by a teacher. Ownership is checked in every statement. */
@@ -70,6 +71,61 @@ export const POST: APIRoute = async ({ request, locals }) => {
       [u!.id, title, description, level, programme.language, methodology, domain, programme.id],
     )
     return back('Tema a fost publicată în catalog.')
+  }
+
+  /* --- preluarea temelor din alt an -----------------------------------------
+   *
+   * Aceeași operație pe care o face directorul când deschide anul, dar pentru
+   * un singur cadru didactic și pentru temele bifate de el. Ownership-ul este
+   * în instrucțiune, ca peste tot: se copiază doar temele lui, doar din anul
+   * cerut, și doar în anul curent.
+   *
+   * Programul de studii călătorește după nume, nu după id: anul nou are
+   * rândurile lui în `study_programmes`, iar id-ul vechi arată către lista de
+   * anul trecut. Perechea `(level, name, language)` este aceeași pe care o
+   * folosește `openYear`. O temă al cărei program nu s-a mai deschis anul
+   * acesta vine fără program, și se vede pe ecran că îi lipsește. */
+  if (action === 'preia') {
+    const sourceYear = formId(form.get('an_sursa'))
+    const ids = form.getAll('tema_id').map((v) => formId(v)).filter((v): v is string => Boolean(v))
+
+    if (!sourceYear) return back('Anul din care se preiau temele nu a fost identificat.', true)
+    if (ids.length === 0) return back('Bifează cel puțin o temă de preluat.', true)
+
+    /* Titlurile care există deja în anul curent nu se dublează: ecranul le
+     * ascunde, dar între afișare și trimitere poate trece o altă filă. */
+    const n = await execute(
+      `INSERT INTO topics (academic_year_id, teacher_id, title, description, level, language,
+                           methodology, domain, programme_id, is_active)
+       SELECT curent.id, t.teacher_id, t.title, t.description, t.level, t.language,
+              t.methodology, t.domain, nou.id, true
+         FROM topics t
+         CROSS JOIN (SELECT id FROM academic_years WHERE is_current) AS curent
+         LEFT JOIN study_programmes vechi ON vechi.id = t.programme_id
+         LEFT JOIN study_programmes nou
+           ON nou.academic_year_id = curent.id
+          AND nou.level = vechi.level
+          AND nou.name = vechi.name
+          AND nou.language = vechi.language
+          AND nou.is_active
+        WHERE t.teacher_id = $1
+          AND t.academic_year_id = $2
+          AND t.id = ANY($3::uuid[])
+          AND NOT EXISTS (
+            SELECT 1 FROM topics existenta
+             WHERE existenta.teacher_id = t.teacher_id
+               AND existenta.academic_year_id = curent.id
+               AND lower(btrim(existenta.title)) = lower(btrim(t.title))
+          )`,
+      [u!.id, sourceYear, ids],
+    )
+
+    if (n === 0) {
+      return back('Temele bifate sunt deja în catalogul acestui an.', true)
+    }
+    return back(
+      `${numar(n, 'temă preluată', 'teme preluate')} în catalogul anului curent. Verifică programul de studii la fiecare.`,
+    )
   }
 
   if (action === 'comuta') {
