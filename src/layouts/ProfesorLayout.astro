@@ -43,10 +43,11 @@ const navGroups = [
       { href: '/profesor/teme', key: 'teme', text: SCREENS['/profesor/teme'], icon: 'book' },
       { href: '/profesor/consultatii', key: 'consultatii', text: SCREENS['/profesor/consultatii'], icon: 'clock' },
       { href: '/profesor/mesaje', key: 'mesaje', text: SCREENS['/profesor/mesaje'], icon: 'chat' },
-      /* Five of its six sections were about the logged-in person, yet it sat
-         under „Facultate”, between the faculty's students and the department.
-         Wrong group is part of why the screen read as a grab bag. */
-      { href: '/profesor/activitatea-mea', key: 'activitate', text: SCREENS['/profesor/activitatea-mea'], icon: 'activity' },
+      /* The catalogue is one portal's, not one role's: „cine ce coordonează”
+         is asked as often from this side. It used to be reachable only through
+         the exit to the student portal, which no longer exists — the screen
+         renders in this shell now. */
+      { href: '/coordonatori', key: 'coordonatori', text: SCREENS['/coordonatori'], icon: 'catalog' },
     ],
   },
   /* The faculty as a whole — the cohort, the archive of past sessions, the
@@ -88,6 +89,9 @@ const iconPaths: Record<string, string> = {
   clock: 'M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20zM12 6v6l4 2',
   chart: 'M18 20V10M12 20V4M6 20v-6',
   archive: 'M21 8v13H3V8M1 3h22v5H1zM10 12h4',
+  /* Catalogul: o lupă peste o listă. „book” este deja al temelor proprii, iar
+     două pictograme identice în aceeași grupă nu mai deosebesc nimic. */
+  catalog: 'M11 19a8 8 0 1 0 0-16 8 8 0 0 0 0 16zM21 21l-4.35-4.35M8 9h6M8 13h4',
   activity: 'M22 12h-4l-3 9L9 3l-3 9H2',
   person: 'M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8',
   calendar: 'M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z',
@@ -142,16 +146,17 @@ const iconPaths: Record<string, string> = {
           <kbd class="nav__scurtatura">⌘K</kbd>
         </button>
 
-        <a href="/" class="nav__link nav__link--quiet" title="Portalul studenților">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"
-            ><path d="M3 12l9-9 9 9M5 10v10h14V10"></path></svg
-          >
-          <span class="nav__text">Portalul studenților</span>
-        </a>
         {/* The account had no door in this shell at all: the profile form lived
             at the bottom of the archive, and „Contul meu” in the student top bar
             threw a teacher back into it. It is a `.nav__link`, so ⌘K indexes it
             like any other screen. */}
+        {/* The rules of the session, in the same words the students read. */}
+        <a href="/ghid" class="nav__link nav__link--quiet" title={SCREENS['/ghid']}>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"
+            ><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg
+          >
+          <span class="nav__text">{SCREENS['/ghid']}</span>
+        </a>
         <a
           href="/contul-meu"
           class:list={['nav__link', 'nav__link--quiet', { 'is-active': active === 'cont' }]}

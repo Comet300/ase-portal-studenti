@@ -1,8 +1,15 @@
 ---
+import ProfesorLayout from '../layouts/ProfesorLayout.astro'
 import StudentLayout from '../layouts/StudentLayout.astro'
 import { stages } from '../lib/repo'
 
 const stageList = await stages()
+
+/* The guide is the same text for both roles — the rules of the session do not
+ * change with who reads them — so it renders in the reader's own shell. A
+ * coordinator opening it used to land in the student top bar, which reads as a
+ * different portal. */
+const Shell = Astro.locals.user?.role === 'student' ? StudentLayout : ProfesorLayout
 
 const DOCS = [
   {
@@ -32,7 +39,7 @@ const DOCS = [
 ]
 ---
 
-<StudentLayout
+<Shell
   title="Ghid & Regulament"
   active="ghid"
   erou="amplu"
@@ -196,7 +203,7 @@ const DOCS = [
       </div>
     </section>
   </div>
-</StudentLayout>
+</Shell>
 
 <script>
   const tabs = [...document.querySelectorAll<HTMLButtonElement>('[role="tab"]')]

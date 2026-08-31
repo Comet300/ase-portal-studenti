@@ -10,7 +10,7 @@ Aplicație server-rendered (Astro + adaptorul Node) cu PostgreSQL. Interfața es
 | Rol | Ce vede |
 |---|---|
 | `student` | calendarul sesiunii, catalogul de coordonatori și teme, coordonarea proprie, lucrarea (titlu, termene, fișierul predat), propunerile primite, mesaje, consultații — ale coordonatorului și cele publice —, coordonările întregii sesiuni, arhiva, profiluri, ghid |
-| `teacher` | dashboard, triaj cereri, studenți coordonați cu cronologie editabilă și lucrarea predată de fiecare, propuneri trimise, teme, program și programare de consultații, mesaje, profil |
+| `teacher` | dashboard, triaj cereri, studenți coordonați cu cronologie editabilă și lucrarea predată de fiecare, propuneri trimise, teme, program de consultații (publicate, programate, ținute), mesaje, catalogul de coordonatori, ghid, profil |
 | `head` | tot ce vede un cadru didactic, plus registrul facultății: studenții facultății, arhiva sesiunilor, departamentul (acoperire, încărcare, alocarea locurilor), conturile, calendarul sesiunii și anul universitar |
 
 Rutele `/profesor/*` cer rolul `teacher` sau `head`; `/profesor/facultate`,

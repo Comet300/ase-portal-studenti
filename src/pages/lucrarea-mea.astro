@@ -1,7 +1,7 @@
 ---
 import Avatar from '../components/Avatar.astro'
 import StudentLayout from '../layouts/StudentLayout.astro'
-import { query } from '../lib/db'
+import { query, queryOne } from '../lib/db'
 import { DECLARATION_ACCEPT, THESIS_ACCEPT, THESIS_MAX_BYTES } from '../lib/files'
 import { studentInvitations } from '../lib/lifecycle'
 import {
@@ -18,6 +18,7 @@ import {
   studentRequests,
   supervisors,
   formatDate,
+  formatTime,
   studentMilestones,
   studentTitleChanges,
   publicTopics,
@@ -112,6 +113,48 @@ const preselectedTeacher = Astro.url.searchParams.get('coordonator') ?? ''
 const preselectedTopic = Astro.url.searchParams.get('tema') ?? ''
 const hasActiveRequest = requests.some((c) => c.status === 'pending' || c.status === 'approved')
 const approvedRequest = requests.find((c) => c.status === 'approved')
+
+/* Coordonarea, adusă aici de pe „Coordonatori & Teme”.
+ *
+ * Era o filă în catalog, ceea ce însemna că un student cu lucrarea aprobată
+ * avea două ecrane despre același lucru: unul cu cine îl coordonează, altul cu
+ * ce a convenit cu el. Catalogul răspunde la „cine ce coordonează în
+ * facultate”; asta este o întrebare despre lucrarea ta, deci stă pe ea. */
+const coordinator = approvedRequest
+  ? ((await supervisors()).find((t) => t.id === approvedRequest.teacher_id) ?? null)
+  : null
+
+const nextMilestone =
+  milestones.find((m) => m.status !== 'done' && milestoneState(m.status, m.due_on) === 'overdue') ??
+  milestones.find((m) => m.status !== 'done') ??
+  null
+
+/* Ora următoare la care ai loc rezervat, și câți colegi mai coordonează. Câte o
+ * linie fiecare pe cartonaș; niciuna nu merită o funcție în `repo`, pentru că
+ * se cer aici și nicăieri altundeva. */
+const nextConsultation = approvedRequest
+  ? await queryOne<{ starts_at: string; ends_at: string; mode: string; location: string | null }>(
+      `SELECT s.starts_at, s.ends_at, s.mode, s.location
+         FROM bookings b
+         JOIN consultation_slots s ON s.id = b.slot_id
+        WHERE b.student_id = $1 AND b.status = 'booked'
+          AND s.is_cancelled = false AND s.starts_at > now()
+        ORDER BY s.starts_at
+        LIMIT 1`,
+      [u.id],
+    )
+  : null
+
+const teammates = approvedRequest
+  ? await query<{ n: string }>(
+      `SELECT count(*)::text AS n
+         FROM requests r
+        WHERE r.teacher_id = $1 AND r.status = 'approved' AND r.student_id <> $2
+          AND r.academic_year_id = (SELECT id FROM academic_years WHERE is_current)`,
+      [approvedRequest.teacher_id, u.id],
+    )
+  : []
+const teammateCount = Number(teammates[0]?.n ?? 0)
 
 const pendingInvitations = invitations.filter((i) => i.status === 'pending')
 
@@ -209,6 +252,107 @@ const deadlineGroups = [
   }
 
   <div class="container stack stack--loose">
+
+    {/* ------------------------------------------------------- my supervision */}
+    {
+      approvedRequest && (
+        <div class="coordonare">
+          <section class="panel coordonare__cine">
+            <div class="panel__body stack">
+              <div class="row" style="gap:var(--s-4);align-items:flex-start">
+                <Avatar
+                  name={approvedRequest.teacher_name}
+                  src={coordinator?.avatar_path}
+                  size="lg"
+                  href={`/profil/${approvedRequest.teacher_id}?de_la=${encodeURIComponent('/lucrarea-mea')}`}
+                />
+                <div class="stack stack--tight" style="gap:2px;flex:1;min-width:0">
+                  <span class="muted text-xs">Coordonatorul lucrării</span>
+                  <strong class="coordonare__nume">{approvedRequest.teacher_name}</strong>
+                  <span class="muted text-sm">
+                    {coordinator?.department ?? 'Facultatea de Marketing'}
+                  </span>
+                  {coordinator?.office && <span class="muted text-sm">{coordinator.office}</span>}
+                </div>
+              </div>
+
+              <div class="row row--wrap" style="gap:var(--s-2)">
+                <a class="btn btn--primary btn--sm" href="/mesaje">Scrie-i coordonatorului</a>
+                <a class="btn btn--secondary btn--sm" href="/consultatii">Rezervă o consultație</a>
+                <a class="btn btn--ghost btn--sm" href={`/profil/${approvedRequest.teacher_id}`}>
+                  Profilul lui
+                </a>
+              </div>
+            </div>
+          </section>
+
+          <section class="panel coordonare__stare">
+            <div class="panel__header">
+              <h2 class="section-title">Ce urmează</h2>
+              <span class="badge badge--aprobata">Coordonare aprobată</span>
+            </div>
+            <ul class="urmeaza">
+              <li>
+                <span class="urmeaza__eticheta">Următorul termen</span>
+                {nextMilestone ? (
+                  <span
+                    class:list={[
+                      'urmeaza__valoare',
+                      {
+                        'is-depasit':
+                          milestoneState(nextMilestone.status, nextMilestone.due_on) === 'overdue',
+                      },
+                    ]}
+                  >
+                    {nextMilestone.title}
+                    {nextMilestone.due_on ? ` · ${formatDate(nextMilestone.due_on)}` : ''}
+                  </span>
+                ) : (
+                  <span class="urmeaza__valoare muted">
+                    {milestones.length > 0 ? 'toate termenele sunt finalizate' : '—'}
+                  </span>
+                )}
+              </li>
+
+              <li>
+                <span class="urmeaza__eticheta">Următoarea consultație</span>
+                {nextConsultation ? (
+                  <span class="urmeaza__valoare">
+                    {formatDate(nextConsultation.starts_at)} ·{' '}
+                    {formatTime(nextConsultation.starts_at)}–{formatTime(nextConsultation.ends_at)}
+                    {nextConsultation.mode === 'online'
+                      ? ' · online'
+                      : nextConsultation.location
+                        ? ` · ${nextConsultation.location}`
+                        : ''}
+                  </span>
+                ) : (
+                  <span class="urmeaza__valoare muted">nicio rezervare</span>
+                )}
+              </li>
+
+              <li>
+                <span class="urmeaza__eticheta">Forma finală</span>
+                {thesis ? (
+                  <span class="urmeaza__valoare">predată {formatDate(thesis.created_at)}</span>
+                ) : (
+                  <a class="urmeaza__valoare" href="#lucrare">neîncărcată</a>
+                )}
+              </li>
+
+              <li>
+                <span class="urmeaza__eticheta">Alți studenți coordonați</span>
+                <span class="urmeaza__valoare">
+                  {teammateCount > 0
+                    ? numar(teammateCount, 'coleg', 'colegi')
+                    : 'ești singurul, în sesiunea asta'}
+                </span>
+              </li>
+            </ul>
+          </section>
+        </div>
+      )
+    }
 
     {/* --------------------------------------------------- proposals received */}
     {
@@ -1247,6 +1391,65 @@ const deadlineGroups = [
 </script>
 
 <style>
+  /* --- coordonarea mea ---------------------------------------------------- */
+
+  /* Două panouri deasupra cererii: cine te coordonează și ce urmează. Nu cifre
+     mari — ecranul răspunde la „unde sunt cu lucrarea”, iar răspunsul este
+     format din propoziții. Titlul, obiectivele și fișierul sunt oricum mai jos,
+     pe aceeași pagină, deci aici nu se repetă. */
+  .coordonare {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr);
+    gap: var(--s-5);
+    align-items: start;
+  }
+
+  .coordonare__nume {
+    font-family: var(--serif);
+    font-size: var(--t-lg);
+    line-height: 1.2;
+  }
+
+
+  .urmeaza {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+  .urmeaza li {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--s-2) var(--s-4);
+    justify-content: space-between;
+    align-items: baseline;
+    padding: var(--s-3) var(--s-5);
+    border-bottom: 1px solid var(--border);
+  }
+  .urmeaza li:last-child {
+    border-bottom: 0;
+  }
+  .urmeaza__eticheta {
+    font-size: var(--t-sm);
+    color: var(--ink-muted);
+  }
+  .urmeaza__valoare {
+    font-size: var(--t-sm);
+    font-weight: 600;
+    text-align: right;
+  }
+  .urmeaza__valoare.is-depasit {
+    color: var(--danger);
+  }
+
+  @media (max-width: 900px) {
+    .coordonare {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .coordonare > * {
+      grid-column: 1;
+    }
+  }
+
   /* Documentul predat: un rând, nu un card — este un singur obiect, iar cardul
      l-ar face să pară o listă cu un element. */
   .document {

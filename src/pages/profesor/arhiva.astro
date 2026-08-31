@@ -2,17 +2,17 @@
 /**
  * The address „Arhivă & Profil” used to answer at.
  *
- * The screen was split in three — the record of the year stayed, under
- * `/profesor/activitatea-mea`; the profile went to `/contul-meu`; the seats
- * request went to the dashboard, at `#locuri`. This file cannot be deleted
- * afterwards: the address is written in emails already delivered (the seats
- * decision carried it as its call to action) and in whatever bookmarks people
- * made of it.
+ * The screen was split in three — the profile went to `/contul-meu`, the seats
+ * request to the dashboard at `#locuri`, and the record of the year to
+ * „Activitatea mea”, which has since been removed: what it reported is read
+ * where it happens. The consultations held are on `/profesor/consultatii`, the
+ * decided requests and their reasons on `/profesor/studenti`, and the session's
+ * figures on the dashboard.
  *
- * `search` travels along, so a link to a chosen year lands on that year.
- * A fragment never reaches the server — the browser re-attaches it to the
- * target of the redirect, and `/profesor/activitatea-mea` forwards `#locuri`
- * onward from there.
+ * This file cannot be deleted: the address is written in emails already
+ * delivered (the seats decision carried it as its call to action) and in
+ * whatever bookmarks people made of it. It now leads to the dashboard, which is
+ * where every one of those threads starts.
  */
-return Astro.redirect(`/profesor/activitatea-mea${Astro.url.search}`, 301)
+return Astro.redirect('/profesor', 301)
 ---

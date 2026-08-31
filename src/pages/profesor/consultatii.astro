@@ -4,10 +4,13 @@ import ProfesorLayout from '../../layouts/ProfesorLayout.astro'
 import RandSlot from '../../components/RandSlot.astro'
 import Taburi from '../../components/Taburi.astro'
 import {
+  formatDate,
+  formatTime,
   localDay,
   startOfWeek,
   supervisedStudents,
   teacherSlots,
+  teacherSlotHistory,
   weekLabel,
   type Slot,
 } from '../../lib/repo'
@@ -31,7 +34,23 @@ import { numar, officialName } from '../../lib/text'
 
 const u = Astro.locals.user!
 
-const [sloturi, studenti] = await Promise.all([teacherSlots(u.id), supervisedStudents(u.id)])
+const [sloturi, studenti, incheiate] = await Promise.all([
+  teacherSlots(u.id),
+  supervisedStudents(u.id),
+  /* Consultațiile ținute.
+   *
+   * Stăteau pe „Activitatea mea”, ecran care a fost scos. Aici este locul lor:
+   * programul de deasupra ajunge doar cu o zi în urmă, iar „când ne-am văzut
+   * ultima oară” este o întrebare despre consultații, nu despre statistici. Se
+   * consemnează doar orele la care s-a prezentat cineva. */
+  teacherSlotHistory(u.id),
+])
+
+const oreTinute = incheiate.reduce(
+  (t, c) => t + (new Date(c.ends_at).getTime() - new Date(c.starts_at).getTime()) / 3_600_000,
+  0,
+)
+const studentiVazuti = new Set(incheiate.flatMap((c) => c.student_names)).size
 
 /**
  * The two kinds of consultation, as two tabs.
@@ -104,15 +123,15 @@ const dayCount = (s: Slot) => hoursPerDay.get(localDay(new Date(s.starts_at))) ?
 
 <ProfesorLayout
   title="Consultații"
-  lede="Orele în care primești studenți, și cine vine la fiecare. Pentru studenții pe care îi coordonezi sau pentru toată facultatea — alegi mai jos; când ai nevoie de cineva anume, îl chemi tu."
+  lede="Programul de consultații al cadrului didactic: ore publicate, rezervări primite și programări individuale."
   active="consultatii"
 >
 <div class="stack stack--loose" id="consultatii">
   <p class="orientare">
     {
       upcoming.length > 0
-        ? `Ai ${numar(upcoming.length, 'oră de consultație', 'ore de consultație')} de acum înainte.`
-        : 'Nu ai deocamdată nicio oră de consultație în program.'
+        ? `${numar(upcoming.length, 'oră de consultație programată', 'ore de consultație programate')}.`
+        : 'Nicio oră de consultație programată.'
     }
     {upcoming.length > 0 && <a class="link" href="#program">Vezi programul</a>}
   </p>
@@ -125,13 +144,13 @@ const dayCount = (s: Slot) => hoursPerDay.get(localDay(new Date(s.starts_at))) ?
     taburi={[
       {
         key: 'finalizare',
-        text: 'Consultații finalizare studii',
+        text: 'Finalizare studii',
         href: '/profesor/consultatii?tip=finalizare#ore-deschise',
         count: viitoarePe('thesis'),
       },
       {
         key: 'publice',
-        text: 'Consultații publice',
+        text: 'Publice',
         href: '/profesor/consultatii?tip=publice#ore-deschise',
         count: viitoarePe('public'),
       },
@@ -140,11 +159,9 @@ const dayCount = (s: Slot) => hoursPerDay.get(localDay(new Date(s.starts_at))) ?
 
   <section class="panel" id="ore-deschise">
     <div class="panel__header">
-      <h2 class="section-title">
-        {tip === 'publice' ? 'Deschide ore pentru toată facultatea' : 'Deschide ore pentru studenții tăi'}
-      </h2>
+      <h2 class="section-title">Publicare ore</h2>
       <span class="muted text-sm">
-        {tip === 'publice' ? 'Le vede și le rezervă orice student din ASE' : 'Le rezervă studenții pe care îi coordonezi'}
+        {tip === 'publice' ? 'Toată facultatea' : 'Studenți coordonați'}
       </span>
     </div>
 
@@ -153,13 +170,13 @@ const dayCount = (s: Slot) => hoursPerDay.get(localDay(new Date(s.starts_at))) ?
       <input type="hidden" name="audienta" value={audienta} />
 
       <p class="explicatie">
-        Alegi un interval, iar portalul îl taie în ore separate: de la 14:00 la 17:00 înseamnă
-        trei ore, pe care studenții le rezervă una câte una. Invitația în calendar le vine în
-        momentul rezervării, cu adresa și linkul completate mai jos.
+        Intervalul se împarte în ore. Un interval 14:00–17:00 generează trei ore, rezervate
+        individual. Invitația în calendar se transmite la momentul rezervării, cu locul și linkul
+        completate mai jos.
         {
           tip === 'publice'
-            ? ' Ora apare în „Consultații” la fiecare student din facultate, indiferent cine îl coordonează. Nu se trimite niciun email: ar pleca spre toată facultatea de fiecare dată când deschizi o după-amiază.'
-            : ' Toți studenții pe care îi coordonezi primesc pe email lista orelor noi. Nimeni altcineva nu le vede.'
+            ? ' Orele publice sunt vizibile tuturor studenților facultății și nu se anunță pe email.'
+            : ' Orele se anunță pe email studenților coordonați și nu sunt vizibile altcuiva.'
         }
       </p>
 
@@ -174,13 +191,13 @@ const dayCount = (s: Slot) => hoursPerDay.get(localDay(new Date(s.starts_at))) ?
           <input class="input" id="ore-final" name="ora_final" type="time" value="16:00" step="900" required />
         </div>
         <div class="field">
-          <label class="label" for="ore-locuri">Locuri pe oră</label>
+          <label class="label" for="ore-locuri">Locuri</label>
           <input class="input" id="ore-locuri" name="locuri" type="number" min="1" max="30" value="1"
             aria-describedby="ajutor-locuri" />
-          <span class="hint" id="ajutor-locuri">Cu un singur loc, ora este unu la unu.</span>
+          <span class="hint" id="ajutor-locuri">Un loc înseamnă consultație individuală.</span>
         </div>
         <div class="field">
-          <label class="label" for="ore-mod">Cum are loc</label>
+          <label class="label" for="ore-mod">Desfășurare</label>
           <select class="select" id="ore-mod" name="mod" data-mod>
             <option value="in_person">La facultate</option>
             <option value="online">Online</option>
@@ -190,7 +207,7 @@ const dayCount = (s: Slot) => hoursPerDay.get(localDay(new Date(s.starts_at))) ?
 
       <div class="ore__unde grila-campuri">
         <div class="field" data-camp-locatie>
-          <label class="label" for="ore-locatie">Clădirea, etajul și sala</label>
+          <label class="label" for="ore-locatie">Locul desfășurării</label>
           <input class="input" id="ore-locatie" name="locatie" value={u.office ?? ''}
             placeholder="Clădirea Ion Angelescu, Piața Romană 6, etaj 2, sala 2203" />
         </div>
@@ -200,12 +217,12 @@ const dayCount = (s: Slot) => hoursPerDay.get(localDay(new Date(s.starts_at))) ?
           </label>
           <input class="input" id="ore-link" name="link_online" type="url" placeholder="https://meet…"
             aria-describedby="ajutor-ore-link" />
-          <span class="hint" id="ajutor-ore-link">Ajunge în invitația fiecărui student care rezervă.</span>
+          <span class="hint" id="ajutor-ore-link">Se include în invitația de calendar.</span>
         </div>
       </div>
 
       <div class="row row--end">
-        <button class="btn btn--primary" type="submit">Deschide orele</button>
+        <button class="btn btn--primary" type="submit">Publică orele</button>
       </div>
     </form>
   </section>
@@ -220,17 +237,16 @@ const dayCount = (s: Slot) => hoursPerDay.get(localDay(new Date(s.starts_at))) ?
     tip === 'finalizare' && (
       <section class="panel" id="cheama">
         <div class="panel__header">
-          <h2 class="section-title">Cheamă un student la o consultație</h2>
-          <span class="muted text-sm">Rezervarea o faci tu, în locul lui</span>
+          <h2 class="section-title">Programare individuală</h2>
+          <span class="muted text-sm">Programare directă</span>
         </div>
 
         {studenti.length === 0 ? (
           <div class="empty">
             <p class="empty__title">Niciun student coordonat</p>
             <p class="empty__text">
-              Poți chema la consultație doar studenții pe care îi coordonezi. Acceptă o cerere de
-              coordonare și lista apare aici. Orele deschise le poți publica de pe acum — le vede
-              oricine îți este repartizat.
+              Programarea individuală este disponibilă pentru studenții coordonați. Publicarea
+              orelor se poate face și până atunci.
             </p>
             <a class="btn btn--primary btn--sm" href="/profesor/studenti?sectiune=cereri">
               Vezi cererile de coordonare
@@ -241,13 +257,12 @@ const dayCount = (s: Slot) => hoursPerDay.get(localDay(new Date(s.starts_at))) ?
             <input type="hidden" name="actiune" value="programeaza" />
 
             <p class="explicatie">
-              Consultația iese gata rezervată, nu oferită: fiecare student chemat primește pe loc
-              invitația în calendar și o notificare în firul lui de discuție. Când nu contează cine
-              vine, deschide ore și lasă-i pe ei să aleagă.
+              Consultația se creează rezervată. Fiecare student selectat primește invitația în
+              calendar și o notificare în conversație.
             </p>
 
             {withStudentId && (
-              <p class="hint">Studentul din care ai venit este deja bifat mai jos.</p>
+              <p class="hint">Studentul selectat anterior este deja bifat.</p>
             )}
 
             <div class="programare">
@@ -256,11 +271,11 @@ const dayCount = (s: Slot) => hoursPerDay.get(localDay(new Date(s.starts_at))) ?
                     are working on the same chapter do not need three separate
                     hours. Multiple selection calls for checkboxes, not a drop-down
                     list. */}
-                <span class="label" id="et-cu-cine">Pe cine chemi</span>
+                <span class="label" id="et-cu-cine">Studenți</span>
                 <fieldset class="alege-studenti" aria-labelledby="et-cu-cine" aria-describedby="numar-alesi">
                   <label class="alege-studenti__toti">
                     <input type="checkbox" id="toti-studentii" />
-                    <span>Alege toți studenții coordonați</span>
+                    <span>Selectează toți studenții coordonați</span>
                   </label>
                   <div class="alege-studenti__lista">
                     {studenti.map((s) => (
@@ -328,17 +343,17 @@ const dayCount = (s: Slot) => hoursPerDay.get(localDay(new Date(s.starts_at))) ?
                   </label>
                   <input class="input" id="prog-link" name="link_online" type="url"
                     placeholder="https://meet…" aria-describedby="ajutor-link" />
-                  <span class="hint" id="ajutor-link">Se trimite în invitația de calendar, alături de adresă.</span>
+                  <span class="hint" id="ajutor-link">Se include în invitația de calendar.</span>
                 </div>
               </div>
             </div>
 
             <div class="field">
-              <label class="label" for="prog-subiect">Despre ce discutați <span class="muted">(opțional)</span></label>
+              <label class="label" for="prog-subiect">Subiect <span class="muted">(opțional)</span></label>
               <input class="input" id="prog-subiect" name="subiect"
                 placeholder="Ex: discutăm metodologia și eșantionul" aria-describedby="ajutor-subiect" />
               <span class="hint" id="ajutor-subiect">
-                Îl vede fiecare student chemat, în email și în invitația de calendar.
+                Se transmite în email și în invitația de calendar.
               </span>
             </div>
 
@@ -355,7 +370,7 @@ const dayCount = (s: Slot) => hoursPerDay.get(localDay(new Date(s.starts_at))) ?
 
   <section class="panel" id="program">
     <div class="panel__header">
-      <h2 class="section-title">Programul tău</h2>
+      <h2 class="section-title">Program</h2>
       <span class="muted text-sm">
         {numar(upcoming.length, 'oră', 'ore')} de acum înainte
         {past.length > 0 && ` · ${numar(past.length, 'oră încheiată', 'ore încheiate')}`}
@@ -365,13 +380,11 @@ const dayCount = (s: Slot) => hoursPerDay.get(localDay(new Date(s.starts_at))) ?
 
     {sloturi.length === 0 ? (
       <div class="empty">
-        <p class="empty__title">Niciun program deocamdată</p>
+        <p class="empty__title">Program neconfigurat</p>
         <p class="empty__text">
-          Aici apare fiecare oră, cu cine s-a înscris la ea. Deschide primele ore și studenții
-          coordonați își pot rezerva singuri un loc — sau cheamă direct un student, dacă știi cu
-          cine vrei să te vezi.
+          Orele publicate apar aici, împreună cu studenții înscriși la fiecare.
         </p>
-        <a class="btn btn--primary btn--sm" href="#ore-deschise">Deschide primele ore</a>
+        <a class="btn btn--primary btn--sm" href="#ore-deschise">Publică primele ore</a>
       </div>
     ) : (
       <div class="table-wrap" tabindex="0" role="region" aria-label="Programul de consultații">
@@ -425,6 +438,56 @@ const dayCount = (s: Slot) => hoursPerDay.get(localDay(new Date(s.starts_at))) ?
       </div>
     )}
   </section>
+
+  <section class="panel" id="incheiate">
+    <div class="panel__header">
+      <h2 class="section-title">Consultații ținute</h2>
+      <span class="muted text-sm">
+        {numar(incheiate.length, 'consultație', 'consultații')}
+        {incheiate.length > 0 &&
+          ` · ${numar(Math.round(oreTinute), 'oră', 'ore')} · ${numar(studentiVazuti, 'student', 'studenți')}`}
+      </span>
+    </div>
+
+    {
+      incheiate.length === 0 ? (
+        <div class="empty">
+          <p class="empty__title">Nicio consultație încheiată</p>
+          <p class="empty__text">
+            Se consemnează aici orele la care s-a prezentat cel puțin un student. Orele anulate și
+            cele rămase libere nu se contabilizează.
+          </p>
+        </div>
+      ) : (
+        <div class="table-wrap" tabindex="0" role="region" aria-label="Consultațiile ținute">
+          <table class="table">
+            <thead>
+              <tr>
+                <th scope="col">Data</th>
+                <th scope="col">Interval</th>
+                <th scope="col">Participanți</th>
+                <th scope="col">Locul desfășurării</th>
+                <th scope="col">Subiect</th>
+              </tr>
+            </thead>
+            <tbody>
+              {incheiate.map((c) => (
+                <tr>
+                  <td>{formatDate(c.starts_at)}</td>
+                  <td class="numeric muted">
+                    {formatTime(c.starts_at)}–{formatTime(c.ends_at)}
+                  </td>
+                  <td>{c.student_names.join(', ')}</td>
+                  <td class="muted">{c.mode === 'online' ? 'Online' : (c.location ?? 'Cabinet')}</td>
+                  <td class="muted">{c.note ?? '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )
+    }
+  </section>
 </div>
 
 {/* Cancelling writes to the calendar of everybody who had booked and sends each
@@ -433,7 +496,7 @@ const dayCount = (s: Slot) => hoursPerDay.get(localDay(new Date(s.starts_at))) ?
     while the student's own cancellation went through a full dialog. */}
 <dialog id="dialog-anulare" aria-labelledby="titlu-anulare">
   <form method="POST" action="/api/sloturi" class="dialog">
-    <h2 id="titlu-anulare" class="section-title">Anulezi consultația?</h2>
+    <h2 id="titlu-anulare" class="section-title">Anulare consultație</h2>
     <p class="anulare__cand" id="anulare-cand"></p>
     <p class="muted text-sm" id="anulare-cine"></p>
 
@@ -446,17 +509,17 @@ const dayCount = (s: Slot) => hoursPerDay.get(localDay(new Date(s.starts_at))) ?
     </label>
 
     <div class="field">
-      <label class="label" for="anulare-motiv">De ce se anulează?</label>
+      <label class="label" for="anulare-motiv">Motivul anulării</label>
       <textarea class="textarea" id="anulare-motiv" name="motiv" rows="3" maxlength="400"
         style="min-height:80px" placeholder="Ex: sunt convocat la o comisie de licență"
         aria-describedby="anulare-motiv-ajutor" data-autogrow></textarea>
       <span class="hint" id="anulare-motiv-ajutor">
-        Motivul pleacă în emailul fiecărui student și rămâne scris în program.
+        Se transmite fiecărui student înscris și rămâne consemnat în program.
       </span>
     </div>
 
     <div class="row" style="justify-content:flex-end;gap:var(--s-2)">
-      <button class="btn btn--secondary" type="button" data-inchide-anulare>Păstrează ora</button>
+      <button class="btn btn--secondary" type="button" data-inchide-anulare>Renunță</button>
       <button class="btn btn--danger" type="submit" id="anulare-confirma">Anulează ora</button>
     </div>
   </form>

@@ -60,16 +60,8 @@ const navLinks = u
   : []
 
 /* Only in the phone menu: on a small screen the avatar is easily lost, and it
- * is the only road to the account and to signing out. The „Zona cadrelor
- * didactice” button does not fit in the bar beside the mark and the menu — a
- * teacher who opened a student page on a phone pushed the header 89px off the
- * screen. */
-const accountLinks = [
-  ...(u && u.role !== 'student'
-    ? [{ href: '/profesor', text: 'Zona cadrelor didactice', key: 'profesor' }]
-    : []),
-  { href: '/contul-meu', text: SCREENS['/contul-meu'], key: 'cont' },
-]
+ * is the only road to the account and to signing out. */
+const accountLinks = [{ href: '/contul-meu', text: SCREENS['/contul-meu'], key: 'cont' }]
 ---
 
 <BaseLayout title={title} docTitle={docTitle} description={description}>
@@ -101,11 +93,6 @@ const accountLinks = [
         {
           u ? (
             <>
-              {(u.role === 'teacher' || u.role === 'head') && (
-                <a href="/profesor" class="btn btn--secondary btn--sm">
-                  Zona cadrelor didactice
-                </a>
-              )}
               <Clopotel messagesBase="/mesaje" />
 
               {/* The avatar was a 34px link, with no name and no label, and
@@ -534,12 +521,6 @@ const accountLinks = [
       display: flex;
     }
     .brand__text small {
-      display: none;
-    }
-    /* „Zona cadrelor didactice” moves into the menu: beside the mark, the
-       avatar and the hamburger it did not fit, and it pushed the header off
-       the screen. */
-    .topbar__end .btn--secondary {
       display: none;
     }
   }
