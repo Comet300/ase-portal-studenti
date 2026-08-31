@@ -11,10 +11,10 @@ Aplicație server-rendered (Astro + adaptorul Node) cu PostgreSQL. Interfața es
 |---|---|
 | `student` | calendarul sesiunii, catalogul de coordonatori și teme, coordonarea proprie, lucrarea (titlu, termene, fișierul predat), propunerile primite, mesaje, consultații — ale coordonatorului și cele publice —, coordonările întregii sesiuni, arhiva, profiluri, ghid |
 | `teacher` | dashboard, triaj cereri, studenți coordonați cu cronologie editabilă și lucrarea predată de fiecare, propuneri trimise, teme, program de consultații (publicate, programate, ținute), mesaje, catalogul de coordonatori, ghid, profil |
-| `head` | tot ce vede un cadru didactic, plus registrul facultății: studenții facultății, arhiva sesiunilor, departamentul (acoperire, încărcare, alocarea locurilor), conturile, calendarul sesiunii și anul universitar |
+| `head` | tot ce vede un cadru didactic, plus registrul facultății: studenții facultății (cu adăugarea unui student și importul unei promoții), arhiva sesiunilor, departamentul (acoperire, încărcare, alocarea locurilor pe rândul fiecărui coordonator, conturile cadrelor didactice), calendarul sesiunii și anul universitar |
 
 Rutele `/profesor/*` cer rolul `teacher` sau `head`; `/profesor/facultate`,
-`/profesor/departament`, `/profesor/conturi`, `/profesor/calendar` și
+`/profesor/departament`, `/profesor/conturi` (redirecționată), `/profesor/calendar` și
 `/profesor/an-universitar` cer `head`, iar `/arhiva` — registrul întregii
 facultăți — se deschide studenților și directorului, nu și unui coordonator, a
 cărui activitate proprie stă pe `/profesor/activitatea-mea`. Un utilizator fără

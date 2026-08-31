@@ -30,7 +30,9 @@ import { LANGUAGE_LABELS, LEVEL_LABELS } from '../../lib/years'
  * somebody else's identity, exactly the category the log exists for.
  */
 
-const PAGE = '/profesor/conturi'
+/* Unde se întoarce un formular care nu și-a trimis propriul `redirect`.
+ * Ecranul „Conturi” a fost împărțit; studenții se administrează de aici. */
+const PAGE = '/profesor/facultate'
 
 interface Programme extends ProgrammeChoice {
   id: string

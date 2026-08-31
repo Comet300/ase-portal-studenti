@@ -3,7 +3,10 @@ import AlegeAn from '../../components/AlegeAn.astro'
 import Avatar from '../../components/Avatar.astro'
 import Metrica from '../../components/Metrica.astro'
 import ProfesorLayout from '../../layouts/ProfesorLayout.astro'
+import Taburi from '../../components/Taburi.astro'
 import { isDepartmentHead } from '../../lib/auth'
+import { ACCOUNT_COLUMNS, type ProgrammeChoice } from '../../lib/accounts'
+import { query } from '../../lib/db'
 import { studentDirectory } from '../../lib/repo'
 import { officialName } from '../../lib/text'
 import {
@@ -122,6 +125,40 @@ const neinceput = totals.toti - totals.supervised - totals.asteptare
  * „master, fără cerere depusă” got the whole faculty back, from the top. The
  * current address travels with the form.
  */
+/* Trei file: lista, și cele două feluri de a aduce studenți în portal.
+ *
+ * Administrarea conturilor stătea pe un ecran de sine stătător, „Conturi”, care
+ * ținea la un loc studenții și cadrele didactice — două treburi care nu se fac
+ * de aceeași persoană, în același moment. Studenții se administrează aici,
+ * unde sunt oricum listați; cadrele didactice, pe „Departament”. */
+const SECTIUNI = ['lista', 'adauga', 'import'] as const
+const ceruta = Astro.url.searchParams.get('sectiune') ?? ''
+const sectiune = (SECTIUNI as readonly string[]).includes(ceruta) ? ceruta : 'lista'
+
+/* Ce îi trebuie ecranului de potrivire a coloanelor, în browser.
+ *
+ * Programele, ca „Program” să se aleagă din lista reală în loc să fie tastat —
+ * o greșeală acolo lasă o promoție întreagă pe alt program — și adresele deja
+ * existente, ca „există deja” să se vadă pe rând, înainte de scriere, nu numărat
+ * într-un mesaj după. Amândouă sunt oricum pe ecranul ăsta, pentru aceeași
+ * persoană. `<` se escapează pentru că un nume de program care ar ajunge
+ * `</script>` ar închide insula. */
+const programmeChoices: ProgrammeChoice[] = yearProgrammes.map((p) => ({
+  level: p.level,
+  name: p.name,
+  language: p.language,
+  label: `${LEVEL_LABELS[p.level]} · ${p.name} · ${LANGUAGE_LABELS[p.language]}`,
+}))
+
+const adreseExistente = (
+  await query<{ email: string }>(`SELECT email FROM users`)
+).map((o) => o.email.toLowerCase())
+
+const importData = JSON.stringify({
+  programme: programmeChoices,
+  existing: adreseExistente,
+}).replace(/</g, '\\u003c')
+
 const backUrl = Astro.url.pathname + Astro.url.search
 
 /* The download is the screen, not the table underneath it: whoever filtered
@@ -153,6 +190,17 @@ const exportHref = (format: string) => {
   </a>
   <a slot="actiuni" class="btn btn--ghost btn--sm" href={exportHref('csv')}>CSV</a>
 
+  <Taburi
+    eticheta="Secțiunile ecranului"
+    activ={sectiune}
+    taburi={[
+      { key: 'lista', text: 'Lista studenților', href: '/profesor/facultate?sectiune=lista', count: all.length },
+      { key: 'adauga', text: 'Adaugă o persoană', href: '/profesor/facultate?sectiune=adauga', count: null },
+      { key: 'import', text: 'Importă o promoție', href: '/profesor/facultate?sectiune=import', count: null },
+    ]}
+  />
+
+  {sectiune === 'lista' && (
   <div class="stack stack--loose">
     <div class="grid-auto">
       {/* Primul cartonaș numără toți studenții facultății, nu rândurile rămase
@@ -593,9 +641,275 @@ const exportHref = (format: string) => {
       )
     }
   </div>
+  )}
+  {
+    sectiune === 'adauga' && (
+      <div class="stack stack--loose">
+        <section class="panel">
+          <div class="panel__header">
+            <h2 class="section-title">Un singur student</h2>
+          </div>
+          <form method="POST" action="/api/conturi" class="panel__body stack">
+            <input type="hidden" name="actiune" value="adauga" />
+            <input type="hidden" name="redirect" value="/profesor/facultate" />
+            {/* Rolul nu se alege: ecranul este al studenților facultății, iar
+                un cadru didactic adăugat de aici ar dispărea din lista în care
+                a fost creat. Se adaugă pe „Departament”. */}
+            <input type="hidden" name="rol" value="student" />
+
+            <div class="row row--wrap" style="gap:var(--s-3)">
+              <div class="field" style="flex:2;min-width:220px">
+                <label class="label" for="nume">Nume complet</label>
+                <input class="input" id="nume" name="nume" required placeholder="Ex: Ioana Dumitru" />
+              </div>
+              <div class="field" style="flex:2;min-width:240px">
+                <label class="label" for="email">Adresă de email</label>
+                <input class="input" id="email" name="email" type="email" required
+                  placeholder="ioana.dumitru@stud.ase.ro" />
+              </div>
+            </div>
+
+            <div class="row row--wrap" style="gap:var(--s-3)">
+              <div class="field" style="min-width:180px">
+                <label class="label" for="numar_matricol">Număr matricol</label>
+                <input class="input" id="numar_matricol" name="numar_matricol" placeholder="MK-2025-0142" />
+              </div>
+              <div class="field" style="flex:1;min-width:200px">
+                <label class="label" for="program">Program de studiu</label>
+                <select class="select" id="program" name="program">
+                  <option value="">—</option>
+                  {/* The value is the whole label, not the bare name: „Marketing”
+                      exists at licență in Romanian and at master in English, and
+                      one of those two cohorts would have been tied to the other
+                      programme without anything reporting it. */}
+                  {programmeChoices.map((p) => <option value={p.label}>{p.label}</option>)}
+                </select>
+              </div>
+              <div class="field" style="min-width:110px">
+                <label class="label" for="an">An</label>
+                <input class="input input--num" id="an" name="an" type="number" min="1" max="6" />
+              </div>
+              <div class="field" style="min-width:110px">
+                <label class="label" for="serie">Serie</label>
+                <input class="input" id="serie" name="serie" placeholder="B" />
+              </div>
+              <div class="field" style="min-width:140px">
+                <label class="label" for="grupa">Grupa</label>
+                <input class="input" id="grupa" name="grupa" placeholder="RO-1503" />
+              </div>
+            </div>
+
+            <div class="row row--wrap" style="gap:var(--s-3)">
+              <div class="field" style="min-width:180px">
+                <label class="label" for="initiala_tatalui">Inițiala tatălui</label>
+                <input class="input" id="initiala_tatalui" name="initiala_tatalui"
+                  maxlength="3" placeholder="I" />
+                <span class="hint">
+                  Face parte din numele oficial: „Popescu I. Maria”. Una sau două litere.
+                </span>
+              </div>
+            </div>
+
+            <div class="row row--end">
+              <button class="btn btn--primary" type="submit">Deschide contul</button>
+            </div>
+          </form>
+        </section>
+
+        <p class="hint">
+          Pentru o promoție întreagă, fișierul de la secretariat se încarcă în
+          <a href="/profesor/facultate?sectiune=import">Importă o promoție</a>: acolo alegi
+          ce coloană din fișier intră în ce câmp, iar rândurile se văd înainte de a fi scrise.
+        </p>
+      </div>
+    )
+  }
+
+  {
+    sectiune === 'import' && (
+      <form method="POST" action="/api/conturi" class="stack stack--loose" data-import>
+        <input type="hidden" name="actiune" value="importa" />
+        <input type="hidden" name="redirect" value="/profesor/facultate" />
+
+        <section class="panel">
+          <div class="panel__header">
+            <h2 class="section-title">1. Fișierul de la secretariat</h2>
+          </div>
+          <div class="panel__body stack">
+            <p class="hint">
+              Fișierul nu pleacă din calculatorul tău: e citit aici, în pagină, iar la final
+              se trimit doar rândurile de mai jos. <strong>.xlsx</strong> este formatul cel mai
+              sigur — un .csv salvat din Excel pe Windows românesc scrie „ș” și „ț” în alt
+              alfabet, iar portalul îți spune ce codificare a găsit și te lasă să o schimbi.
+            </p>
+
+            <div class="row row--wrap" style="gap:var(--s-5);align-items:flex-start">
+              <div class="field" style="flex:1;min-width:260px">
+                <label class="label" for="import-fisier">Fișierul</label>
+                <input class="input" id="import-fisier" type="file" accept=".xlsx,.csv,.txt,.tsv" />
+                <span class="hint">Excel (.xlsx), CSV sau text separat prin tab.</span>
+              </div>
+              <div class="field" style="flex:1;min-width:260px">
+                <label class="label" for="import-lipire">Sau coloanele lipite din Excel</label>
+                <textarea class="textarea" id="import-lipire" rows="4" spellcheck="false"
+                  placeholder="Selectezi coloanele în Excel, Ctrl+C, apoi Ctrl+V aici."></textarea>
+                <span class="hint">Merge la fel: și lipirea trece prin potrivirea coloanelor.</span>
+              </div>
+            </div>
+
+            <p class="muted text-sm" id="import-stare" role="status" aria-live="polite"></p>
+            <p class="error-text" id="import-eroare" role="alert" hidden></p>
+
+            {/* Reading the file and mapping the columns both happen in the page.
+                Without JavaScript steps 2 and 3 have nothing to show and the file
+                field is a button that does nothing — so it is said, not hidden. */}
+            <noscript>
+              <p class="hint">
+                Fișierul se citește în pagină, cu JavaScript. Fără el, scrie sau lipește
+                rândurile direct în caseta „Rândurile care se trimit”, de la pasul 4.
+              </p>
+            </noscript>
+
+            <div class="field" id="import-codificare-camp" style="max-width:340px" hidden>
+              <label class="label" for="import-codificare">Codificarea fișierului</label>
+              <select class="select" id="import-codificare">
+                <option value="">Cea găsită de portal</option>
+                <option value="utf-8">UTF-8</option>
+                <option value="windows-1250">Windows-1250 (Europa Centrală)</option>
+                <option value="windows-1252">Windows-1252 (Europa Occidentală)</option>
+              </select>
+              <span class="hint">
+                Dacă numele se citesc „Ştefãnescu” în loc de „Ștefănescu”, alege altă
+                codificare: fișierul se recitește pe loc.
+              </span>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel" id="pas-foaie" hidden>
+          <div class="panel__header">
+            <h2 class="section-title">2. Foaia și capul de tabel</h2>
+          </div>
+          <div class="panel__body stack">
+            <div class="row row--wrap" style="gap:var(--s-4);align-items:flex-end">
+              <div class="field" id="import-foaie-camp" style="min-width:240px" hidden>
+                <label class="label" for="import-foaie">Foaia</label>
+                <select class="select" id="import-foaie"></select>
+              </div>
+              <div class="field" style="min-width:200px">
+                <label class="label" for="import-sari">Sari peste primele rânduri</label>
+                <input class="input input--num" id="import-sari" type="number" min="0" max="50" value="0" />
+                <span class="hint">Titlul și antetul dublu de deasupra tabelului.</span>
+              </div>
+              <label class="check" style="min-height:var(--tap);align-items:center">
+                <input type="checkbox" id="import-cap" checked />
+                <span>Primul rând este cap de tabel</span>
+              </label>
+            </div>
+
+            <div class="table-wrap" tabindex="0" role="region" aria-label="Primele rânduri din fișier">
+              <table class="table">
+                <thead><tr id="import-antet"></tr></thead>
+                <tbody id="import-primele"></tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel" id="pas-potrivire" hidden>
+          <div class="panel__header">
+            <h2 class="section-title">3. Ce coloană intră în ce câmp</h2>
+          </div>
+          <div class="panel__body stack">
+            <p class="hint">
+              Portalul ghicește după capul de tabel; exemplul din dreapta arată exact ce se va
+              scrie pentru primul om din listă. Un câmp poate lua <strong>mai multe coloane</strong>
+              — numele de familie și prenumele, în ordinea pe care o alegi — sau
+              <strong>aceeași valoare pentru toți</strong>, pentru ce nu există ca o coloană în
+              fișier: rolul, programul, anul.
+            </p>
+
+            <div class="potrivire" id="potrivire">
+              <div class="potrivire__cap">
+                <span>Câmp</span>
+                <span>Din ce se compune</span>
+                <span>Exemplu din primul rând</span>
+              </div>
+            </div>
+
+            <p class="hint hint--atentie" id="potrivire-stare" role="status" hidden></p>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel__header">
+            <h2 class="section-title">4. Ce conturi se vor deschide</h2>
+            <span class="muted text-sm" id="previzualizare-sumar"></span>
+          </div>
+          <div class="panel__body stack">
+            <div class="field">
+              <label class="label" for="randuri">Rândurile care se trimit</label>
+              <textarea class="textarea" id="randuri" name="randuri" rows="4" required spellcheck="false"
+                placeholder={`${ACCOUNT_COLUMNS.join(';')}
+Dumitru Ioana;ioana.dumitru@stud.ase.ro;student;MK-2025-0142;Marketing;3;RO-1503;B;I`}
+                data-autogrow />
+              <span class="hint">
+                Se completează singură din pașii de mai sus, dar rămâne a ta: poți scrie sau
+                lipi direct aici, un rând pe persoană, câmpuri separate prin <strong>;</strong>
+                sau prin tab. Portalul citește din nou acest text la trimitere — el este ce se
+                scrie, nu tabelul de mai jos.
+              </span>
+            </div>
+
+            {/* The preview, drawn by the reader the route runs. A list from the
+                registrar always has two rows that cannot be read; those have to
+                be seen — and corrected on the spot — before two hundred accounts
+                are created. Whoever is already in the portal is marked here, not
+                counted in a message afterwards: „12 existau deja” reads as
+                success and names nobody. */}
+            <div id="previzualizare" hidden>
+              <div class="table-wrap" tabindex="0" role="region" aria-label="Rândurile citite">
+                <table class="table">
+                  <thead><tr id="previzualizare-cap"></tr></thead>
+                  <tbody id="previzualizare-corp"></tbody>
+                </table>
+              </div>
+              <div id="respinse" hidden>
+                <p class="respinse__titlu">Rânduri care nu se pot scrie</p>
+                <ul class="respinse__lista" id="respinse-lista"></ul>
+              </div>
+            </div>
+
+            <div class="row row--end" style="gap:var(--s-2)">
+              <button class="btn btn--secondary" type="button" id="verifica-randuri">
+                Verifică rândurile
+              </button>
+              <button class="btn btn--primary" type="submit" id="trimite-import">
+                Deschide conturile
+              </button>
+            </div>
+          </div>
+        </section>
+
+        <script type="application/json" id="date-import" is:inline set:html={importData} />
+      </form>
+    )
+  }
+
 </ProfesorLayout>
 
 <script>
+  import { start as startImport } from '../../scripts/import-mapping'
+
+  /* Importul: un fișier, o potrivire de coloane, o previzualizare.
+   *
+   * Tot într-un singur modul, pentru că cei patru pași împart o singură stare —
+   * fișierul citit — iar un asistent împărțit pe ecrane ar pierde-o la prima
+   * navigare. Se compune în caseta `randuri` și se oprește acolo: ruta recitește
+   * textul acela cu același cititor, ca pe vremea când singura cale înăuntru era
+   * o lipire. */
+  startImport()
+
   /* Filtrarea listei, în pagină.
    *
    * Serverul trimite promoția întreagă; aici se ascunde ce nu se potrivește. Se
@@ -867,6 +1181,120 @@ const exportHref = (format: string) => {
 </script>
 
 <style>
+.respinse__titlu {
+    margin-top: var(--s-3);
+    font-size: var(--t-sm);
+    font-weight: 600;
+    color: var(--warn);
+  }
+
+.respinse__lista {
+    margin: var(--s-2) 0 0;
+    padding-left: var(--s-5);
+    font-size: var(--t-xs);
+    color: var(--ink-soft);
+  }
+
+/* Everything below `#previzualizare` and inside `.potrivire` is built by the
+     import script, so it never carries this component's scoping attribute: a
+     plain `.rand-respins td` here matches nothing at all. The ancestor is
+     template-owned, the descendants are `:global`. It has caught this codebase
+     out twice already. */
+  #previzualizare :global(.rand-respins td) {
+    background: var(--warn-tint);
+  }
+
+/* Already in the portal: a fact, not a warning — the row keeps its own word
+     in the „Stare” column, and the tint only groups them. */
+  #previzualizare :global(.rand-existent td) {
+    background: var(--surface-sunken);
+    color: var(--ink-muted);
+  }
+
+/* A preview cell is a field, but must not read as a form to fill in: no
+     border until it is hovered or focused, just text inside a table. */
+  #previzualizare :global(.input--celula) {
+    min-width: 9ch;
+    padding: var(--s-1) var(--s-2);
+    border-color: transparent;
+    background: none;
+    font-size: var(--t-xs);
+  }
+
+#previzualizare :global(.input--celula:hover) {
+    border-color: var(--border);
+  }
+
+.potrivire {
+    display: flex;
+    flex-direction: column;
+  }
+
+.potrivire__cap,
+  .potrivire :global(.potrivire__rand) {
+    display: grid;
+    grid-template-columns: minmax(140px, 1fr) minmax(0, 2.4fr) minmax(120px, 1fr);
+    gap: var(--s-3);
+    align-items: center;
+    padding: var(--s-2) 0;
+    border-bottom: 1px solid var(--border);
+  }
+
+.potrivire__cap {
+    font-size: var(--t-xs);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--ink-muted);
+  }
+
+.potrivire :global(.potrivire__camp) {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    font-size: var(--t-sm);
+  }
+
+.potrivire :global(.potrivire__cerut) {
+    font-size: var(--t-xs);
+    color: var(--ink-muted);
+  }
+
+.potrivire :global(.potrivire__sursa) {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--s-2);
+  }
+
+/* A column list must not push the sample off the screen; the field itself
+     stays full height, because it is a control someone taps. */
+  .potrivire :global(.potrivire__sursa .select),
+  .potrivire :global(.potrivire__sursa .input) {
+    max-width: 24ch;
+  }
+
+.potrivire :global(.potrivire__exemplu) {
+    font-size: var(--t-xs);
+    color: var(--ink-soft);
+    overflow-wrap: anywhere;
+  }
+
+/* The one place on this screen where a sentence asks for a decision before
+     the write; it is not an error, so it takes amber and not the seal. */
+  .hint--atentie {
+    color: var(--warn);
+  }
+
+@media (max-width: 900px) {
+    .potrivire__cap {
+      display: none;
+    }
+    .potrivire :global(.potrivire__rand) {
+      grid-template-columns: minmax(0, 1fr);
+      gap: var(--s-2);
+      padding: var(--s-3) 0;
+    }
+  }
   /* --- bara de filtre ------------------------------------------------------ */
 
   .filtre-rand {
