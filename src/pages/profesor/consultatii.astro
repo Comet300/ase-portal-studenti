@@ -144,13 +144,13 @@ const dayCount = (s: Slot) => hoursPerDay.get(localDay(new Date(s.starts_at))) ?
     taburi={[
       {
         key: 'finalizare',
-        text: 'Finalizare studii',
+        text: 'Consultații Finalizare Studii',
         href: '/profesor/consultatii?tip=finalizare#ore-deschise',
         count: viitoarePe('thesis'),
       },
       {
         key: 'publice',
-        text: 'Publice',
+        text: 'Consultații Publice',
         href: '/profesor/consultatii?tip=publice#ore-deschise',
         count: viitoarePe('public'),
       },
@@ -170,13 +170,10 @@ const dayCount = (s: Slot) => hoursPerDay.get(localDay(new Date(s.starts_at))) ?
       <input type="hidden" name="audienta" value={audienta} />
 
       <p class="explicatie">
-        Intervalul se împarte în ore. Un interval 14:00–17:00 generează trei ore, rezervate
-        individual. Invitația în calendar se transmite la momentul rezervării, cu locul și linkul
-        completate mai jos.
         {
           tip === 'publice'
-            ? ' Orele publice sunt vizibile tuturor studenților facultății și nu se anunță pe email.'
-            : ' Orele se anunță pe email studenților coordonați și nu sunt vizibile altcuiva.'
+            ? 'Vă rugăm să setați programul pentru Consultații Publice.'
+            : 'Vă rugăm să setați programul pentru Consultații Finalizare Studii.'
         }
       </p>
 
