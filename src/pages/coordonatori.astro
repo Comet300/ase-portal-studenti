@@ -1,19 +1,10 @@
 ---
 import Avatar from '../components/Avatar.astro'
+import ProfesorLayout from '../layouts/ProfesorLayout.astro'
 import StudentLayout from '../layouts/StudentLayout.astro'
-import { query, queryOne } from '../lib/db'
-import {
-  formatDate,
-  formatTime,
-  milestoneState,
-  pairings,
-  publicTopics,
-  studentMilestones,
-  studentRequests,
-  supervisors,
-} from '../lib/repo'
-import { numar, officialName } from '../lib/text'
-import { LANGUAGE_LABELS, LEVEL_LABELS, groupLabel, languageLabel, levelLabel } from '../lib/years'
+import { pairings, publicTopics, studentRequests, supervisors } from '../lib/repo'
+import { officialName } from '../lib/text'
+import { LANGUAGE_LABELS, LEVEL_LABELS, groupLabel, languageLabel } from '../lib/years'
 
 /**
  * The catalogue, from both ends.
@@ -49,15 +40,7 @@ const viewer = isStudent && u ? { programme_id: u.programme_id, program: u.progr
 const myRequests = isStudent && u ? await studentRequests(u.id) : []
 const myCoordination = myRequests.find((r) => r.status === 'approved') ?? null
 
-const askedView = Astro.url.searchParams.get('vedere')
-const view =
-  askedView === 'teme'
-    ? 'teme'
-    : askedView === 'coordonatori'
-      ? 'coordonatori'
-      : myCoordination
-        ? 'coordonare'
-        : 'coordonatori'
+const view = Astro.url.searchParams.get('vedere') === 'teme' ? 'teme' : 'coordonatori'
 
 const [teachers, allTopics, allPairings] = await Promise.all([
   supervisors({ viewer }),
@@ -86,85 +69,28 @@ for (const p of allPairings) {
 const defaultLevel = isStudent ? (u?.program ?? '') : ''
 const defaultLanguage = isStudent ? (u?.study_language ?? '') : ''
 
+/* The catalogue is read by both roles — a coordinator looks up who supervises
+ * what as often as a student does — so it renders in the reader's own shell. */
+const Shell = isStudent ? StudentLayout : ProfesorLayout
+
 const languages = [...new Set(allTopics.map((t) => t.language))]
 const freeTeachers = teachers.filter((t) => !t.is_full).length
 
-/* What „Coordonarea mea” needs, and only when it is going to be shown. */
-const coordinator = myCoordination
-  ? (teachers.find((t) => t.id === myCoordination.teacher_id) ?? null)
-  : null
-
-const myMilestones = myCoordination && u ? await studentMilestones(u.id) : []
-const nextMilestone =
-  myMilestones.find(
-    (m) => m.status !== 'done' && milestoneState(m.status, m.due_on) === 'overdue',
-  ) ??
-  myMilestones.find((m) => m.status !== 'done') ??
-  null
-const doneMilestones = myMilestones.filter((m) => m.status === 'done').length
-
-/* The next hour with this coordinator that the student actually has a place at,
- * and whether the thesis has been handed in. Both are one line on the card and
- * neither is worth a repo function: they are asked here and nowhere else. */
-const nextConsultation = myCoordination && u
-  ? await queryOne<{ starts_at: string; ends_at: string; mode: string; location: string | null }>(
-      `SELECT s.starts_at, s.ends_at, s.mode, s.location
-         FROM bookings b
-         JOIN consultation_slots s ON s.id = b.slot_id
-        WHERE b.student_id = $1 AND b.status = 'booked'
-          AND s.is_cancelled = false AND s.starts_at > now()
-        ORDER BY s.starts_at
-        LIMIT 1`,
-      [u.id],
-    )
-  : null
-
-const thesisFile = myCoordination
-  ? await queryOne<{ id: string; original_name: string; created_at: string }>(
-      `SELECT id, original_name, created_at::text
-         FROM files
-        WHERE request_id = $1 AND kind = 'thesis'
-        ORDER BY created_at DESC
-        LIMIT 1`,
-      [myCoordination.id],
-    )
-  : null
-
-const teammates = myCoordination
-  ? await query<{ student_name: string; title_ro: string }>(
-      `SELECT s.name AS student_name, r.title_ro
-         FROM requests r JOIN users s ON s.id = r.student_id
-        WHERE r.teacher_id = $1 AND r.status = 'approved' AND r.student_id <> $2
-          AND r.academic_year_id = (SELECT id FROM academic_years WHERE is_current)
-        ORDER BY s.name`,
-      [myCoordination.teacher_id, myCoordination.student_id],
-    )
-  : []
 ---
 
-<StudentLayout
-  title={view === 'coordonare' ? 'Coordonarea mea' : 'Coordonatori & Teme'}
-  docTitle="Coordonatori & Teme"
+<Shell
+  title="Coordonatori & Teme"
   description="Catalogul cadrelor didactice și temele propuse pentru sesiunea în curs"
   active="coordonatori"
   lede={
-    view === 'coordonare'
-      ? 'Cine îți coordonează lucrarea, ce ai convenit cu el și ce urmează. Catalogul rămâne alături, de citit.'
-      : myCoordination
-        ? 'Cine ce coordonează în sesiunea asta. Ai deja o coordonare aprobată, deci de aici doar citești.'
-        : 'Alege un cadru didactic și o direcție de cercetare, apoi depune cererea de coordonare. Poți porni de la persoană sau de la temă — și poți propune o temă proprie.'
+    myCoordination
+      ? 'Cine ce coordonează în sesiunea asta. Lucrarea ta, cu tot ce ai convenit, stă pe „Lucrarea mea”.'
+      : 'Alege un cadru didactic și o direcție de cercetare, apoi depune cererea de coordonare. Poți porni de la persoană sau de la temă — și poți propune o temă proprie.'
   }
 >
   <div class="container stack stack--loose">
 
     <nav class="vederi" aria-label="Mod de răsfoire">
-      {/* Prima filă există doar pentru cine are deja coordonator: pentru
-          ceilalți ar fi o filă goală care spune „nu ai”. */}
-      {myCoordination && (
-        <a href="/coordonatori?vedere=coordonare" class:list={['vedere', { 'is-activ': view === 'coordonare' }]}>
-          Coordonarea mea
-        </a>
-      )}
       <a href="/coordonatori?vedere=coordonatori" class:list={['vedere', { 'is-activ': view === 'coordonatori' }]}>
         După coordonator
         <span class="vedere__contor numeric">{teachers.length}</span>
@@ -175,165 +101,6 @@ const teammates = myCoordination
       </a>
     </nav>
 
-    {/* --------------------------------------------------------- my supervision */}
-    {
-      view === 'coordonare' && myCoordination && (
-        <div class="coordonare">
-          <section class="panel coordonare__cine">
-            <div class="panel__body stack">
-              <div class="row" style="gap:var(--s-4);align-items:flex-start">
-                <Avatar
-                  name={myCoordination.teacher_name}
-                  src={coordinator?.avatar_path}
-                  size="lg"
-                  href={`/profil/${myCoordination.teacher_id}?de_la=${encodeURIComponent('/coordonatori?vedere=coordonare')}`}
-                />
-                <div class="stack stack--tight" style="gap:2px;flex:1;min-width:0">
-                  <span class="muted text-xs">Coordonatorul lucrării tale</span>
-                  <strong class="coordonare__nume">{myCoordination.teacher_name}</strong>
-                  <span class="muted text-sm">
-                    {coordinator?.department ?? 'Facultatea de Marketing'}
-                  </span>
-                  {coordinator?.office && (
-                    <span class="muted text-sm">{coordinator.office}</span>
-                  )}
-                </div>
-              </div>
-
-              <div class="row row--wrap" style="gap:var(--s-2)">
-                <a class="btn btn--primary btn--sm" href="/mesaje">Scrie-i coordonatorului</a>
-                <a class="btn btn--secondary btn--sm" href="/consultatii">Rezervă o consultație</a>
-                <a class="btn btn--ghost btn--sm" href={`/profil/${myCoordination.teacher_id}`}>
-                  Profilul lui
-                </a>
-              </div>
-            </div>
-          </section>
-
-          <section class="panel coordonare__lucrare">
-            <div class="panel__header">
-              <h2 class="section-title">Lucrarea ta</h2>
-              <span class="badge badge--aprobata">Coordonare aprobată</span>
-            </div>
-            <div class="panel__body stack">
-              <div class="stack stack--tight" style="gap:2px">
-                <strong class="coordonare__titlu">{myCoordination.title_ro}</strong>
-                {myCoordination.title_en && (
-                  <span class="muted text-sm">{myCoordination.title_en}</span>
-                )}
-              </div>
-
-              <dl class="fapte">
-                <div>
-                  <dt>Cerere</dt>
-                  <dd class="numeric">{myCoordination.number}</dd>
-                </div>
-                <div>
-                  <dt>Aprobată</dt>
-                  <dd>{myCoordination.decided_at ? formatDate(myCoordination.decided_at) : '—'}</dd>
-                </div>
-                <div>
-                  <dt>Nivel</dt>
-                  <dd>{levelLabel(u?.program ?? 'bachelor')}</dd>
-                </div>
-                <div>
-                  <dt>Program</dt>
-                  <dd>{myCoordination.specialization ?? u?.specialization ?? '—'}</dd>
-                </div>
-                <div>
-                  <dt>Termene</dt>
-                  <dd>
-                    {myMilestones.length > 0
-                      ? `${doneMilestones} din ${myMilestones.length} finalizate`
-                      : 'nu sunt stabilite'}
-                  </dd>
-                </div>
-              </dl>
-
-              <div class="row row--wrap" style="gap:var(--s-2)">
-                {/* Același formular ca pe „Lucrarea mea”: o singură cerere de
-                    modificare, cu aceleași reguli, deschisă din două locuri. */}
-                <a class="btn btn--secondary btn--sm" href="/lucrarea-mea?modificare=1">
-                  Cere o modificare
-                </a>
-                <a class="btn btn--ghost btn--sm" href="/lucrarea-mea">Deschide lucrarea</a>
-              </div>
-            </div>
-          </section>
-
-          <section class="panel coordonare__stare">
-            <div class="panel__header">
-              <h2 class="section-title">Ce urmează</h2>
-            </div>
-            <ul class="urmeaza">
-              <li>
-                <span class="urmeaza__eticheta">Următorul termen</span>
-                {nextMilestone ? (
-                  <span
-                    class:list={[
-                      'urmeaza__valoare',
-                      { 'is-depasit': milestoneState(nextMilestone.status, nextMilestone.due_on) === 'overdue' },
-                    ]}
-                  >
-                    {nextMilestone.title}
-                    {nextMilestone.due_on ? ` · ${formatDate(nextMilestone.due_on)}` : ''}
-                  </span>
-                ) : (
-                  <span class="urmeaza__valoare muted">
-                    {myMilestones.length > 0 ? 'toate termenele sunt finalizate' : '—'}
-                  </span>
-                )}
-              </li>
-
-              <li>
-                <span class="urmeaza__eticheta">Următoarea consultație</span>
-                {nextConsultation ? (
-                  <span class="urmeaza__valoare">
-                    {formatDate(nextConsultation.starts_at)} ·{' '}
-                    {formatTime(nextConsultation.starts_at)}–{formatTime(nextConsultation.ends_at)}
-                    {nextConsultation.mode === 'online'
-                      ? ' · online'
-                      : nextConsultation.location
-                        ? ` · ${nextConsultation.location}`
-                        : ''}
-                  </span>
-                ) : (
-                  <span class="urmeaza__valoare muted">nicio rezervare</span>
-                )}
-              </li>
-
-              <li>
-                <span class="urmeaza__eticheta">Forma finală</span>
-                {thesisFile ? (
-                  <span class="urmeaza__valoare">
-                    predată {formatDate(thesisFile.created_at)} · {thesisFile.original_name}
-                  </span>
-                ) : (
-                  <span class="urmeaza__valoare muted">neîncărcată</span>
-                )}
-              </li>
-
-              <li>
-                <span class="urmeaza__eticheta">Alți studenți coordonați</span>
-                <span class="urmeaza__valoare">
-                  {teammates.length > 0
-                    ? numar(teammates.length, 'coleg', 'colegi')
-                    : 'ești singurul, în sesiunea asta'}
-                </span>
-              </li>
-            </ul>
-
-            <div class="panel__footer">
-              <a class="btn btn--primary btn--sm" href="/lucrarea-mea#lucrare">
-                {thesisFile ? 'Înlocuiește lucrarea' : 'Încarcă lucrarea'}
-              </a>
-            </div>
-          </section>
-        </div>
-      )
-    }
-
-    {view !== 'coordonare' && (
     <div class="filtre panel">
       <div class="panel__body filters__row">
         <div class="field filters__search">
@@ -389,9 +156,7 @@ const teammates = myCoordination
         </button>
       </div>
     </div>
-    )}
 
-    {view !== 'coordonare' && (
     <p class="muted" id="rezultat" style="font-size:var(--t-sm)" aria-live="polite">
       {
         view === 'teme'
@@ -399,7 +164,6 @@ const teammates = myCoordination
           : `${teachers.length} cadre didactice · ${freeTeachers} cu locuri libere`
       }
     </p>
-    )}
 
     {/* --------------------------------------------------- by coordinator */}
     {
@@ -656,7 +420,7 @@ const teammates = myCoordination
       </div>
     </section>
   </div>
-</StudentLayout>
+</Shell>
 
 <script>
   /* Filtrarea catalogului.
@@ -860,101 +624,6 @@ const teammates = myCoordination
 </script>
 
 <style>
-  /* --- coordonarea mea ---------------------------------------------------- */
-
-  /* Trei panouri: cine, ce, ce urmează. Nu un card cu titlu mare și cifre —
-     ecranul răspunde la „unde sunt cu lucrarea”, iar răspunsul este format din
-     propoziții, nu din indicatori. */
-  .coordonare {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr);
-    gap: var(--s-5);
-    align-items: start;
-  }
-  .coordonare__cine {
-    grid-column: 1;
-  }
-  .coordonare__lucrare {
-    grid-column: 2;
-    grid-row: 1 / span 2;
-  }
-  .coordonare__stare {
-    grid-column: 1;
-  }
-
-  .coordonare__nume {
-    font-family: var(--serif);
-    font-size: var(--t-lg);
-    line-height: 1.2;
-  }
-
-  .coordonare__titlu {
-    font-family: var(--serif);
-    font-size: var(--t-xl);
-    line-height: 1.25;
-    text-wrap: pretty;
-  }
-
-  /* Faptele cererii, ca listă de definiții: sunt perechi nume–valoare, iar un
-     tabel pentru șase rânduri ar fi mobilier în plus. */
-  .fapte {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-    gap: var(--s-3) var(--s-4);
-    margin: 0;
-  }
-  .fapte dt {
-    font-size: var(--t-xs);
-    color: var(--ink-muted);
-  }
-  .fapte dd {
-    margin: 0;
-    font-size: var(--t-sm);
-    font-weight: 600;
-  }
-
-  .urmeaza {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-  }
-  .urmeaza li {
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--s-2) var(--s-4);
-    justify-content: space-between;
-    align-items: baseline;
-    padding: var(--s-3) var(--s-5);
-    border-bottom: 1px solid var(--border);
-  }
-  .urmeaza li:last-child {
-    border-bottom: 0;
-  }
-  .urmeaza__eticheta {
-    font-size: var(--t-sm);
-    color: var(--ink-muted);
-  }
-  .urmeaza__valoare {
-    font-size: var(--t-sm);
-    font-weight: 600;
-    text-align: right;
-  }
-  .urmeaza__valoare.is-depasit {
-    color: var(--danger);
-  }
-
-  @media (max-width: 900px) {
-    .coordonare {
-      grid-template-columns: minmax(0, 1fr);
-    }
-    .coordonare__cine,
-    .coordonare__lucrare,
-    .coordonare__stare {
-      grid-column: 1;
-      grid-row: auto;
-    }
-  }
-
   .vederi {
     display: flex;
     gap: var(--s-1);

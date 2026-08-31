@@ -3,9 +3,9 @@
 /* =============================================================================
    Portal Studenți — sistem de design
    =============================================================================
-   Un singur fișier pentru ambele roluri. Identitatea rămâne cea din portalul
-   existent: roșu ASE ca sigiliu, Inter pentru interfață, Source Serif 4 doar
-   pentru titluri de pagină.
+   Un singur fișier pentru ambele roluri. Identitatea este cea a facultății, de
+   pe mk.ase.ro: roșul ei ca sigiliu, sansul sistemului pentru interfață și
+   Zilla Slab pentru titluri.
 
    Roșul marchează acțiunea principală și starea vie. Nu colorează mobilierul:
    fundaluri, borduri și bare rămân neutre, altfel sigiliul nu mai înseamnă
@@ -74,11 +74,17 @@
    * lucrări, mesajul unei invitații și regulamentul erau toate scrise cu corpul
    * unei note de subsol. Podeaua urcă la 16px, iar `--t-body` spune explicit ce
    * treaptă folosește un text care chiar se citește. */
-  --sans: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
-  /* Serifa este acum Zilla Slab, cea de pe mk.ase.ro. Source Serif 4 rămâne în
-   * spatele ei ca rezervă: fișierele lui sunt deja aici și, dacă Zilla nu se
-   * încarcă, textul cade pe o serifă apropiată, nu pe Times. */
-  --serif: 'Zilla Slab', 'Source Serif 4', Georgia, 'Times New Roman', serif;
+  /* Fonturile sunt cele de pe mk.ase.ro, cu tot cu felul în care sunt împărțite
+   * acolo: site-ul facultății scrie `* { font-family: sans-serif }` — adică
+   * sansul sistemului, Helvetica pe Mac și Arial pe Windows — și păstrează Zilla
+   * Slab pentru blocurile mari, cele de erou și titlurile lor.
+   *
+   * Stiva de mai jos numește explicit ce rezolvă `sans-serif` pe cele două
+   * sisteme, ca literele să fie aceleași în portal și pe mk.ase.ro, nu doar
+   * „un sans” de fiecare parte. Inter a plecat odată cu asta: era un al treilea
+   * font, al nimănui. */
+  --sans: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  --serif: 'Zilla Slab', Georgia, 'Times New Roman', serif;
   --t-xs: 0.75rem;
   --t-sm: 0.875rem;
   --t-base: 1rem;
@@ -198,7 +204,9 @@ body {
   color: var(--ink);
   background: var(--bg);
   -webkit-font-smoothing: antialiased;
-  font-feature-settings: 'cv05' 1, 'ss03' 1, 'tnum' 0;
+  /* `cv05` și `ss03` erau seturi stilistice ale lui Inter — un `l` cu coadă și
+     un `a` cu un etaj. Fontul a plecat, deci ele nu mai comandă nimic. */
+  font-variant-numeric: proportional-nums;
 }
 
 img,

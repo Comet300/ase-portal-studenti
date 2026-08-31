@@ -1,4 +1,5 @@
 ---
+import ProfesorLayout from '../layouts/ProfesorLayout.astro'
 import StudentLayout from '../layouts/StudentLayout.astro'
 
 /**
@@ -17,13 +18,18 @@ Astro.response.status = 404
 
 const u = Astro.locals.user
 
+/* The wrong address renders in the reader's own shell. A coordinator who
+ * mistyped one used to land in the student top bar — and, since the portal has
+ * no crossing between the two areas any more, with no way back to their own. */
+const Shell = !u || u.role === 'student' ? StudentLayout : ProfesorLayout
+
 const links = u
   ? [
       { href: '/', text: 'Acasă' },
       { href: '/coordonatori', text: 'Coordonatori & Teme' },
       ...(u.role === 'student'
         ? [{ href: '/lucrarea-mea', text: 'Cererile mele' }]
-        : [{ href: '/profesor', text: 'Zona cadrelor didactice' }]),
+        : [{ href: '/profesor', text: 'Panoul meu' }]),
       { href: '/ghid', text: 'Ghid & Regulament' },
     ]
   : /* Nothing else in the portal opens without a session: a link to „Acasă” or
@@ -34,7 +40,7 @@ const links = u
     ]
 ---
 
-<StudentLayout title="Pagina nu a fost găsită" docTitle="404" erou="fara">
+<Shell title="Pagina nu a fost găsită" docTitle="404" erou="fara">
   <div class="container">
     <div class="patru04">
       <p class="patru04__cod numeric">404</p>
@@ -55,7 +61,7 @@ const links = u
       </nav>
     </div>
   </div>
-</StudentLayout>
+</Shell>
 
 <style>
   .patru04 {

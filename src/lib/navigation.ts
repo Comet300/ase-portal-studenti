@@ -30,12 +30,13 @@ export const SCREENS: Record<string, string> = {
   '/profesor/consultatii': 'Consultații',
   '/profesor/mesaje': 'Mesaje',
   '/profesor/facultate': 'Studenții facultății',
-  '/profesor/activitatea-mea': 'Activitatea mea',
-  /* The address the screen had while it was also carrying the profile form and
-   * the seats request. It stays in the table because it is written in emails
-   * already delivered and in bookmarks: without a name here, a „?de_la=” coming
-   * back from one of them renders a bare „Înapoi”. */
-  '/profesor/arhiva': 'Activitatea mea',
+  /* The address „Arhivă & Profil” answered at, and the one „Activitatea mea”
+   * answered at after it. Both screens are gone — what they reported is read
+   * where it happens now — but the addresses are written in emails already
+   * delivered, so they keep a name: without one, a „?de_la=” coming back from
+   * one of them renders a bare „Înapoi”. */
+  '/profesor/arhiva': 'Panoul meu',
+  '/profesor/activitatea-mea': 'Panoul meu',
   '/profesor/departament': 'Departament',
   '/profesor/conturi': 'Conturi',
   '/profesor/calendar': 'Calendarul sesiunii',

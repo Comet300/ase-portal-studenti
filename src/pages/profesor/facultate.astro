@@ -178,7 +178,10 @@ const exportHref = (format: string) => {
 
   <div class="stack stack--loose">
     <div class="grid-auto">
-      <Metrica value={totals.toti} label="studenți în sesiune" />
+      {/* Primul cartonaș numără toți studenții facultății, nu rândurile rămase
+          după filtre: „câți suntem” este întrebarea de la care pornește
+          fiecare alta de pe ecranul ăsta. */}
+      <Metrica value={totals.toti} label="studenți înmatriculați" />
       <Metrica value={totals.supervised} label="cu coordonator confirmat" />
       <Metrica value={totals.asteptare} label="cu cerere în așteptare" />
       <Metrica value={neinceput} label="fără cerere depusă" alerta={neinceput > 0} />
@@ -326,11 +329,30 @@ const exportHref = (format: string) => {
                 <p class="selectie__contor" aria-live="polite">
                   <strong data-contor-selectie>0</strong> selectați
                 </p>
+                {/* Nivelul întâi, programul după el — aceeași pereche ca la
+                    „Teme propuse”. Într-o singură listă, cele unsprezece
+                    programe ale celor două niveluri se citeau ca un teanc. */}
+                <label class="label" for={`nivel-grup-${g.key}`}>Nivel</label>
+                <select
+                  class="select select--sm"
+                  id={`nivel-grup-${g.key}`}
+                  data-nivel-pentru={`prog-grup-${g.key}`}
+                >
+                  {Object.entries(LEVEL_LABELS).map(([v, t]) => (
+                    <option value={v} selected={v === g.level}>{t}</option>
+                  ))}
+                </select>
                 <label class="label" for={`prog-grup-${g.key}`}>Mută în programul</label>
-                <select class="select select--sm" id={`prog-grup-${g.key}`} name="program_id">
+                <select class="select select--sm" id={`prog-grup-${g.key}`} name="program_id" data-programe>
                   {yearProgrammes.map((p) => (
-                    <option value={p.id} selected={p.level === g.level && p.name === g.specialization && p.language === g.language}>
-                      {LEVEL_LABELS[p.level]} · {p.name} · {LANGUAGE_LABELS[p.language]}
+                    <option
+                      value={p.id}
+                      data-nivel={p.level}
+                      hidden={p.level !== g.level}
+                      selected={p.level === g.level && p.name === g.specialization && p.language === g.language}
+                    >
+                      {p.name}
+                      {p.language !== 'ro' ? ` · ${LANGUAGE_LABELS[p.language]}` : ''}
                     </option>
                   ))}
                 </select>
@@ -469,18 +491,31 @@ const exportHref = (format: string) => {
                           <form method="POST" action="/api/studenti" class="atribuire">
                             <input type="hidden" name="student_id" value={s.id} />
                             <input type="hidden" name="redirect" value={`${backUrl}#student-${s.id}`} />
-                            <label class="label" for={`prog-${s.id}`}>Program de studiu</label>
-                            <select class="select select--sm" id={`prog-${s.id}`} name="program_id">
+                            <label class="label" for={`nivel-${s.id}`}>Nivel</label>
+                            <select
+                              class="select select--sm"
+                              id={`nivel-${s.id}`}
+                              data-nivel-pentru={`prog-${s.id}`}
+                            >
+                              {Object.entries(LEVEL_LABELS).map(([v, t]) => (
+                                <option value={v} selected={v === (s.program ?? 'bachelor')}>{t}</option>
+                              ))}
+                            </select>
+                            <label class="label" for={`prog-${s.id}`}>Program de studii</label>
+                            <select class="select select--sm" id={`prog-${s.id}`} name="program_id" data-programe>
                               {yearProgrammes.map((p) => (
                                 <option
                                   value={p.id}
+                                  data-nivel={p.level}
+                                  hidden={p.level !== (s.program ?? 'bachelor')}
                                   selected={
                                     p.level === s.program &&
                                     p.name === s.specialization &&
                                     p.language === s.study_language
                                   }
                                 >
-                                  {LEVEL_LABELS[p.level]} · {p.name} · {LANGUAGE_LABELS[p.language]}
+                                  {p.name}
+                                  {p.language !== 'ro' ? ` · ${LANGUAGE_LABELS[p.language]}` : ''}
                                 </option>
                               ))}
                             </select>
@@ -531,6 +566,30 @@ const exportHref = (format: string) => {
 </ProfesorLayout>
 
 <script>
+  /* «Nivel» decide ce programe se pot alege, ca la „Teme propuse”.
+   *
+   * Perechea apare de două ori pe ecran — o dată pe bara de selecție a fiecărei
+   * grupe, o dată pe editorul fiecărui rând — deci legătura se face prin
+   * `data-nivel-pentru`, nu prin poziție. Fără JavaScript, lista rămâne
+   * întreagă și trimisibilă; `/api/studenti` verifică oricum perechea. */
+  document.querySelectorAll<HTMLSelectElement>('[data-nivel-pentru]').forEach((nivel) => {
+    const programe = document.getElementById(nivel.dataset.nivelPentru ?? '') as HTMLSelectElement | null
+    if (!programe) return
+
+    nivel.addEventListener('change', () => {
+      let prima: HTMLOptionElement | null = null
+      for (const o of programe.options) {
+        const seVede = o.dataset.nivel === nivel.value
+        o.hidden = !seVede
+        o.disabled = !seVede
+        if (seVede && !prima) prima = o
+      }
+      /* Un program rămas de la nivelul dinainte ar muta un student de licență
+         într-un program de master, tăcut. */
+      if (programe.selectedOptions[0]?.hidden) programe.value = prima?.value ?? ''
+    })
+  })
+
   // The grouping editor opens on the row below the student, one at a time.
   document.querySelectorAll<HTMLButtonElement>('[data-editeaza]').forEach((b) => {
     b.addEventListener('click', () => {

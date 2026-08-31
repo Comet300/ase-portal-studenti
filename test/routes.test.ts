@@ -75,9 +75,9 @@ describe('rutele publice', () => {
  * „Arhivă” in the portal, and the old address still answering to a name so that
  * a „?de_la=” coming back from an email already sent does not read „Înapoi”. */
 describe('numele ecranelor', () => {
-  it('numește ecranul de activitate, și la adresa lui veche', () => {
-    assert.equal(screenName('/profesor/activitatea-mea'), 'Activitatea mea')
-    assert.equal(screenName('/profesor/arhiva?an=2024'), 'Activitatea mea')
+  it('numește și adresele ecranelor scoase, ca „Înapoi” să aibă ce scrie', () => {
+    assert.equal(screenName('/profesor/activitatea-mea'), 'Panoul meu')
+    assert.equal(screenName('/profesor/arhiva?an=2024'), 'Panoul meu')
   })
 
   it('lasă un singur „Arhivă” în portal', () => {
@@ -141,7 +141,6 @@ describe('ecranele directorului', () => {
       '/profesor/teme',
       '/profesor/consultatii',
       '/profesor/mesaje',
-      '/profesor/activitatea-mea',
     ]) {
       assert.equal(isHeadOnlyPath(path), false, `${path} nu este doar al directorului`)
     }
