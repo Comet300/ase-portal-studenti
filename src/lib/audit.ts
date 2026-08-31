@@ -15,6 +15,7 @@ export type AccessAction =
   | 'export_coordonari'
   | 'export_cereri'
   | 'export_studenti'
+  | 'export_arhiva'
   | 'descarca_fisier'
   | 'descarca_arhiva'
   | 'descarca_document'

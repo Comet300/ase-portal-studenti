@@ -1,7 +1,8 @@
 ---
 import ProfesorLayout from '../../layouts/ProfesorLayout.astro'
 import { teacherTopics } from '../../lib/repo'
-import { currentYear, languageLabel, programmes } from '../../lib/years'
+import { numar } from '../../lib/text'
+import { LANGUAGE_LABELS, allYears, currentYear, languageLabel, programmes } from '../../lib/years'
 
 /**
  * The topics proposed by a member of the teaching staff.
@@ -27,6 +28,25 @@ const areProgramePeNivel = {
   bachelor: programe.some((p) => p.level === 'bachelor'),
   master: programe.some((p) => p.level === 'master'),
 }
+
+/* Temele de anul trecut, ale acestui cadru didactic.
+ *
+ * Catalogul se reia de la zero în fiecare an, iar preluarea temelor era o
+ * bifă în mâna directorului, la deschiderea anului: ori se copiau ale
+ * tuturor, ori ale nimănui. Un coordonator care propune aceleași cinci
+ * direcții de șase ani le rescria de fiecare dată — sau aștepta ca altcineva
+ * să bifeze pentru el.
+ *
+ * Se arată doar cele care nu au deja un omonim în anul curent: o listă în care
+ * jumătate din rânduri sunt deja preluate se citește ca o greșeală. */
+const anTrecut = (await allYears()).filter((y) => !y.is_current && (!an || y.starts_on < an.starts_on))[0] ?? null
+
+const titluriCurente = new Set(teme.map((t) => t.title.trim().toLowerCase()))
+const temeDeAnulTrecut = anTrecut
+  ? (await teacherTopics(u.id, anTrecut.id)).filter(
+      (t) => !titluriCurente.has(t.title.trim().toLowerCase()),
+    )
+  : []
 ---
 
 <ProfesorLayout
@@ -97,6 +117,54 @@ const areProgramePeNivel = {
         </ul>
       )}
 
+      {/* Preluarea din anul trecut stă între catalog și formularul de temă
+          nouă: este scurtătura către același rezultat, iar cine o folosește nu
+          mai are nevoie de formular. */}
+      {
+        temeDeAnulTrecut.length > 0 && (
+          <form method="POST" action="/api/teme" class="panel__footer preia">
+            <input type="hidden" name="actiune" value="preia" />
+            <input type="hidden" name="an_sursa" value={anTrecut?.id} />
+
+            <div class="preia__cap">
+              <div class="stack stack--tight" style="gap:2px">
+                <strong>Preia teme din {anTrecut?.label}</strong>
+                <span class="muted text-sm">
+                  {numar(temeDeAnulTrecut.length, 'temă care nu este încă în catalogul acestui an', 'teme care nu sunt încă în catalogul acestui an')}.
+                  Programul de studii se potrivește după nume; unde anul acesta nu are unul la fel,
+                  tema vine fără program și îl alegi tu.
+                </span>
+              </div>
+              <button class="btn btn--secondary btn--sm" type="button" data-bifeaza-tot>
+                Bifează tot
+              </button>
+            </div>
+
+            <ul class="preia__lista">
+              {temeDeAnulTrecut.map((t) => (
+                <li>
+                  <label class="preia__optiune">
+                    <input type="checkbox" name="tema_id" value={t.id} />
+                    <span class="stack stack--tight" style="gap:2px">
+                      <strong>{t.title}</strong>
+                      <span class="muted text-xs">
+                        {t.level === 'master' ? 'Master' : 'Licență'}
+                        {t.programme_name ? ` · ${t.programme_name}` : ''}
+                        {t.domain && t.domain !== '—' ? ` · ${t.domain}` : ''}
+                      </span>
+                    </span>
+                  </label>
+                </li>
+              ))}
+            </ul>
+
+            <div class="row row--end">
+              <button class="btn btn--primary btn--sm" type="submit">Preia temele bifate</button>
+            </div>
+          </form>
+        )
+      }
+
       <div class="panel__footer">
         <form method="POST" action="/api/teme" class="tema-noua">
           <input type="hidden" name="actiune" value="adauga" />
@@ -123,9 +191,13 @@ const areProgramePeNivel = {
                   nimeni nu l-a dat: la licență aceea este programul în engleză,
                   iar tema ar ajunge tăcut în catalogul altcuiva. */}
               <option value="">Alege programul…</option>
+              {/* Limba, când nu este româna: facultatea are două programe cu
+                  același nume și limbi diferite, iar în listă apăreau ca două
+                  rânduri identice, imposibil de deosebit. */}
               {programe.map((p) => (
                 <option value={p.id} data-nivel={p.level} hidden={p.level !== 'bachelor'}>
                   {p.name}
+                  {p.language !== 'ro' ? ` · ${LANGUAGE_LABELS[p.language]}` : ''}
                 </option>
               ))}
             </select>
@@ -178,6 +250,15 @@ const areProgramePeNivel = {
    * aici rămân vizibile doar cele potrivite. Fără JavaScript formularul rămâne
    * complet și trimisibil — iar dacă perechea nu se potrivește, endpointul o
    * refuză cu o propoziție, pentru că browserul nu este o apărare. */
+  /* „Bifează tot”, pentru cine reia catalogul întreg — cazul obișnuit. */
+  document.querySelector<HTMLButtonElement>('[data-bifeaza-tot]')?.addEventListener('click', (e) => {
+    const form = (e.currentTarget as HTMLElement).closest('form')
+    const casete = [...(form?.querySelectorAll<HTMLInputElement>('input[name="tema_id"]') ?? [])]
+    const toateBifate = casete.every((c) => c.checked)
+    casete.forEach((c) => (c.checked = !toateBifate))
+    ;(e.currentTarget as HTMLElement).textContent = toateBifate ? 'Bifează tot' : 'Debifează tot'
+  })
+
   const nivel = document.querySelector<HTMLSelectElement>('#tema-nivel')
   const programe = document.querySelector<HTMLSelectElement>('[data-programe]')
 
@@ -201,6 +282,52 @@ const areProgramePeNivel = {
 </script>
 
 <style>
+  /* --- preluarea din anul trecut ------------------------------------------ */
+
+  .preia {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-4);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .preia__cap {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--s-3);
+    align-items: flex-start;
+    justify-content: space-between;
+  }
+
+  .preia__lista {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: var(--s-2);
+  }
+
+  /* Rândul întreg este ținta, nu doar caseta de 13px. */
+  .preia__optiune {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--s-3);
+    min-height: var(--tap);
+    padding: var(--s-2) var(--s-3);
+    border: 1px solid var(--border);
+    border-radius: var(--r-md);
+    cursor: pointer;
+  }
+  .preia__optiune:hover {
+    border-color: var(--border-strong);
+    background: var(--surface);
+  }
+  .preia__optiune input {
+    margin-top: 3px;
+    flex: none;
+  }
+
   /* Twelve columns, each field with its own span declared.
      `auto-fit` gave them all the same width — a thesis title got 160px, just
      like the number of seats — and the inline styles left over from the flex

@@ -1080,6 +1080,7 @@ export interface ArchiveRow {
   /** The newest handed-in file, when the thesis went through the portal. */
   thesis_file_id: string | null
   thesis_file_name: string | null
+  thesis_uploaded_at: string | null
   /** Its coordinator, so the screen can offer the file to them as well. */
   teacher_id: string | null
 }
@@ -1116,12 +1117,13 @@ export function archiveRows(yearId: string): Promise<ArchiveRow[]> {
             s.specialization AS programme, s.program AS level, s.study_language AS language,
             t.name AS teacher_name, r.title_ro, r.defended_on::text AS defended_on,
             f.id::text AS thesis_file_id, f.original_name AS thesis_file_name,
+            f.created_at::text AS thesis_uploaded_at,
             t.id::text AS teacher_id
        FROM requests r
        JOIN users s ON s.id = r.student_id
        JOIN users t ON t.id = r.teacher_id
        LEFT JOIN LATERAL (
-         SELECT id, original_name
+         SELECT id, original_name, created_at
            FROM files
           WHERE request_id = r.id AND kind = 'thesis'
           ORDER BY created_at DESC
@@ -1131,7 +1133,7 @@ export function archiveRows(yearId: string): Promise<ArchiveRow[]> {
         AND COALESCE(r.graduation_year_id, r.academic_year_id) = $1
       UNION ALL
      SELECT 'import'::text, a.student_name, a.student_number, a.programme, a.level, a.language,
-            a.teacher_name, a.title_ro, a.defended_on::text, NULL, NULL, NULL
+            a.teacher_name, a.title_ro, a.defended_on::text, NULL, NULL, NULL, NULL
        FROM archive_entries a
       WHERE a.academic_year_id = $1
       ORDER BY teacher_name, student_name`,
