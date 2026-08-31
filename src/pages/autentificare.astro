@@ -24,7 +24,7 @@ if (Astro.locals.user && !trimis) {
       {/* Not a link: `/` is behind the gate, so clicking the mark sent the
           visitor straight back to this page with a `redirect` glued on. */}
       <p class="brand">
-        <span class="brand__mark" aria-hidden="true">A</span>
+        <img class="brand__mark" src="/img/logo-mk.png" alt="" width="240" height="107" />
         <span class="brand__text">
           <strong>Portal Studenți</strong>
           <small>Facultatea de Marketing · ASE București</small>
@@ -273,16 +273,11 @@ if (Astro.locals.user && !trimis) {
     color: var(--ink);
   }
 
+  /* Pe cardul alb, sigla nu are nevoie de plăcuță — vișiniul ei dă 8.9:1 pe
+     alb. Este singurul loc din portal unde stă direct pe fundal. */
   .brand__mark {
-    display: grid;
-    place-items: center;
-    width: 36px;
-    height: 36px;
-    background: var(--red);
-    color: #fff;
-    border-radius: var(--r-md);
-    font-family: var(--serif);
-    font-weight: 700;
+    width: auto;
+    height: 34px;
   }
 
   .brand__text {

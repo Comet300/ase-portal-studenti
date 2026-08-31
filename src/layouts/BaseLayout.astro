@@ -32,7 +32,8 @@ const site = Astro.site ?? new URL(Astro.url.origin)
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <title>{fullTitle}</title>
     <meta name="description" content={metaDescription} />
-    <meta name="theme-color" content="#990000" />
+    {/* Culoarea barei de sistem urmează bara portalului, nu sigiliul. */}
+    <meta name="theme-color" content="#212934" />
     <meta name="color-scheme" content="light" />
 
     {/* The link to the portal gets pasted into WhatsApp groups and into Teams

@@ -68,7 +68,7 @@ const accountLinks = [{ href: '/contul-meu', text: SCREENS['/contul-meu'], key: 
   <header class="topbar">
     <div class="topbar__inner container">
       <a href="/" class="brand">
-        <span class="brand__mark" aria-hidden="true">A</span>
+        <img class="brand__mark" src="/img/logo-mk.png" alt="" width="240" height="107" />
         <span class="brand__text">
           <strong>Portal Studenți</strong>
           <small>Facultatea de Marketing · ASE</small>
@@ -212,12 +212,21 @@ const accountLinks = [{ href: '/contul-meu', text: SCREENS['/contul-meu'], key: 
 </script>
 
 <style>
+  /* Bara este închisă, ca pe mk.ase.ro.
+   *
+   * Acolo meniul plutește peste fotografia din erou, cu `rgba(0,0,0,.4)`; aici
+   * conținutul îi trece pe sub ea la derulare, deci translucidul ar deveni
+   * ilizibil pe primul tabel alb. Rămâne aceeași citire — bandă închisă, litere
+   * albe — pe fundalul plin al eroului și al subsolului, deci pagina începe și
+   * se termină cu aceeași culoare. */
   .topbar {
     position: sticky;
     top: 0;
     z-index: var(--z-sticky);
-    background: var(--surface);
-    border-bottom: 1px solid var(--border);
+    background: var(--hero-ground);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    /* Roșul pe fundal închis dă 1.9:1: inelul de focus se moștenește alb. */
+    --focus: #fff;
   }
 
   .topbar__inner {
@@ -232,7 +241,7 @@ const accountLinks = [{ href: '/contul-meu', text: SCREENS['/contul-meu'], key: 
     align-items: center;
     gap: var(--s-3);
     text-decoration: none;
-    color: var(--ink);
+    color: #fff;
     /* `flex: none` on both ends meant the bar could not shrink below their
        sum: on a phone it overflowed the screen instead of tightening up. */
     min-width: 0;
@@ -244,16 +253,17 @@ const accountLinks = [{ href: '/contul-meu', text: SCREENS['/contul-meu'], key: 
     white-space: nowrap;
   }
 
+  /* Sigla facultății, pe plăcuța ei albă.
+   *
+   * „mk” este vișiniu — 1.38:1 pe fundalul barei, adică practic invizibil — iar
+   * o siglă pe care nu o vezi nu este o siglă. Pe alb are 8.9:1 și rămâne exact
+   * culoarea cu care o folosește facultatea, în loc să fie recolorată. */
   .brand__mark {
-    display: grid;
-    place-items: center;
-    width: 32px;
-    height: 32px;
-    background: var(--red);
-    color: #fff;
+    width: auto;
+    height: 30px;
+    padding: 3px var(--s-2);
+    background: #fff;
     border-radius: var(--r-md);
-    font-family: var(--serif);
-    font-weight: 700;
   }
 
   .brand__text {
@@ -267,7 +277,7 @@ const accountLinks = [{ href: '/contul-meu', text: SCREENS['/contul-meu'], key: 
   }
   .brand__text small {
     font-size: var(--t-xs);
-    color: var(--ink-muted);
+    color: var(--dark-ink-muted);
   }
 
   .nav {
@@ -281,21 +291,26 @@ const accountLinks = [{ href: '/contul-meu', text: SCREENS['/contul-meu'], key: 
     border-radius: var(--r-md);
     font-size: var(--t-sm);
     font-weight: 500;
-    color: var(--ink-soft);
+    color: var(--dark-ink-quiet);
     text-decoration: none;
     white-space: nowrap;
     transition: background var(--fast) var(--ease), color var(--fast) var(--ease);
   }
 
   .nav__link:hover {
-    background: var(--surface-sunken);
-    color: var(--ink);
+    background: var(--dark-hover);
+    color: #fff;
   }
 
-  /* The current state is marked in red — the seal, not decoration. */
+  /* Ecranul deschis, marcat cu alb și cu o linie sub el.
+   *
+   * Roșul este sigiliul portalului, dar pe bara închisă dă 1.9:1 — un semn pe
+   * care nu îl vezi nu marchează nimic. Pe fundal închis, albul este accentul,
+   * exact ca pe bara laterală a cadrelor didactice. */
   .nav__link.is-active {
-    color: var(--red);
+    color: #fff;
     font-weight: 600;
+    background: var(--dark-active);
   }
 
   .topbar__end {
@@ -304,6 +319,16 @@ const accountLinks = [{ href: '/contul-meu', text: SCREENS['/contul-meu'], key: 
     gap: var(--s-3);
     margin-left: auto;
     flex: none;
+  }
+
+  /* Clopoțelul stă acum pe fundal închis, ca în bara laterală a cadrelor
+     didactice — și își ia culorile de acolo, nu de pe alb. */
+  .topbar__end :global(.clopotel summary) {
+    color: var(--dark-ink-quiet);
+  }
+  .topbar__end :global(.clopotel summary:hover) {
+    background: var(--dark-hover);
+    color: #fff;
   }
 
   /* --- the account menu --------------------------------------------------- */
@@ -320,7 +345,7 @@ const accountLinks = [{ href: '/contul-meu', text: SCREENS['/contul-meu'], key: 
     min-height: var(--tap);
     padding-right: var(--s-1);
     border-radius: var(--r-md);
-    color: var(--ink-muted);
+    color: var(--dark-ink-muted);
     cursor: pointer;
     list-style: none;
   }
@@ -406,9 +431,10 @@ const accountLinks = [{ href: '/contul-meu', text: SCREENS['/contul-meu'], key: 
     justify-content: center;
     width: var(--tap);
     height: var(--tap);
-    border: 1px solid var(--border-strong);
+    border: 1px solid rgba(255, 255, 255, 0.35);
     border-radius: var(--r-md);
-    background: var(--surface);
+    background: transparent;
+    color: #fff;
     cursor: pointer;
   }
   .hamburger svg {
