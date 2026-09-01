@@ -1,0 +1,33 @@
+# Baza de date pentru o copie locală.
+#
+# Atât: portalul rulează cu `npm start`, pe calculatorul tău, iar aici stă doar
+# PostgreSQL-ul de care are nevoie. `npm start` pornește singur containerul
+# ăsta, deci fișierul nu trebuie apelat de mână — este scris ca să poți vedea ce
+# se întâmplă și ca să poți face `docker compose up -d` dacă preferi.
+#
+# Portul este 55432, nu 5432: dacă ai deja un PostgreSQL pe calculator, cele
+# două nu se ceartă.
+#
+# Datele stau într-un volum numit, deci supraviețuiesc unui `docker compose
+# down`. Ca să pornești de la zero: `docker compose down -v`.
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: portal-pg-dev
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: dev
+      POSTGRES_DB: portal
+    ports:
+      - '55432:5432'
+    volumes:
+      - portal-pg-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres -d portal']
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+volumes:
+  portal-pg-data:

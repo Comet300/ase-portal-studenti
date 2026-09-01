@@ -7,9 +7,10 @@
  * second run adds no rows.
  */
 
+import { databaseUrl } from '../src/lib/defaults.mjs'
 import pg from 'pg'
 
-const connectionString = process.env.DATABASE_URL
+const connectionString = databaseUrl()
 if (!connectionString) {
   console.error('DATABASE_URL nu este setat')
   process.exit(1)

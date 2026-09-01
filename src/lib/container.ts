@@ -1,3 +1,4 @@
+import { databaseUrl } from './defaults.mjs'
 import { join } from 'node:path'
 import { createDiskFileStore } from './adapters/disk-files'
 import { createPostgresDatabase } from './adapters/postgres'
@@ -14,9 +15,11 @@ import type { Database, FileStore, Mailer } from './ports'
  *
  * Constructed eagerly: a missing DATABASE_URL should stop the container at boot
  * with one clear line, not surface as a confusing failure on the first request.
+ * Outside production it falls back to the database `compose.yml` starts, so a
+ * fresh clone runs without being told anything first (`lib/defaults.mjs`).
  */
 
-const connectionString = process.env.DATABASE_URL
+const connectionString = databaseUrl()
 if (!connectionString) {
   throw new Error('DATABASE_URL is not set')
 }

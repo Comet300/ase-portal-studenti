@@ -8,6 +8,7 @@
  * serializes two containers that start at the same time.
  */
 
+import { databaseUrl } from '../src/lib/defaults.mjs'
 import { readdir, readFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -16,7 +17,7 @@ import pg from 'pg'
 const DIR = join(dirname(dirname(fileURLToPath(import.meta.url))), 'migrations')
 const LOCK = 771_120_264
 
-const connectionString = process.env.DATABASE_URL
+const connectionString = databaseUrl()
 if (!connectionString) {
   console.error('DATABASE_URL nu este setat')
   process.exit(1)

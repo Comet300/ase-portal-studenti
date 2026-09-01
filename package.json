@@ -4,16 +4,18 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "start": "node scripts/start.mjs",
     "dev": "astro dev",
+    "serve": "node ./dist/server/entry.mjs",
     "build": "astro check && astro build",
+    "build:only": "astro build",
     "preview": "astro preview",
-    "start": "node ./dist/server/entry.mjs",
     "check": "astro check",
     "test": "node --experimental-strip-types --test test/*.test.ts",
+    "verify": "npm run check && npm test",
     "db:migrate": "node scripts/migrate.mjs",
     "db:seed": "node scripts/seed.mjs",
-    "build:only": "astro build",
-    "verify": "npm run check && npm test"
+    "db:reset": "docker compose down -v && npm start"
   },
   "dependencies": {
     "@astrojs/node": "^9.4.4",

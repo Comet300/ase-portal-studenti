@@ -5,6 +5,75 @@ Facultatea de Marketing, Academia de Studii Economice din București.
 Aplicație server-rendered (Astro + adaptorul Node) cu PostgreSQL. Interfața este
 în limba română; codul, schema și identificatorii sunt în engleză.
 
+## Pornire
+
+Ai nevoie de două lucruri instalate, o singură dată:
+
+| | Ce este | De unde |
+|---|---|---|
+| **Node.js 22+** | rulează portalul | <https://nodejs.org> — ia versiunea „LTS” |
+| **Docker Desktop** | ține baza de date | <https://www.docker.com/products/docker-desktop/> |
+
+Docker trebuie să fie **pornit** (pe macOS și Windows: deschizi aplicația și
+aștepți să scrie „Running”). Apoi, în terminal:
+
+```bash
+git clone https://github.com/Comet300/ase-portal-studenti.git
+cd ase-portal-studenti
+npm install
+npm start
+```
+
+Atât. `npm start` pornește baza de date, creează tabelele, pune înăuntru o
+sesiune demonstrativă completă — studenți, cadre didactice, cereri, teme,
+consultații — și deschide portalul la **<http://localhost:3000>**.
+
+Nu ai nevoie de niciun fișier de configurare: fără `.env`, portalul folosește
+valorile din [`src/lib/defaults.mjs`](src/lib/defaults.mjs).
+
+### Cum intri
+
+Portalul nu are parole: te autentifici cu un link primit pe email. Local nu
+pleacă niciun email, așa că pagina de intrare are **patru conturi
+demonstrative**, câte unul pentru fiecare rol — un clic și ești înăuntru:
+
+| Cont | Ce vezi |
+|---|---|
+| Ana-Maria Lupu | student fără coordonator: catalogul, cererea de depus |
+| Dan Marinescu | student cu lucrarea în lucru: termene, consultații, fișierul predat |
+| Prof. univ. dr. Mihaela Ionescu | cadru didactic: cereri, studenți coordonați, teme, consultații |
+| Prof. univ. dr. Daniela Constantin | director de departament: tot, plus registrul facultății |
+
+Emailurile pe care le-ar trimite portalul (linkuri de acces, notificări) se
+scriu ca fișiere `.eml` în `outbox/` și se deschid cu dublu clic.
+
+### Dacă ceva nu merge
+
+| Mesaj | Ce înseamnă |
+|---|---|
+| „Docker nu este instalat” | instalează-l de la linkul de mai sus |
+| „Docker este instalat, dar nu rulează” | deschide Docker Desktop și așteaptă să pornească |
+| „Baza de date nu a putut porni” | portul 55432 e ocupat: `docker ps` arată de cine |
+
+Ca să o iei de la zero, cu tot cu date: `npm run db:reset`.
+
+Ai deja un PostgreSQL al tău și nu vrei Docker? Spune-i portalului unde e, iar
+containerul nu se mai pornește:
+
+```bash
+DATABASE_URL=postgres://user:parola@localhost:5432/numebaza npm start
+```
+
+### Celelalte comenzi
+
+| Comandă | Ce face |
+|---|---|
+| `npm start` | tot ce e mai sus: bază de date, migrări, date demonstrative, server |
+| `npm run dev` | doar serverul, dacă baza de date rulează deja |
+| `npm run verify` | verificarea de tipuri și cele 213 teste |
+| `npm run build` | construiește versiunea de producție |
+| `npm run db:reset` | șterge baza de date și o reface de la zero |
+
 ## Roluri
 
 | Rol | Ce vede |
@@ -89,34 +158,31 @@ butoanele demonstrative de pe ea sunt un clic până în orice ecran — de acee
 
 ## Configurare
 
-| Variabilă | Rol |
-|---|---|
-| `DATABASE_URL` | conexiunea PostgreSQL (obligatorie) |
-| `APP_BASE_URL` | originea publică; validează și antetul `Origin` la POST |
-| `RESEND_API_KEY` | expediere email |
-| `MAIL_FROM` | expeditorul afișat |
-| `MAIL_REDIRECT_TO` | redirecționează **tot** mailul către o singură adresă (date demo) |
-| `UPLOADS_DIR` | directorul atașamentelor; în container, un volum montat |
-| `DEMO_MODE` | `true` activează intrarea fără email |
+Local nu trebuie setat nimic — valorile implicite din
+[`src/lib/defaults.mjs`](src/lib/defaults.mjs) acoperă tot. În producție,
+`DATABASE_URL` este obligatorie: fără ea pornirea se oprește, în loc să cadă pe
+o valoare implicită care ar căuta o bază de date pe laptopul cuiva.
+
+| Variabilă | Rol | Implicit local |
+|---|---|---|
+| `DATABASE_URL` | conexiunea PostgreSQL | baza din `compose.yml`, pe portul 55432 |
+| `APP_BASE_URL` | originea publică; validează și antetul `Origin` la POST | originea cererii |
+| `DEMO_MODE` | `true` activează intrarea fără email | `true` (în producție: `false`) |
+| `MAIL_TRANSPORT` | `disk` scrie `.eml` în `outbox/`, `resend` trimite | `disk` |
+| `RESEND_API_KEY` | expediere email | — |
+| `MAIL_FROM` | expeditorul afișat | — |
+| `MAIL_REDIRECT_TO` | redirecționează **tot** mailul către o singură adresă (date demo) | — |
+| `UPLOADS_DIR` | directorul atașamentelor; în container, un volum montat | `uploads/` |
 
 Nimic nu este necesar la build: imaginea nu primește build args și nu conține
 secrete.
 
-## Rulare locală
-
-```bash
-npm install
-export DATABASE_URL=postgres://user:parola@localhost:5432/portal
-npm run db:migrate     # aplică migrations/*.sql
-npm run db:seed        # date demonstrative, idempotent
-npm run dev
-```
-
 ## Structură
 
 ```
+compose.yml        PostgreSQL pentru o copie locală
 migrations/        SQL aplicat în ordinea numelor de fișier
-scripts/           migrate.mjs, seed.mjs
+scripts/           start.mjs (o comandă, de la clonă la portal), migrate, seed
 src/lib/           db, auth, ids, repo (interogări), years, lifecycle, chat,
                    mail, doc, ics, files, sheet (csv + xlsx), zip, http
 src/layouts/       BaseLayout + chrome pentru student și cadru didactic
