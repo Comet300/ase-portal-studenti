@@ -1,3 +1,4 @@
+import { demoMode } from './defaults.mjs'
 import { createHash, randomBytes } from 'node:crypto'
 import { execute, query, queryOne } from './db'
 
@@ -37,8 +38,10 @@ export const SESSION_COOKIE = 'portal_session'
 const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000
 const LINK_TTL_MS = 20 * 60 * 1000
 
-/** Demo mode allows sign-in without email. It is a real authentication bypass. */
-export const DEMO_MODE = process.env.DEMO_MODE === 'true'
+/** Demo mode allows sign-in without email. It is a real authentication bypass.
+ *  On by default outside production, off unless asked for in it — see
+ *  `lib/defaults.mjs` for why. */
+export const DEMO_MODE = demoMode()
 
 /* Now that nothing opens without a session, the sign-in page is the entire
  * public surface — and the demo buttons on it are one click into every screen.

@@ -40,6 +40,10 @@ COPY --from=build --chown=node:node /app/dist ./dist
 COPY --chown=node:node package.json ./
 COPY --chown=node:node migrations ./migrations
 COPY --chown=node:node scripts ./scripts
+# `scripts/migrate.mjs` citește valorile implicite de acolo — în producție ele
+# nu se aplică (fără `DATABASE_URL` boot-ul se oprește), dar importul trebuie să
+# existe, altfel containerul cade la prima linie.
+COPY --chown=node:node src/lib/defaults.mjs ./src/lib/defaults.mjs
 
 # Created in the image so a named volume mounted here inherits this ownership;
 # otherwise the mount arrives root-owned and the unprivileged process cannot write.
