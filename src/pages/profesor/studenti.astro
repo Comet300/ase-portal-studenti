@@ -24,12 +24,14 @@ import {
   requestMilestones,
   studentDirectory,
   teacherMilestones,
+  teacherCapacity,
   teacherSeats,
   supervisedStudents,
   teacherTitleChanges,
   teacherTopics,
 } from '../../lib/repo'
 import type { Milestone } from '../../lib/repo'
+import { atLevel, freeFor } from '../../lib/seats'
 import { numar, officialName } from '../../lib/text'
 import {
   CHANGE_STATUS_CLASS,
@@ -45,17 +47,34 @@ const requestedSection = Astro.url.searchParams.get('sectiune') ?? ''
 const sectiune = (SECTIONS as readonly string[]).includes(requestedSection) ? requestedSection : 'cereri'
 const openStudentId = Astro.url.searchParams.get('student')
 
-const [allRequests, studenti, teme, seats, invitatii, studentDirectoryRows, years, titleChanges] =
+const [allRequests, studenti, teme, seats, capacitate, invitatii, studentDirectoryRows, years, titleChanges] =
   await Promise.all([
     teacherRequests(u.id),
     supervisedStudents(u.id),
     teacherTopics(u.id),
     teacherSeats(u.id),
+    teacherCapacity(u.id),
     teacherInvitations(u.id),
     studentDirectory(),
     allYears(),
     teacherTitleChanges(u.id),
   ])
+
+/* Whether THIS student can be taken, not whether the coordinator has a seat.
+ *
+ * The button was disabled on `seats.free`, which is the free seats at both
+ * levels and every programme added together. An extra seat is reserved to one
+ * programme, so a coordinator holding three seats for Marketing online saw the
+ * button enabled on a Marketing request, wrote the message, and only then was
+ * refused by the server — which is exactly the order the comment on that button
+ * says it exists to avoid. Same rule as `/api/cereri/decizie`: the programme
+ * pinned on the request, or the student's own if it has not been pinned yet. */
+const locuriPentru = (c: { programme_id: string | null; student_programme_id: string | null; program: string | null }) =>
+  freeFor(atLevel(capacitate, c.program === 'master' ? 'master' : 'bachelor'), c.programme_id ?? c.student_programme_id)
+
+/* Where a coordinator asks for more. It used to point at „Arhivă & Profil”,
+ * where the form stood before it moved next to the capacity it argues about. */
+const CERE_LOCURI = '/profesor#locuri'
 
 /* The handed-in paper of each supervised student, newest version per thesis.
  *
@@ -82,6 +101,8 @@ const openChanges = titleChanges.filter((c) => c.status === 'pending')
 const decidedChanges = titleChanges.filter((c) => c.status !== 'pending')
 
 const pendingRequests = allRequests.filter((c) => c.status === 'pending')
+/** The pending requests this coordinator has no seat for, at their programme. */
+const blocate = pendingRequests.filter((c) => locuriPentru(c) === 0)
 const decidedRequests = allRequests.filter((c) => c.status !== 'pending')
 
 // Only students who do not have a coordinator yet can receive a proposal; the
@@ -210,11 +231,20 @@ function deadline(expiresAt: string | null | undefined) {
             </span>
           </div>
 
-          {seats.free === 0 && pendingRequests.length > 0 && (
+          {/* „Plin” este acum o însușire a perechii (coordonator, program):
+              propoziția spune pentru câte dintre cererile de față nu mai sunt
+              locuri, nu un singur adevăr despre toate. */}
+          {blocate.length > 0 && (
             <p class="fara-locuri">
-              <strong>Toate locurile sunt ocupate</strong> ({seats.total_taken}/{seats.total_seats}).
-              Nu poți accepta o cerere nouă până nu primești locuri suplimentare.
-              <a class="link" href="/profesor/arhiva#locuri">Cere locuri directorului</a>
+              <strong>
+                {blocate.length === pendingRequests.length
+                  ? 'Nu mai ai locuri pentru niciuna dintre cererile de mai jos'
+                  : `Nu mai ai locuri pentru ${numar(blocate.length, 'una dintre cererile de mai jos', 'dintre cererile de mai jos')}`}
+              </strong>{' '}
+              ({seats.total_taken}/{seats.total_seats} ocupate). Locurile se numără separat pe nivel
+              și pe program de studiu, așa că nu poți accepta{' '}
+              {[...new Set(blocate.map((c) => c.specialization).filter(Boolean))].join(', ')}.
+              <a class="link" href={CERE_LOCURI}>Cere-i directorului locuri pentru aceste programe</a>
             </p>
           )}
 
@@ -262,17 +292,19 @@ function deadline(expiresAt: string | null | undefined) {
                     <div class="cerere__actiuni">
                       {/* With no free seats the server refuses the acceptance —
                           but only after the coordinator has written the message.
-                          The refusal moves ahead of the work, not after it. */}
+                          The refusal moves ahead of the work, not after it. And
+                          it is asked about THIS student's programme, because a
+                          seat reserved for another one is not a seat here. */}
                       <button
                         class="btn btn--primary btn--sm"
                         type="button"
                         data-decizie="approved"
                         data-cerere={c.id}
                         data-nume={c.student_name}
-                        disabled={seats.free === 0}
+                        disabled={locuriPentru(c) === 0}
                         title={
-                          seats.free === 0
-                            ? `Toate cele ${seats.total_seats} locuri sunt ocupate. Cere locuri suplimentare directorului.`
+                          locuriPentru(c) === 0
+                            ? `Nu mai ai locuri pentru ${c.specialization ?? 'programul acestui student'}. Cere-i directorului locuri pentru acest program.`
                             : undefined
                         }
                       >
@@ -993,10 +1025,11 @@ function deadline(expiresAt: string | null | undefined) {
             <div class="empty">
               <p class="empty__title">Nu mai ai locuri libere</p>
               <p class="empty__text">
-                Nu poți invita un student cât timp toate locurile sunt ocupate. Cere locuri
-                suplimentare directorului de departament din pagina Arhivă & Profil.
+                Nu poți invita un student cât timp toate locurile sunt ocupate. Cere-i locuri
+                suplimentare directorului de departament, pentru programul studentului pe care
+                vrei să-l inviți.
               </p>
-              <a class="btn btn--secondary btn--sm" href="/profesor/arhiva">Cere locuri</a>
+              <a class="btn btn--secondary btn--sm" href={CERE_LOCURI}>Cere locuri</a>
             </div>
           ) : (
             <form method="POST" action="/api/invitatii" class="panel__body stack">

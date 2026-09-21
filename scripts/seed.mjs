@@ -87,6 +87,14 @@ const PROGRAMMES = [
 const programmeKey = (p) =>
   `${p.level}|${p.form_of_study}|${p.specialisation}|${p.language}|${p.location}`
 
+/* The centres come first, because since migration 0025 a programme cannot name
+ * one that does not exist. Taken from `PROGRAMMES` rather than written out
+ * again: a centre spelled one character differently here is a foreign-key
+ * failure inside a seed script nobody reads the output of. */
+for (const name of new Set(PROGRAMMES.map((p) => p.location))) {
+  await q(`INSERT INTO teaching_locations (name) VALUES ($1) ON CONFLICT DO NOTHING`, [name])
+}
+
 const programmeIds = new Map()
 for (const p of PROGRAMMES) {
   const row = await one(

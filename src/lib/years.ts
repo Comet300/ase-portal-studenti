@@ -244,6 +244,35 @@ export function programmes(yearId: string): Promise<Programme[]> {
   )
 }
 
+/* --- teaching centres -------------------------------------------------------- */
+
+/**
+ * The centres the faculty teaches at.
+ *
+ * Global and not scoped to a year on purpose — see migration 0025: a building
+ * exists whether or not this year's programmes use it, and `openYear` above
+ * copies `location` forward verbatim, so a year-scoped table would make the
+ * rollover depend on rows it does not create.
+ *
+ * `programmes` counts how many name each one, because that is the number that
+ * decides whether a centre can be removed: the foreign key refuses a delete
+ * while it is above zero, and a button that looks pressable and is not is worse
+ * than one that says why.
+ */
+export interface TeachingLocation {
+  name: string
+  programmes: number
+}
+
+export function teachingLocations(): Promise<TeachingLocation[]> {
+  return query<TeachingLocation>(
+    `SELECT l.name,
+            (SELECT count(*)::int FROM study_programmes p WHERE p.location = l.name) AS programmes
+       FROM teaching_locations l
+      ORDER BY l.name`,
+  )
+}
+
 /* --- user-facing Romanian labels -------------------------------------------- */
 
 /* The words themselves live in `programmes.mjs`, which the browser and the seed

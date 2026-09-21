@@ -1,3 +1,5 @@
+import { normalizeRomanian } from './romanian.mjs'
+
 /**
  * The reader for the registrar's file: .xlsx and delimited text, into cells.
  *
@@ -76,23 +78,13 @@ export interface TabularDocument {
 
 /* --- the text and its alphabet ---------------------------------------------- */
 
-/**
- * The Romanian letters written the one way the portal writes them.
- *
- * `ş` U+015F and `ţ` U+0163 carry a cedilla and belong to Turkish; Romanian
- * uses the comma-below `ș` U+0219 and `ț` U+021B. Windows-1250 has only the
- * cedilla pair, so every file saved out of Excel on a Romanian machine arrives
- * in the wrong alphabet. Two alphabets inside one register is the kind of wrong
- * nobody notices until a name is searched for and does not come back.
+/* The Romanian letters, written the one way the portal writes them. The fold
+ * itself lives in `romanian.mjs` and is re-exported here: `programmes.mjs`
+ * needs the same one for a teaching centre and cannot import TypeScript,
+ * because `scripts/seed.mjs` runs it on bare Node. Re-exported rather than
+ * moved outright, so every caller that reads it from this module is untouched.
  */
-export function normalizeRomanian(text: string): string {
-  return text
-    .replace(/ş/g, 'ș')
-    .replace(/Ş/g, 'Ș')
-    .replace(/ţ/g, 'ț')
-    .replace(/Ţ/g, 'Ț')
-    .replace(/ /g, ' ')
-}
+export { normalizeRomanian }
 
 /** Trimmed, in one alphabet, on a single line — a cell, as the reader wants it. */
 function cleanCell(raw: string): string {

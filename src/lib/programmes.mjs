@@ -26,6 +26,8 @@
  * wizard in the browser, and the tests.
  */
 
+import { normalizeRomanian } from './romanian.mjs'
+
 /** @typedef {'bachelor' | 'master'} ProgrammeLevel */
 
 /**
@@ -91,6 +93,56 @@ export const FORM_WORDS = {
 export const MAIN_LOCATION = 'București'
 
 /**
+ * A teaching centre, written the one way the portal writes it.
+ *
+ * WHY THIS EXISTS AT ALL. `location` is part of what identifies a programme —
+ * the unique index of migration 0024 has it — so „Buzău ”, „Buzău” and „Buzǎu”
+ * with a cedilla are three programmes as far as the database is concerned, each
+ * with its own seats, its own catalogue entry and its own line in every report,
+ * for one group of students. Migration 0025 answers the main half of that by
+ * making `location` a foreign key into `teaching_locations`, so a centre has to
+ * exist before a programme can name it; this function is the other half — the
+ * door into `teaching_locations` itself, which would otherwise accumulate the
+ * same near-duplicates one level down.
+ *
+ * Three operations and no fourth. Trim and collapse, because a trailing space
+ * is invisible on the screen the director types into. The cedilla fold, because
+ * a Romanian keyboard layout and a Windows-1250 paste disagree about which
+ * `ș` this is. Case is deliberately NOT touched: „București” and „BUCUREȘTI”
+ * are the same centre to a person, but title-casing „Râmnicu Vâlcea” correctly
+ * is a guess, and the portal has the better answer — the screen offers the
+ * centres that exist and only asks for a name when there is a new one, and that
+ * one is checked against the list case-insensitively before it is created.
+ *
+ * @param {unknown} raw
+ * @returns {string}
+ */
+export function normalizeLocation(raw) {
+  return normalizeRomanian(String(raw ?? ''))
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+/** The language a title leaves unwritten, for the same reason as the centre. */
+export const MAIN_LANGUAGE = 'ro'
+
+/**
+ * The part of the title that is the same in every language.
+ *
+ * Split out because `programmeLabel` writes the language itself, in a fixed
+ * position at the end, and would otherwise write it twice for an English
+ * programme.
+ *
+ * @param {ProgrammeDimensions} p
+ * @returns {string}
+ */
+function programmeStem(p) {
+  const parts = [p.specialisation, FORM_WORDS[p.form_of_study] ?? p.form_of_study]
+  if (p.location && p.location !== MAIN_LOCATION) parts.push(p.location)
+  return parts.join(' · ')
+}
+
+/**
  * What a programme is called, inside its level.
  *
  * Specialisation first, because it is what a person is enrolled in and what a
@@ -119,24 +171,6 @@ export const MAIN_LOCATION = 'București'
  * @param {ProgrammeDimensions} p
  * @returns {string} „Marketing · învățământ la distanță · Buzău”, „Marketing · învățământ cu frecvență · Engleză”
  */
-export const MAIN_LANGUAGE = 'ro'
-
-/**
- * The part of the title that is the same in every language.
- *
- * Split out because `programmeLabel` writes the language itself, in a fixed
- * position at the end, and would otherwise write it twice for an English
- * programme.
- *
- * @param {ProgrammeDimensions} p
- * @returns {string}
- */
-function programmeStem(p) {
-  const parts = [p.specialisation, FORM_WORDS[p.form_of_study] ?? p.form_of_study]
-  if (p.location && p.location !== MAIN_LOCATION) parts.push(p.location)
-  return parts.join(' · ')
-}
-
 export function programmeTitle(p) {
   const stem = programmeStem(p)
   const language = p.language ?? MAIN_LANGUAGE

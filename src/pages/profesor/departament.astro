@@ -5,9 +5,19 @@ import ProfesorLayout from '../../layouts/ProfesorLayout.astro'
 import Taburi from '../../components/Taburi.astro'
 import { query, queryOne } from '../../lib/db'
 import { seatRequests } from '../../lib/lifecycle'
-import { STATUS_CLASS, STATUS_LABELS, formatDate, programLabel, timeAgo } from '../../lib/repo'
+import {
+  STATUS_CLASS,
+  STATUS_LABELS,
+  formatDate,
+  programLabel,
+  seatGrants,
+  seatProgrammes,
+  teacherCapacities,
+  timeAgo,
+} from '../../lib/repo'
+import { EXTRA_SEATS_MAX_PER_LEVEL, GRANT_MAX, GRANT_MIN } from '../../lib/seats'
 import { numar, officialName } from '../../lib/text'
-import { LEVEL_LABELS, currentYear } from '../../lib/years'
+import { LANGUAGE_LABELS, LEVEL_LABELS, currentYear } from '../../lib/years'
 
 /**
  * Department-wide view for the head of department.
@@ -21,7 +31,7 @@ import { LEVEL_LABELS, currentYear } from '../../lib/years'
 /* An unknown `?sectiune` left the page with the tab bar, the header and zero
  * content: both guards were false and nothing took over. Any unrecognised
  * value falls back to the default section. */
-const SECTIONS = ['situatie', 'cadre'] as const
+const SECTIONS = ['situatie', 'locuri', 'cadre'] as const
 const requestedSection = Astro.url.searchParams.get('sectiune') ?? ''
 const sectiune = (SECTIONS as readonly string[]).includes(requestedSection) ? requestedSection : 'situatie'
 
@@ -112,43 +122,55 @@ const load = await query<{
   id: string
   name: string
   avatar_path: string | null
-  bachelor_seats: number
-  master_seats: number
-  bachelor_taken: number
-  master_taken: number
   pending: number
   free_topics: number
 }>(
   `SELECT t.id, t.name, t.avatar_path,
-          COALESCE(a.bachelor_seats, 0) AS bachelor_seats,
-          COALESCE(a.master_seats, 0)   AS master_seats,
-          (SELECT count(*)::int FROM requests r JOIN users s ON s.id = r.student_id
-            WHERE r.teacher_id = t.id AND r.status = 'approved'
-              AND r.academic_year_id = $1 AND s.program = 'bachelor') AS bachelor_taken,
-          (SELECT count(*)::int FROM requests r JOIN users s ON s.id = r.student_id
-            WHERE r.teacher_id = t.id AND r.status = 'approved'
-              AND r.academic_year_id = $1 AND s.program = 'master')   AS master_taken,
           (SELECT count(*)::int FROM requests r WHERE r.teacher_id = t.id
             AND r.status = 'pending' AND r.academic_year_id = $1)     AS pending,
           (SELECT count(*)::int FROM topics tp WHERE tp.teacher_id = t.id AND tp.is_active
              AND tp.academic_year_id = $1
              AND NOT EXISTS (SELECT 1 FROM requests r2 WHERE r2.topic_id = tp.id AND r2.status = 'approved')) AS free_topics
      FROM users t
-     LEFT JOIN seat_allocations a ON a.teacher_id = t.id AND a.academic_year_id = $1
     WHERE t.role IN ('teacher', 'head')
     ORDER BY t.name`,
   [year?.id],
 )
 
+/* The seat numbers come from `teacherCapacities`, not from `seat_allocations`.
+ *
+ * This screen read `a.bachelor_seats` — the fused base+extras column migration
+ * 0019 froze and nothing has written since. So the director's own table showed
+ * whatever the number happened to be the day of that migration: every base set
+ * here afterwards landed in `bachelor_base` and was never read back, and the
+ * „Alocă locuri” form opened pre-filled with the stale value it was about to
+ * overwrite. One function answers capacity for the whole portal now, and it is
+ * the same one the three gates ask. */
+const capacities = await teacherCapacities()
 const seatRequestRows = await seatRequests()
 const pendingSeatRequests = seatRequestRows.filter((r) => r.status === 'pending')
+const grantRows = await seatGrants()
+const liveGrants = grantRows.filter((g) => !g.revoked_at)
+/* A live grant that names no programme is a seat nobody can spend: `freeFor`
+ * matches a student's programme against the pot's, and NULL matches no student
+ * who exists. Migration 0026 makes one impossible; this keeps them visible for
+ * a database that predates it, rather than leaving the director looking at
+ * seats the ledger counts and no coordinator can use. */
+const deadGrants = liveGrants.filter((g) => !g.programme_id)
+const programmeChoices = await seatProgrammes()
+const activeProgrammes = programmeChoices.filter((p) => p.is_active)
 
 const unassigned = (totals?.students ?? 0) - (totals?.with_request ?? 0)
-const withSeats = load.map((t) => ({
-  ...t,
-  seats: t.bachelor_seats + t.master_seats,
-  taken: t.bachelor_taken + t.master_taken,
-}))
+const withSeats = load.map((t) => {
+  const cap = capacities.get(t.id)!
+  return {
+    ...t,
+    bachelor: cap.bachelor,
+    master: cap.master,
+    seats: cap.bachelor.total + cap.master.total,
+    taken: cap.bachelor.taken + cap.master.taken,
+  }
+})
 const overloaded = withSeats.filter((t) => t.seats > 0 && t.taken > t.seats)
 const fullyBooked = withSeats.filter((t) => t.seats > 0 && t.taken >= t.seats)
 const withoutSeats = withSeats.filter((t) => t.seats === 0)
@@ -197,8 +219,16 @@ const ROLE_TEXT: Record<string, string> = {
   head: 'Director de departament',
 }
 
+/** How a programme is named in a picker: its title, plus the language. */
+const programmeOption = (p: { name: string; language: string }) =>
+  `${p.name} · ${LANGUAGE_LABELS[p.language] ?? p.language}`
+
 const sections = [
-  { key: 'situatie', text: 'Situația sesiunii', count: pendingSeatRequests.length },
+  { key: 'situatie', text: 'Situația sesiunii', count: null },
+  /* The count moved here with the panels it counts: it is the number of
+     coordinators waiting on a decision from this screen, and it sat on a tab
+     about coverage. */
+  { key: 'locuri', text: 'Locuri', count: pendingSeatRequests.length + deadGrants.length },
   { key: 'cadre', text: 'Cadre didactice', count: null },
 ]
 ---
@@ -279,105 +309,6 @@ const sections = [
             <a href="/profesor/departament?sectiune=locuri">Alocă locuri</a>
           </p>
         )}
-
-        <section class="panel">
-          <div class="panel__header">
-            <h2 class="section-title">Încărcare pe coordonatori</h2>
-            <span class="muted text-sm">
-              {fullyBooked.length} din {load.length} au locurile ocupate
-            </span>
-          </div>
-          <div class="table-wrap" tabindex="0" role="region" aria-label="Locurile alocate pe cadru didactic">
-            <table class="table">
-              <thead>
-                <tr>
-                  <th scope="col">Coordonator</th>
-                  <th scope="col">Licență</th>
-                  <th scope="col">Master</th>
-                  <th scope="col">Total</th>
-                  <th scope="col">În așteptare</th>
-                  <th scope="col">Teme nepreluate</th>
-                  <th scope="col"><span class="visually-hidden">Alocare</span></th>
-                </tr>
-              </thead>
-              <tbody>
-                {withSeats.map((t) => (
-                  <>
-                  <tr id={`coordonator-${t.id}`}>
-                    <td>
-                      <div class="row" style="gap:var(--s-3)">
-                        <Avatar name={t.name} src={t.avatar_path} size="xs" href={`/profil/${t.id}`} />
-                        {t.name}
-                      </div>
-                    </td>
-                    <td class="numeric">{t.bachelor_taken} / {t.bachelor_seats}</td>
-                    <td class="numeric">{t.master_taken} / {t.master_seats}</td>
-                    <td class="numeric">
-                      <span class:list={{ 'at-capacity': t.seats > 0 && t.taken === t.seats, 'over-capacity': t.seats > 0 && t.taken > t.seats }}>
-                        {t.taken} / {t.seats}
-                      </span>
-                    </td>
-                    <td class="numeric">
-                      {t.pending > 0 ? (
-                        <span class="badge badge--asteptare">{t.pending}</span>
-                      ) : (
-                        <span class="muted">—</span>
-                      )}
-                    </td>
-                    <td class="numeric muted">{t.free_topics}</td>
-                    <td style="text-align:right">
-                      <button
-                        class="btn btn--secondary btn--sm"
-                        type="button"
-                        data-editeaza={t.id}
-                        aria-expanded="false"
-                        aria-controls={`locuri-rand-${t.id}`}
-                      >
-                        Alocă locuri
-                      </button>
-                    </td>
-                  </tr>
-
-                  {/* Alocarea stă pe rândul coordonatorului, nu pe o filă
-                      separată: erau două tabele cu aceleași nume, unul care
-                      spunea câte locuri sunt ocupate și altul unde se scria
-                      câte sunt — și trebuia ținut minte de la unul la altul. */}
-                  <tr class="editor-rand" id={`locuri-rand-${t.id}`} hidden>
-                    <td colspan="7">
-                      <form method="POST" action="/api/locuri" class="alocare">
-                        <input type="hidden" name="actiune" value="aloca" />
-                        <input type="hidden" name="profesor_id" value={t.id} />
-                        <input type="hidden" name="redirect" value={`${currentPath}#coordonator-${t.id}`} />
-
-                        <div class="field">
-                          <label class="label" for={`lic-${t.id}`}>Locuri licență</label>
-                          <input class="input input--num" id={`lic-${t.id}`} name="locuri_licenta"
-                            type="number" min="0" max="40" value={t.bachelor_seats} />
-                          <span class="hint">{t.bachelor_taken} ocupate acum</span>
-                        </div>
-
-                        <div class="field">
-                          <label class="label" for={`mas-${t.id}`}>Locuri master</label>
-                          <input class="input input--num" id={`mas-${t.id}`} name="locuri_master"
-                            type="number" min="0" max="40" value={t.master_seats} />
-                          <span class="hint">{t.master_taken} ocupate acum</span>
-                        </div>
-
-                        <p class="hint alocare__nota">
-                          Locurile se resetează la fiecare an universitar. Un coordonator cu toate
-                          locurile ocupate rămâne în catalog, estompat, cu studenții lui vizibili.
-                        </p>
-
-                        <button class="btn btn--primary btn--sm" type="submit">Salvează</button>
-                      </form>
-                    </td>
-                  </tr>
-                  </>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </section>
 
         <section class="panel">
           <div class="panel__header">
@@ -481,6 +412,206 @@ const sections = [
             </div>
           )}
         </section>
+      </div>
+    )
+  }
+
+  {/* ------------------------------------------------------------- seats */}
+  {
+    sectiune === 'locuri' && (
+      <div class="stack stack--loose">
+        {/* Un loc acordat fără program nu poate fi ocupat de nimeni: `freeFor`
+            compară programul studentului cu cel al rezervei, iar NULL nu se
+            potrivește cu niciun student. Migrarea 0026 face imposibilă o
+            asemenea acordare; rândurile de dinaintea ei se arată aici, ca
+            directorul să le retragă și să le dea din nou pe un program, nu să
+            le lase să umfle un total pe care nimeni nu îl poate cheltui. */}
+        {deadGrants.length > 0 && (
+          <p class="alert">
+            <strong>Locuri acordate fără program de studiu:</strong>{' '}
+            {deadGrants.map((g) => `${g.teacher_name} (${g.seats})`).join(' · ')}. Un loc
+            suplimentar se rezervă unui singur program, deci acestea nu pot fi ocupate de niciun
+            student. Retrage-le din jurnalul de mai jos și acordă-le din nou, alegând programul.
+          </p>
+        )}
+
+        <section class="panel">
+          <div class="panel__header">
+            <h2 class="section-title">Încărcare pe coordonatori</h2>
+            <span class="muted text-sm">
+              {fullyBooked.length} din {load.length} au locurile ocupate
+            </span>
+          </div>
+          <div class="table-wrap" tabindex="0" role="region" aria-label="Locurile alocate pe cadru didactic">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th scope="col">Coordonator</th>
+                  <th scope="col">Licență</th>
+                  <th scope="col">Master</th>
+                  <th scope="col">Total</th>
+                  <th scope="col">Rezervate</th>
+                  <th scope="col">În așteptare</th>
+                  <th scope="col"><span class="visually-hidden">Alocare</span></th>
+                </tr>
+              </thead>
+              <tbody>
+                {withSeats.map((t) => (
+                  <>
+                  <tr id={`coordonator-${t.id}`}>
+                    <td>
+                      <div class="row" style="gap:var(--s-3)">
+                        <Avatar name={t.name} src={t.avatar_path} size="xs" href={`/profil/${t.id}`} />
+                        {t.name}
+                      </div>
+                    </td>
+                    <td class="numeric">{t.bachelor.taken} / {t.bachelor.total}</td>
+                    <td class="numeric">{t.master.taken} / {t.master.total}</td>
+                    <td class="numeric">
+                      <span class:list={{ 'at-capacity': t.seats > 0 && t.taken === t.seats, 'over-capacity': t.seats > 0 && t.taken > t.seats }}>
+                        {t.taken} / {t.seats}
+                      </span>
+                    </td>
+                    {/* „x din y” ascundea exact lucrul pe care îl decide acest
+                        ecran: câte din locurile libere sunt rezervate unui
+                        program anume și deci nu pot fi ocupate de oricine. */}
+                    <td class="numeric muted">
+                      {t.bachelor.granted + t.master.granted > 0
+                        ? t.bachelor.granted + t.master.granted
+                        : '—'}
+                    </td>
+                    <td class="numeric">
+                      {t.pending > 0 ? (
+                        <span class="badge badge--asteptare">{t.pending}</span>
+                      ) : (
+                        <span class="muted">—</span>
+                      )}
+                    </td>
+                    <td style="text-align:right">
+                      <button
+                        class="btn btn--secondary btn--sm"
+                        type="button"
+                        data-editeaza={t.id}
+                        aria-expanded="false"
+                        aria-controls={`locuri-rand-${t.id}`}
+                      >
+                        Alocă locuri
+                      </button>
+                    </td>
+                  </tr>
+
+                  {/* Alocarea stă pe rândul coordonatorului, nu pe o filă
+                      separată: erau două tabele cu aceleași nume, unul care
+                      spunea câte locuri sunt ocupate și altul unde se scria
+                      câte sunt — și trebuia ținut minte de la unul la altul. */}
+                  <tr class="editor-rand" id={`locuri-rand-${t.id}`} hidden>
+                    <td colspan="7">
+                      <div class="locuri-editor">
+                        <form method="POST" action="/api/locuri" class="alocare">
+                          <input type="hidden" name="actiune" value="aloca" />
+                          <input type="hidden" name="profesor_id" value={t.id} />
+
+                          <div class="field">
+                            <label class="label" for={`lic-${t.id}`}>Locuri de bază, licență</label>
+                            <input class="input input--num" id={`lic-${t.id}`} name="locuri_licenta"
+                              type="number" min="0" max="40" value={t.bachelor.base} />
+                            <span class="hint">
+                              {t.bachelor.taken} ocupate
+                              {t.bachelor.is_norm ? ' · acum pe norma anului' : ''}
+                            </span>
+                          </div>
+
+                          <div class="field">
+                            <label class="label" for={`mas-${t.id}`}>Locuri de bază, master</label>
+                            <input class="input input--num" id={`mas-${t.id}`} name="locuri_master"
+                              type="number" min="0" max="40" value={t.master.base} />
+                            <span class="hint">
+                              {t.master.taken} ocupate
+                              {t.master.is_norm ? ' · acum pe norma anului' : ''}
+                            </span>
+                          </div>
+
+                          <div class="field" style="flex:1;min-width:220px">
+                            <label class="label" for={`nota-baza-${t.id}`}>De ce (opțional)</label>
+                            <input class="input" id={`nota-baza-${t.id}`} name="nota"
+                              placeholder="Ex: preia grupa colegei plecate în concediu." />
+                            <span class="hint">
+                              Rămâne în jurnalul locurilor. Salvarea fixează numerele: coordonatorul
+                              iese de pe norma anului.
+                            </span>
+                          </div>
+
+                          <button class="btn btn--primary btn--sm" type="submit">
+                            Salvează locurile de bază
+                          </button>
+                        </form>
+
+                        {/* Locurile suplimentare nu aveau niciun formular: API-ul
+                            le știa acorda de la 0019, dar nu exista ecran de pe
+                            care să fie trimis `program_id`, deci directorul putea
+                            doar să răspundă unei cereri scrise. Baza este comună
+                            pe nivel, rezerva este a unui singur program — de aceea
+                            sunt două formulare și nu două câmpuri. */}
+                        <form method="POST" action="/api/locuri" class="alocare alocare--extra">
+                          <input type="hidden" name="actiune" value="acorda" />
+                          <input type="hidden" name="profesor_id" value={t.id} />
+
+                          <div class="field" style="flex:2;min-width:260px">
+                            <label class="label" for={`prog-${t.id}`}>
+                              Locuri suplimentare, pentru programul
+                            </label>
+                            <select class="select" id={`prog-${t.id}`} name="program_id" required>
+                              <option value="">Alege programul de studiu</option>
+                              {(['bachelor', 'master'] as const).map((level) =>
+                                activeProgrammes.filter((p) => p.level === level).length > 0 ? (
+                                  <optgroup label={LEVEL_LABELS[level]}>
+                                    {activeProgrammes
+                                      .filter((p) => p.level === level)
+                                      .map((p) => (
+                                        <option value={p.id}>{programmeOption(p)}</option>
+                                      ))}
+                                  </optgroup>
+                                ) : null,
+                              )}
+                            </select>
+                            <span class="hint">
+                              Nivelul vine de la program. Locurile rezervate aici pot fi ocupate
+                              numai de studenții acestui program.
+                            </span>
+                          </div>
+
+                          <div class="field">
+                            <label class="label" for={`extra-${t.id}`}>Câte</label>
+                            <input class="input input--num" id={`extra-${t.id}`} name="locuri"
+                              type="number" min={GRANT_MIN} max={GRANT_MAX} value="2" />
+                            <span class="hint">
+                              Cel mult {EXTRA_SEATS_MAX_PER_LEVEL} pe nivel, într-un an.
+                            </span>
+                          </div>
+
+                          <div class="field" style="flex:1;min-width:240px">
+                            <label class="label" for={`motiv-${t.id}`}>De ce</label>
+                            <input class="input" id={`motiv-${t.id}`} name="motiv" minlength="20"
+                              required placeholder="Ex: a preluat trei studenți de la colegul pensionat." />
+                            <span class="hint">
+                              Cel puțin 20 de caractere. Rămâne în jurnal și este singurul care
+                              explică decizia peste un an.
+                            </span>
+                          </div>
+
+                          <button class="btn btn--secondary btn--sm" type="submit">
+                            Rezervă locurile
+                          </button>
+                        </form>
+                      </div>
+                    </td>
+                  </tr>
+                  </>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
 
         <section class="panel">
           <div class="panel__header">
@@ -494,8 +625,9 @@ const sections = [
             <div class="empty">
               <p class="empty__title">Nicio cerere în așteptare</p>
               <p class="empty__text">
-                Când un coordonator rămâne fără locuri, îți poate cere altele de aici, cu o
-                motivare scrisă.
+                Când un coordonator rămâne fără locuri pentru un program, îți poate cere altele de
+                aici, cu o motivare scrisă. Le poți rezerva și fără să fii întrebat, din rândul
+                coordonatorului de mai sus.
               </p>
             </div>
           ) : (
@@ -508,10 +640,26 @@ const sections = [
                       cerută {timeAgo(r.created_at)}
                     </span>
                   </div>
+                  {/* Programul, nu doar nivelul. Un loc suplimentar este
+                      rezervat unui singur program, deci „3 locuri la master”
+                      nu spune pentru cine sunt — iar directorul aproba fără
+                      să afle. */}
                   <p class="text-sm">
-                    Solicită <strong>{r.extra_seats}</strong> locuri la{' '}
-                    {LEVEL_LABELS[r.level].toLowerCase()}.
+                    Solicită <strong>{r.extra_seats}</strong> locuri pentru{' '}
+                    {r.programme_name ? (
+                      <strong>{r.programme_name}</strong>
+                    ) : (
+                      <span class="fara-program">un program nenumit</span>
+                    )}{' '}
+                    ({LEVEL_LABELS[r.level].toLowerCase()}).
                   </p>
+                  {!r.programme_id && (
+                    <p class="hint" style="margin:0">
+                      Cererea este dinaintea evidenței pe programe și nu poate fi aprobată ca atare:
+                      locurile ar rămâne nefolosibile de oricine. Respinge-o și acordă locurile din
+                      rândul coordonatorului, alegând programul.
+                    </p>
+                  )}
                   <p class="motivare">{r.reason}</p>
 
                   <form method="POST" action="/api/locuri" class="stack stack--tight">
@@ -522,9 +670,11 @@ const sections = [
                       <input class="input" id={`nota-${r.id}`} name="nota" placeholder="Ex: aprobat până la finalul sesiunii curente." />
                     </div>
                     <div class="row" style="gap:var(--s-2)">
-                      <button class="btn btn--primary btn--sm" type="submit" name="decizie" value="approved">
-                        Alocă {r.extra_seats} locuri
-                      </button>
+                      {r.programme_id && (
+                        <button class="btn btn--primary btn--sm" type="submit" name="decizie" value="approved">
+                          Rezervă {r.extra_seats} locuri pentru {r.programme_name}
+                        </button>
+                      )}
                       <button class="btn btn--danger btn--sm" type="submit" name="decizie" value="rejected">
                         Respinge
                       </button>
@@ -536,17 +686,94 @@ const sections = [
           )}
         </section>
 
+        {/* Jurnalul acordărilor. Exista în `seatGrants` de la 0019 și nu îl
+            citea niciun ecran, deci locurile suplimentare se puteau da, dar nu
+            se puteau nici vedea, nici retrage — iar mesajul care spune „retrage
+            o acordare neocupată” trimitea într-un loc care nu exista. */}
+        <section class="panel">
+          <div class="panel__header">
+            <h2 class="section-title">Jurnalul locurilor suplimentare</h2>
+            <span class="muted text-sm">
+              {liveGrants.reduce((n, g) => n + g.seats, 0)} rezervate acum
+            </span>
+          </div>
+
+          {grantRows.length === 0 ? (
+            <div class="empty">
+              <p class="empty__title">Nicio acordare în acest an universitar</p>
+              <p class="empty__text">
+                Locurile suplimentare se rezervă pe un program anume, din rândul coordonatorului de
+                mai sus sau răspunzând unei cereri scrise.
+              </p>
+            </div>
+          ) : (
+            <ul class="seat-requests">
+              {grantRows.map((g) => (
+                <li class:list={{ 'is-retras': Boolean(g.revoked_at) }}>
+                  <div class="row row--between row--wrap" style="gap:var(--s-2)">
+                    <strong>{g.teacher_name}</strong>
+                    <span class="muted text-xs">
+                      {g.seat_request_id ? 'la cerere' : 'din inițiativa directorului'} ·{' '}
+                      {formatDate(g.granted_at)}
+                      {g.granted_by_name ? ` · ${g.granted_by_name}` : ''}
+                    </span>
+                  </div>
+                  <p class="text-sm">
+                    <strong>{g.seats}</strong>{' '}
+                    {g.programme_name ? (
+                      <>
+                        pentru {g.programme_name}
+                        {g.programme_language && g.programme_language !== 'ro'
+                          ? ` · ${LANGUAGE_LABELS[g.programme_language]}`
+                          : ''}
+                      </>
+                    ) : (
+                      <span class="fara-program">fără program de studiu — nimeni nu le poate ocupa</span>
+                    )}{' '}
+                    ({LEVEL_LABELS[g.level].toLowerCase()})
+                  </p>
+                  <p class="motivare">{g.reason}</p>
+
+                  {g.revoked_at ? (
+                    <p class="muted text-xs">
+                      Retrase {formatDate(g.revoked_at)}
+                      {g.revoked_by_name ? ` de ${g.revoked_by_name}` : ''}
+                      {g.revoke_reason ? ` — „${g.revoke_reason}”` : ''}
+                    </p>
+                  ) : (
+                    <form method="POST" action="/api/locuri" class="row row--wrap" style="gap:var(--s-2);align-items:flex-end">
+                      <input type="hidden" name="actiune" value="retrage" />
+                      <input type="hidden" name="acordare_id" value={g.id} />
+                      <div class="field" style="flex:1;min-width:240px">
+                        <label class="label" for={`retragere-${g.id}`}>De ce le retragi</label>
+                        <input class="input" id={`retragere-${g.id}`} name="motiv" minlength="10"
+                          required placeholder="Ex: promoția a ieșit mai mică decât se aștepta." />
+                        <span class="hint">
+                          Cel puțin 10 caractere. Cadrul didactic vede acest text. Locurile deja
+                          ocupate nu se pot retrage.
+                        </span>
+                      </div>
+                      <button class="btn btn--danger btn--sm" type="submit">Retrage locurile</button>
+                    </form>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+
         {seatRequestRows.filter((r) => r.status !== 'pending').length > 0 && (
           <section class="panel">
             <div class="panel__header">
               <h2 class="section-title">Decizii anterioare</h2>
             </div>
-            <div class="table-wrap" tabindex="0" role="region" aria-label="Situația pe programe de studiu">
+            <div class="table-wrap" tabindex="0" role="region" aria-label="Deciziile anterioare pe cereri de locuri">
               <table class="table">
                 <thead>
                   <tr>
                     <th scope="col">Coordonator</th>
                     <th scope="col">Cerea</th>
+                    <th scope="col">Pentru</th>
                     <th scope="col">Decizie</th>
                     <th scope="col">Data</th>
                     <th scope="col">Notă</th>
@@ -561,6 +788,7 @@ const sections = [
                         <td class="numeric">
                           {r.extra_seats} · {LEVEL_LABELS[r.level].toLowerCase()}
                         </td>
+                        <td class="muted cell-title">{r.programme_name ?? '—'}</td>
                         <td>
                           <span
                             class:list={[
@@ -583,6 +811,7 @@ const sections = [
       </div>
     )
   }
+
 
   {/* -------------------------------------------------------------- seats */}
 
@@ -770,18 +999,34 @@ const sections = [
   .alocare .field {
     min-width: 120px;
   }
-  .alocare__nota {
-    flex: 1;
-    min-width: 260px;
-    max-width: 62ch;
-    margin: 0;
+  /* Două decizii diferite, una sub alta: baza este comună pe nivel, rezerva
+     este a unui singur program. Puse pe același rând s-ar fi citit ca patru
+     câmpuri ale aceluiași formular, iar butonul greșit ar fi fost la fel de
+     ușor de apăsat ca cel bun. */
+  .locuri-editor {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-2);
   }
 
-  @media (max-width: 900px) {
-    .alocare__nota {
-      order: 3;
-      flex-basis: 100%;
-    }
+  .alocare--extra {
+    border-top: 1px solid var(--border);
+  }
+
+  /* O acordare retrasă rămâne în jurnal — asta este rostul lui — dar nu mai
+     cere atenția uneia în vigoare. */
+  .is-retras {
+    color: var(--ink-muted);
+  }
+  .is-retras strong {
+    font-weight: 500;
+  }
+
+  /* Culoarea nu poartă singură informația: propoziția de lângă spune că
+     locurile nu pot fi ocupate de nimeni. */
+  .fara-program {
+    color: var(--danger);
+    font-weight: 600;
   }
 
 /* A closed account stays legible — it is part of the register — but no longer

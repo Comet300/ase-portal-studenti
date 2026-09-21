@@ -85,6 +85,12 @@ export interface RequestRow {
   student_email: string
   student_number: string | null
   program: 'bachelor' | 'master' | null
+  /* The student's programme TODAY, which is what a pending request is charged
+   * against: `programme_id` above is pinned at approval and is null until then.
+   * Both are carried because the screens have to gate a pending request the way
+   * `/api/cereri/decizie` will — `COALESCE(request, student)` — and a screen
+   * that guessed differently would enable a button the server then refuses. */
+  student_programme_id: string | null
   specialization: string | null
   study_language: string
   study_group: string | null
@@ -111,6 +117,7 @@ const REQUEST_FIELDS = `
   r.submitted_at, r.decided_at, r.programme_id,
   s.id AS student_id, s.name AS student_name, s.email AS student_email,
   s.student_number, s.program, s.specialization, s.father_initial,
+  s.programme_id AS student_programme_id,
   s.study_language, s.study_group, s.study_series, s.study_year, s.avatar_path AS student_avatar,
   t.id AS teacher_id, t.name AS teacher_name, t.academic_title`
 

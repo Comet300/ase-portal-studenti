@@ -4,7 +4,8 @@ import ProfesorLayout from '../../layouts/ProfesorLayout.astro'
 import { query } from '../../lib/db'
 import { formatDate } from '../../lib/repo'
 import { FORM_WORDS, MAIN_LOCATION } from '../../lib/programmes.mjs'
-import { LANGUAGE_LABELS, LEVEL_LABELS, allYears, programmes } from '../../lib/years'
+import { LANGUAGE_LABELS, LEVEL_LABELS, allYears, programmes, teachingLocations } from '../../lib/years'
+import { numar } from '../../lib/text'
 
 /**
  * The academic year, and the catalogue of programmes inside it.
@@ -41,11 +42,14 @@ const byLevel = {
   master: programList.filter((p) => p.level === 'master'),
 }
 
-/* Centrele care există deja, pentru completarea din listă. Din programele
- * anului, nu dintr-o listă scrisă în cod: facultatea deschide și închide
- * centre fără ca portalul să afle, iar „Buzău” apare aici pentru că are un
- * program, nu pentru că l-a prevăzut cineva. */
-const centre = [...new Set([MAIN_LOCATION, ...programList.map((p) => p.location)])].sort()
+/* Centrele facultății, din tabelul lor, nu dintr-o listă scrisă în cod:
+ * facultatea deschide și închide centre fără ca portalul să afle. Până la
+ * migrarea 0025 lista se aduna din programele anului și se oferea ca
+ * `datalist` peste un câmp liber — adică o sugestie, nu o listă: o tastă pe
+ * lângă ea deschidea un centru nou, și odată cu el un al doilea program pentru
+ * aceeași cohortă. Acum centrul se alege, iar deschiderea unuia este propriul
+ * ei buton. */
+const centre = await teachingLocations()
 ---
 
 <ProfesorLayout
@@ -308,15 +312,19 @@ const centre = [...new Set([MAIN_LOCATION, ...programList.map((p) => p.location)
           </div>
           <div class="field" style="min-width:170px">
             <label class="label" for="locatie">Centrul</label>
-            {/* Listă cu scriere liberă: centrele sunt ale facultății și se
-                deschid fără ca portalul să afle, dar cele două existente nu
-                trebuie tastate — două scrieri ale aceluiași oraș ar fi două
-                programe diferite. */}
-            <input class="input" id="locatie" name="locatie" required list="centre"
-              value={MAIN_LOCATION} placeholder="Ex: București" />
-            <datalist id="centre">
-              {centre.map((c) => <option value={c}></option>)}
-            </datalist>
+            {/* O listă, nu un câmp liber: centrul face parte din identitatea
+                programului, deci „Buzau” lângă „Buzău” nu este o greșeală de
+                scriere, ci al doilea program pentru aceeași cohortă, cu
+                locurile și catalogul lui. Unul nou se deschide din panoul de
+                dedesubt, dinadins separat. */}
+            <select class="select" id="locatie" name="locatie" required>
+              {centre.map((c) => (
+                <option value={c.name} selected={c.name === MAIN_LOCATION}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+            <span class="hint">Lipsește unul? Îl adaugi în „Centrele facultății”.</span>
           </div>
           <div class="field" style="min-width:150px">
             <label class="label" for="limba">Limba de studiu</label>
@@ -329,6 +337,73 @@ const centre = [...new Set([MAIN_LOCATION, ...programList.map((p) => p.location)
             <input class="input" id="durata" name="durata" type="number" min="1" max="6" value="3" />
           </div>
           <button class="btn btn--primary" type="submit">Adaugă programul</button>
+        </form>
+      </div>
+    </section>
+
+    {/* Centrele, ca listă administrată, nu ca sugestie.
+        Stau sub programe pentru că de acolo se ajunge la ele: formularul de
+        program le oferă, iar când lipsește unul, trimite aici. */}
+    <section class="panel">
+      <div class="panel__header">
+        <h2 class="section-title">Centrele facultății</h2>
+        <span class="muted text-sm">{numar(centre.length, 'centru', 'centre')}</span>
+      </div>
+
+      {
+        centre.length === 0 ? (
+          <div class="empty">
+            <p class="empty__title">Niciun centru definit</p>
+            <p class="empty__text">
+              Un program de studiu se predă undeva, deci nu poate fi adăugat până nu există cel
+              puțin un centru. Adaugă-l mai jos.
+            </p>
+          </div>
+        ) : (
+          <ul class="centre">
+            {centre.map((c) => (
+              <li class="centru">
+                <div class="stack stack--tight" style="gap:0">
+                  <strong>{c.name}</strong>
+                  <span class="muted text-xs">
+                    {c.programmes === 0
+                      ? 'Niciun program de studiu în acest an'
+                      : numar(c.programmes, 'program de studiu', 'programe de studiu')}
+                  </span>
+                </div>
+                {/* Un centru cu programe nu se șterge — cheia străină din 0025
+                    refuză, cu ON DELETE RESTRICT. Butonul lipsește în loc să
+                    fie afișat și refuzat: un buton care arată apăsabil și nu
+                    este spune mai puțin decât o propoziție. */}
+                {c.programmes === 0 ? (
+                  <form method="POST" action="/api/an-universitar">
+                    <input type="hidden" name="actiune" value="sterge_centru" />
+                    <input type="hidden" name="centru" value={c.name} />
+                    <button class="btn btn--ghost btn--sm" type="submit">Șterge centrul</button>
+                  </form>
+                ) : (
+                  <span class="muted text-xs">Se predă aici</span>
+                )}
+              </li>
+            ))}
+          </ul>
+        )
+      }
+
+      <div class="panel__footer">
+        <form method="POST" action="/api/an-universitar" class="row row--wrap" style="gap:var(--s-3);align-items:flex-end">
+          <input type="hidden" name="actiune" value="adauga_centru" />
+          <div class="field" style="flex:1;min-width:220px;max-width:340px">
+            <label class="label" for="centru">Un centru nou</label>
+            <input class="input" id="centru" name="centru" required maxlength="120"
+              placeholder="Ex: Slobozia" autocomplete="off" />
+            <span class="hint">
+              Numele orașului, o singură dată. Centrul face parte din identitatea programului:
+              „Buzau” lângă „Buzău” ar împărți o cohortă în două programe, cu locuri și catalog
+              separate.
+            </span>
+          </div>
+          <button class="btn btn--secondary" type="submit">Adaugă centrul</button>
         </form>
       </div>
     </section>
@@ -648,6 +723,28 @@ Ana Petre;MK-2021-0142;Marketing strategic;master;ro;Conf. univ. dr. Cristian Va
     opacity: 0.55;
   }
   .program strong {
+    font-size: var(--t-sm);
+  }
+
+  /* Aceeași linie ca a unui program: două liste de nume, pe același ecran,
+     care se citesc la fel. */
+  .centre {
+    list-style: none;
+    margin: 0;
+    padding: 0 var(--s-5);
+  }
+  .centru {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--s-3);
+    padding: var(--s-3) 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .centru:last-child {
+    border-bottom: 0;
+  }
+  .centru strong {
     font-size: var(--t-sm);
   }
 </style>

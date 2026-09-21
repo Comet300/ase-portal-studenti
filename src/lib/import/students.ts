@@ -1,3 +1,4 @@
+import { normalizeLocation } from '../programmes.mjs'
 import { normalizeRomanian } from '../tabular.ts'
 
 /**
@@ -312,26 +313,65 @@ const LANGUAGES: Record<string, string> = {
 }
 
 /**
- * The teaching centres, and why this table refuses rather than defaults.
+ * The teaching centre a `denumire` cell names, among the ones the portal holds.
  *
- * `denumire` reads „MRK - București” on all 893 rows of the current export, and
- * the version this replaces took that as licence to answer „București” for
- * every distance-learning row without reading the column at all. That is a fact
- * invented about a student: the faculty teaches at Buzău too, migration 0020
- * seeded the programme for it, and the day the registry sends those rows the
- * old code would have filed every one of them under București and nothing would
- * have said so.
+ * `denumire` reads „MRK - București” on all 893 rows of the current export: the
+ * faculty's own code, then the city. The version before 0023 read past the
+ * column entirely and answered „București” for every distance-learning row,
+ * which is a fact invented about a student — the faculty teaches at Buzău too.
+ * 0023 replaced that with a table of four hand-written spellings, which was
+ * right for the two centres that existed and wrong in shape: it was a SECOND
+ * list of the faculty's centres, next to the one in the database, and the day a
+ * director opened a third centre the importer would have gone on refusing every
+ * row of it until somebody edited this file.
  *
- * Both spellings of each centre are listed because the export writes the
- * faculty's prefix and a hand-typed list will not. Anything else returns null
- * and the row is refused by name — loudly, in the preview, in front of the
- * director, before a single account is written.
+ * So the candidates are passed in — they are the centres the year's programmes
+ * are actually taught at, which is the same list migration 0025 made a table
+ * of. „MRK - București” resolves to the stored „București” because the stored
+ * one is what it is compared against, not because a line here says so.
+ *
+ * Four passes, and the order is the whole design: everything written exactly is
+ * tried before anything written approximately. A register that carries both
+ * „Buzău” and a legacy „Buzau” must send a file that wrote „Buzău” to „Buzău”,
+ * not to whichever of the two the query happened to return first — the fold
+ * drops diacritics and cannot tell them apart.
+ *
+ *   1. the whole cell, exactly — a registrar's own sheet writes the city alone;
+ *   2. the tail, exactly — „MRK - Buzău”, the faculty's code and then the city;
+ *   3. the whole cell, folded — the same sheet with a cedilla or other capitals;
+ *   4. the tail, folded — the export's own „MRK - Bucureşti”.
+ *
+ * A tail counts only when what precedes it is a separator, so „Vâlcea” does not
+ * swallow „Râmnicu Vâlcea”; and the longest matching centre wins, so a faculty
+ * that runs both gets the one the file actually named.
+ *
+ * Null when nothing matches, and the row is then refused by name — loudly, in
+ * the preview, in front of the director, before a single account is written.
  */
-const CENTRES: Record<string, string> = {
-  'mrk bucuresti': 'București',
-  bucuresti: 'București',
-  'mrk buzau': 'Buzău',
-  buzau: 'Buzău',
+function endsOnCentre(text: string, name: string): boolean {
+  if (!name || text.length <= name.length || !text.endsWith(name)) return false
+  return /[\s\-–—·.,]/.test(text[text.length - name.length - 1]!)
+}
+
+function longestCentre(matches: readonly string[]): string | null {
+  return matches.reduce<string | null>((best, l) => (!best || l.length > best.length ? l : best), null)
+}
+
+export function matchCentre(raw: string, locations: readonly string[]): string | null {
+  const cell = normalizeLocation(normalizeRegistryCell(raw))
+  if (!cell) return null
+
+  const exact = locations.find((l) => l === cell)
+  if (exact) return exact
+
+  const tail = longestCentre(locations.filter((l) => endsOnCentre(cell, l)))
+  if (tail) return tail
+
+  const folded = foldForMatching(cell)
+  const same = locations.find((l) => foldForMatching(l) === folded)
+  if (same) return same
+
+  return longestCentre(locations.filter((l) => endsOnCentre(folded, foldForMatching(l))))
 }
 
 /**
@@ -342,12 +382,19 @@ const CENTRES: Record<string, string> = {
  * (see `describeCohort`), and the row is refused further down with the values
  * in the message. Refusing inside this function would lose exactly the words
  * somebody needs in order to fix it.
+ *
+ * `locations` is the fifth cell's vocabulary and the only one that is not
+ * written down in this file, because it is the only one of the five the faculty
+ * changes on its own.
  */
-export function registryDimensions(cohort: RegistryCohort): ProgrammeIdentity | null {
+export function registryDimensions(
+  cohort: RegistryCohort,
+  locations: readonly string[],
+): ProgrammeIdentity | null {
   const level = CYCLES[foldForMatching(cohort.cycle)]
   const form_of_study = FORMS_OF_STUDY[foldForMatching(cohort.form)]
   const language = LANGUAGES[foldForMatching(cohort.language)]
-  const location = CENTRES[foldForMatching(cohort.location)]
+  const location = matchCentre(cohort.location, locations)
   const specialisation = normalizeRegistryCell(cohort.specialisation)
 
   if (!level || !form_of_study || !language || !location || !specialisation) return null
@@ -389,7 +436,12 @@ export function deriveProgramme<T extends ProgrammeIdentity>(
   cohort: RegistryCohort,
   programmes: T[],
 ): T | null {
-  const wanted = registryDimensions(cohort)
+  /* The known centres, read off the programmes themselves rather than passed
+   * in separately. They are the same rows `teaching_locations` holds — a
+   * programme cannot name a centre that is not in it since migration 0025 —
+   * and taking them from here means no caller has to fetch and thread a second
+   * list through for a value it already has in hand. */
+  const wanted = registryDimensions(cohort, [...new Set(programmes.map((p) => p.location))])
   if (!wanted) return null
 
   const key = wanted.specialisation.toLocaleLowerCase('ro-RO')

@@ -170,20 +170,40 @@ export function atLevel(tc: TeacherCapacity, level: Level | null): Capacity {
 }
 
 /**
- * The refusal, worded once.
+ * Why a STUDENT is being turned away from a coordinator, in one sentence.
  *
- * Colour never carries this: the sentence names the programme, the numbers and
- * the way out. It is shared by the three gates so a student turned away by the
- * catalogue and a coordinator turned away by the accept button are told the
- * same thing about the same seat.
+ * „Fără locuri disponibile” is true and useless once the seats are reserved:
+ * the reader sees a badge saying the coordinator is full on a card that says
+ * nine seats are free, and has no way to learn that all nine belong to another
+ * programme. So the sentence says which of the two it is, and what to do next —
+ * a refusal that names no next step sends somebody to write an e-mail asking.
+ *
+ * Third person and student-facing, because that is its one reader: the
+ * catalogue. The coordinator's own screens word the same fact in the second
+ * person and point at the form that asks the director, so they say it
+ * themselves rather than bending this one — the refusal and the way out are
+ * different sentences for the two roles even when the arithmetic is identical.
+ *
+ * Colour never carries any of this. It is a sentence next to the badge, not the
+ * badge's meaning.
  */
 export function fullBecause(cap: Capacity, programmeName: string | null): string {
   const reserved = cap.free_any - cap.base_free
   if (reserved > 0 && programmeName) {
-    return `Locurile rămase sunt rezervate altor programe de studiu, iar pentru ${programmeName} nu mai este niciunul liber.`
+    return `Cele ${reserved} locuri rămase sunt rezervate altor programe de studiu, iar pentru ${programmeName} nu mai este niciunul liber. Alege alt coordonator — pe fiecare scrie câte locuri are pentru programul tău.`
   }
   if (reserved > 0) {
-    return 'Locurile rămase sunt rezervate unor programe de studiu anume.'
+    return `Cele ${reserved} locuri rămase sunt rezervate unor programe de studiu anume, deci nu sunt libere pentru oricine.`
+  }
+  /* „Toate cele 0 locuri sunt ocupate (3 din 0)” is what the one sentence used
+   * to produce for a coordinator whose base was lowered under the number they
+   * already supervise, and for one who was never allocated any. Both are real
+   * states of this database, and both need their own words. */
+  if (cap.total === 0) {
+    return 'Directorul de departament nu i-a alocat încă locuri la acest nivel.'
+  }
+  if (cap.taken > cap.total) {
+    return `Coordonează deja ${cap.taken} studenți la acest nivel, peste cele ${cap.total} locuri alocate.`
   }
   return `Toate cele ${cap.total} locuri de la acest nivel sunt ocupate (${cap.taken} din ${cap.total}).`
 }

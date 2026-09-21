@@ -1,10 +1,10 @@
 import type { APIRoute } from 'astro'
 import { isDepartmentHead } from '../../lib/auth'
-import { execute, queryOne, transaction } from '../../lib/db'
+import { execute, query, queryOne, transaction } from '../../lib/db'
 import { deadEnd, redirectWithNotice } from '../../lib/http'
 import { parseArchiveRows, parseArchiveLevel } from '../../lib/archive'
 import { formAction } from '../../lib/forms'
-import { FORMS_OF_STUDY, programmeTitle } from '../../lib/programmes.mjs'
+import { FORMS_OF_STUDY, normalizeLocation, programmeTitle } from '../../lib/programmes.mjs'
 import { openYear } from '../../lib/years'
 import { id as formId } from '../../lib/ids'
 
@@ -102,7 +102,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
     const level = String(form.get('nivel') ?? '')
     const specialisation = String(form.get('specializare') ?? '').trim()
     const formOfStudy = String(form.get('forma') ?? '')
-    const location = String(form.get('locatie') ?? '').trim()
+    const location = normalizeLocation(form.get('locatie'))
     const language = String(form.get('limba') ?? 'ro')
     const years = Number(form.get('durata') ?? 3)
 
@@ -114,8 +114,25 @@ export const POST: APIRoute = async ({ request, locals }) => {
     if (!specialisation) {
       return back('Scrie specializarea — „Marketing”, „Marketing online”.', true)
     }
-    if (!location) {
-      return back('Scrie centrul în care se predă — „București”, „Buzău”.', true)
+
+    /* The centre is chosen, not typed, and this is the server's half of that.
+     *
+     * The screen offers the centres that exist, so the only way to arrive here
+     * with an unknown one is a hand-made POST or a form filled before another
+     * director removed the centre. Either way the insert below would otherwise
+     * be refused by the foreign key with „violates foreign key constraint”,
+     * which tells the director nothing about what to do next. */
+    const centre = await queryOne<{ name: string }>(
+      `SELECT name FROM teaching_locations WHERE name = $1`,
+      [location],
+    )
+    if (!centre) {
+      return back(
+        location
+          ? `Centrul „${location}” nu este în lista facultății, iar un program nu poate fi predat undeva ce nu există. Adaugă-l mai întâi cu „Adaugă un centru”, apoi reia programul.`
+          : 'Alege centrul în care se predă. Dacă lipsește din listă, adaugă-l cu „Adaugă un centru”.',
+        true,
+      )
     }
 
     const dimensions = {
@@ -146,6 +163,75 @@ export const POST: APIRoute = async ({ request, locals }) => {
     )
 
     return back(`Programul „${name}” a fost adăugat.`)
+  }
+
+  /* --- the teaching centres ------------------------------------------------- */
+
+  /* Opening a centre is its own act, on its own button.
+   *
+   * It used to be a side effect of typing a programme: the „Centrul” field was
+   * free text with a `datalist` of the ones already in use, so „Buzau” next to
+   * „Buzău” created a second centre AND a second programme in one keystroke,
+   * and the second programme then carried its own seats, its own catalogue
+   * entry and half of one cohort's students, with nothing anywhere saying the
+   * two were the same people. Since migration 0025 the centre is a row, so the
+   * programme form can only choose; this is where the choosing list grows, and
+   * a director has to mean it. */
+  if (action === 'adauga_centru') {
+    const name = normalizeLocation(form.get('centru'))
+
+    if (!name) {
+      return back('Scrie numele centrului — „Buzău”, „Slobozia”.', true)
+    }
+    if (name.length > 120) {
+      return back('Numele centrului este prea lung: cel mult 120 de caractere.', true)
+    }
+
+    /* Compared case-insensitively against the whole list, and in the
+     * application rather than in SQL: a functional index on `lower(name)` is a
+     * construct the MySQL port would have to unpick, and the list is two rows.
+     * `normalizeLocation` deliberately leaves case alone — title-casing
+     * „Râmnicu Vâlcea” is a guess — so this is what stops „bucurești” from
+     * becoming a second București. */
+    const existing = await query<{ name: string }>(`SELECT name FROM teaching_locations`)
+    const key = name.toLocaleLowerCase('ro-RO')
+    const already = existing.find((c) => c.name.toLocaleLowerCase('ro-RO') === key)
+    if (already) {
+      return back(
+        already.name === name
+          ? `Centrul „${name}” este deja în listă.`
+          : `Centrul există deja, scris „${already.name}”. Folosește-l din listă — două scrieri ale aceluiași oraș ar face din fiecare cohortă două programe separate.`,
+        true,
+      )
+    }
+
+    await execute(`INSERT INTO teaching_locations (name, created_by) VALUES ($1, $2)`, [
+      name,
+      u!.id,
+    ])
+    return back(`Centrul „${name}” a fost adăugat. Îl poți alege acum la „Program nou”.`)
+  }
+
+  /* A centre opened by mistake has to be closable, or the list only ever grows
+   * and the typo stays in it forever. Only one that no programme names: the
+   * foreign key refuses the rest, and the message says which programmes hold
+   * it rather than letting the database answer with a constraint name. */
+  if (action === 'sterge_centru') {
+    const name = normalizeLocation(form.get('centru'))
+
+    const used = await query<{ name: string }>(
+      `SELECT p.name FROM study_programmes p WHERE p.location = $1 ORDER BY p.name LIMIT 3`,
+      [name],
+    )
+    if (used.length > 0) {
+      return back(
+        `Centrul „${name}” nu poate fi șters: se predau acolo programe de studiu (${used.map((p) => `„${p.name}”`).join(', ')}). Mută programele în alt centru sau dezactivează-le mai întâi.`,
+        true,
+      )
+    }
+
+    const n = await execute(`DELETE FROM teaching_locations WHERE name = $1`, [name])
+    return back(n ? `Centrul „${name}” a fost șters.` : 'Centrul nu a fost găsit.', !n)
   }
 
   if (action === 'comuta_program') {

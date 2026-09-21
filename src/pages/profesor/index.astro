@@ -9,17 +9,25 @@ import {
   currentStage,
   stages,
   formatTime,
-  teacherSeats,
+  teacherCapacity,
+  seatProgrammes,
   teacherSlots,
   teacherStats,
   supervisedStudents,
 } from '../../lib/repo'
 import { seatRequests, teacherInvitations } from '../../lib/lifecycle'
 import { numar, officialName } from '../../lib/text'
-import { LEVEL_LABELS, currentYearLabel, groupLabel } from '../../lib/years'
+import { LANGUAGE_LABELS, LEVEL_LABELS, currentYearLabel, groupLabel } from '../../lib/years'
 
 const u = Astro.locals.user!
-const [stat, cereri, studenti, slots, stageList, etapa, locuri, invitatii, cereriLocuri] =
+/* The whole capacity, not the flattened `teacherSeats` projection of it.
+ *
+ * „Mai poți accepta 3 studenți” was read off one number for both levels and
+ * every programme, while an extra seat is reserved to ONE programme — so a
+ * coordinator whose three free seats were all earmarked for Marketing was told
+ * they could accept three, and then refused at the button by every student who
+ * was not in Marketing. The pots are what says which three. */
+const [stat, cereri, studenti, slots, stageList, etapa, capacitate, invitatii, cereriLocuri, programe] =
   await Promise.all([
     teacherStats(u.id),
     teacherRequests(u.id, 'pending'),
@@ -27,10 +35,33 @@ const [stat, cereri, studenti, slots, stageList, etapa, locuri, invitatii, cerer
     teacherSlots(u.id),
     stages(),
     currentStage(),
-    teacherSeats(u.id),
+    teacherCapacity(u.id),
     teacherInvitations(u.id),
     seatRequests({ teacherId: u.id }),
+    seatProgrammes(),
   ])
+
+const niveluri = [capacitate.bachelor, capacitate.master]
+const locuri = {
+  bachelor_seats: capacitate.bachelor.total,
+  master_seats: capacitate.master.total,
+  bachelor_taken: capacitate.bachelor.taken,
+  master_taken: capacitate.master.taken,
+  total_seats: capacitate.bachelor.total + capacitate.master.total,
+  total_taken: capacitate.bachelor.taken + capacitate.master.taken,
+  free: capacitate.bachelor.free_any + capacitate.master.free_any,
+}
+/* The free seats nobody but one programme's students can take. It is the
+ * difference between „ai 3 locuri” and „ai 3 locuri, dar pentru Marketing”. */
+const rezervate = niveluri.reduce((n, c) => n + (c.free_any - c.base_free), 0)
+const rezerve = niveluri.flatMap((c) =>
+  c.pots
+    .filter((pot) => pot.granted > 0 && pot.programme_id)
+    .map((pot) => ({ ...pot, level: c.level })),
+)
+const programeActive = programe.filter((p) => p.is_active)
+const numeProgram = (p: { name: string; language: string }) =>
+  `${p.name} · ${LANGUAGE_LABELS[p.language] ?? p.language}`
 
 const yearLabel = await currentYearLabel()
 const today = new Date().toDateString()
@@ -242,38 +273,93 @@ const necitite = studenti.reduce((s, x) => s + x.unread, 0)
               coordonezi” read as though the coordinator were listed next to
               their students. What the catalogue does is keep the entry and mark
               it — so that is what the sentence says. */}
+          {/* „Liber” nu mai este o însușire a coordonatorului.
+              Un loc suplimentar este rezervat unui singur program de studiu,
+              deci același coordonator poate fi plin pentru Marketing și liber
+              pentru Marketing online în aceeași clipă. Propoziția spunea un
+              singur număr pentru amândouă, iar cel refuzat la buton afla abia
+              acolo. */}
           <p class="muted text-sm">
             {
               capacity === 0
                 ? 'Directorul de departament nu ți-a alocat încă locuri în această sesiune, deci nu poți accepta cereri. Cere-i locuri de mai jos.'
-                : locuri.free > 0
-                  ? `Mai poți accepta ${numar(locuri.free, 'student', 'studenți')} în această sesiune. Numărul de locuri este stabilit de directorul de departament.`
-                  : 'Toate locurile sunt ocupate: nu mai poți accepta o cerere. Rămâi în catalogul studenților, marcat „fără locuri disponibile”, cu studenții pe care îi coordonezi deja.'
+                : locuri.free === 0
+                  ? 'Toate locurile sunt ocupate: nu mai poți accepta o cerere. Rămâi în catalogul studenților, marcat „fără locuri disponibile”, cu studenții pe care îi coordonezi deja.'
+                  : rezervate === 0
+                    ? `Mai poți accepta ${numar(locuri.free, 'student', 'studenți')} în această sesiune, de la orice program de studiu. Numărul de locuri este stabilit de directorul de departament.`
+                    : `Mai poți accepta ${numar(locuri.free, 'student', 'studenți')}, dar ${numar(rezervate, 'loc este rezervat', 'locuri sunt rezervate')} unor programe de studiu anume — vezi mai jos pentru care.`
             }
           </p>
+
+          {/* Rezervele, pe programul lor. Fără ele „ai 3 locuri libere” este
+              adevărat și inutil: nu spune pentru cine sunt. */}
+          {rezerve.length > 0 && (
+            <ul class="rezerve">
+              {rezerve.map((pot) => (
+                <li>
+                  <span>{pot.programme_name ?? 'Program de studiu șters'}</span>
+                  <span class="numeric">
+                    {pot.free} {pot.free === 1 ? 'liber' : 'libere'} din {pot.granted}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
 
         <div class="panel__footer stack">
           {
             openSeatRequest ? (
               <p class="alerta-locuri">
-                Ai cerut <strong>{openSeatRequest.extra_seats}</strong> locuri la{' '}
-                {LEVEL_LABELS[openSeatRequest.level].toLowerCase()} pe{' '}
-                {formatDate(openSeatRequest.created_at)}. Așteaptă decizia directorului de
+                Ai cerut <strong>{openSeatRequest.extra_seats}</strong> locuri pentru{' '}
+                {openSeatRequest.programme_name ?? LEVEL_LABELS[openSeatRequest.level].toLowerCase()}{' '}
+                pe {formatDate(openSeatRequest.created_at)}. Așteaptă decizia directorului de
                 departament — o primești și pe email.
               </p>
             ) : (
               <details class="cere-locuri" open={askSeatsOpen}>
                 <summary>Cere locuri directorului de departament</summary>
+                {/* Fără niciun program activ nu se poate cere nimic: o rezervă
+                    se face pe un program anume. Se spune, în loc să se ofere o
+                    listă goală și un buton care refuză. */}
+                {programeActive.length === 0 ? (
+                  <p class="hint">
+                    Nu există niciun program de studiu activ în această sesiune, iar locurile
+                    suplimentare se rezervă pe un program anume. Directorul de departament le
+                    definește din „An universitar”.
+                  </p>
+                ) : (
                 <form method="POST" action="/api/locuri" class="stack">
                   <input type="hidden" name="actiune" value="cere" />
+                  {/* Programul, nu nivelul.
+                      Formularul trimitea „nivel”, iar API-ul citea „program_id”:
+                      cererea pleca fără program, iar un loc acordat fără program
+                      nu poate fi ocupat de nimeni — `freeFor` compară programul
+                      studentului cu cel al rezervei. Nivelul nu se mai cere
+                      deloc: îl are programul, iar două câmpuri care se pot
+                      contrazice însemnau o cerere de locuri de master pe un
+                      program de licență. */}
                   <div class="row row--wrap" style="gap:var(--s-3)">
-                    <div class="field" style="min-width:190px">
-                      <label class="label" for="nivel">Nivelul pentru care ceri locuri</label>
-                      <select class="select" id="nivel" name="nivel">
-                        <option value="bachelor">Licență</option>
-                        <option value="master">Master</option>
+                    <div class="field" style="flex:2;min-width:260px">
+                      <label class="label" for="program-cerut">
+                        Programul de studiu pentru care ceri locuri
+                      </label>
+                      <select class="select" id="program-cerut" name="program_id" required>
+                        <option value="">Alege programul de studiu</option>
+                        {(['bachelor', 'master'] as const).map((level) =>
+                          programeActive.filter((p) => p.level === level).length > 0 ? (
+                            <optgroup label={LEVEL_LABELS[level]}>
+                              {programeActive
+                                .filter((p) => p.level === level)
+                                .map((p) => <option value={p.id}>{numeProgram(p)}</option>)}
+                            </optgroup>
+                          ) : null,
+                        )}
                       </select>
+                      <span class="hint">
+                        Locurile primite sunt rezervate acestui program: le pot ocupa numai
+                        studenții lui.
+                      </span>
                     </div>
                     <div class="field" style="min-width:130px">
                       <label class="label" for="locuri-cerute">Câte locuri în plus</label>
@@ -310,6 +396,7 @@ const necitite = studenti.reduce((s, x) => s + x.unread, 0)
                     </button>
                   </div>
                 </form>
+                )}
               </details>
             )
           }
@@ -328,7 +415,8 @@ const necitite = studenti.reduce((s, x) => s + x.unread, 0)
                       {r.status === 'approved' ? 'Aprobată' : 'Respinsă'}
                     </span>
                     <span>
-                      {r.extra_seats} locuri la {LEVEL_LABELS[r.level].toLowerCase()} ·{' '}
+                      {r.extra_seats} locuri pentru{' '}
+                      {r.programme_name ?? LEVEL_LABELS[r.level].toLowerCase()} ·{' '}
                       {formatDate(r.decided_at)}
                     </span>
                     {r.decision_note && <span class="muted">„{r.decision_note}”</span>}
@@ -368,6 +456,27 @@ const necitite = studenti.reduce((s, x) => s + x.unread, 0)
 </ProfesorLayout>
 
 <style>
+  /* Rezervele, una pe linie, numărul aliniat la dreapta: se citesc pe verticală,
+     ca o listă de solduri, pentru că asta sunt. */
+  .rezerve {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    font-size: var(--t-sm);
+  }
+  .rezerve li {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--s-3);
+    padding: var(--s-2) 0;
+    border-top: 1px solid var(--border);
+  }
+  .rezerve .numeric {
+    color: var(--ink-muted);
+    white-space: nowrap;
+  }
+
   .alerta-locuri {
     padding: var(--s-3) var(--s-4);
     background: var(--warn-tint);

@@ -18,6 +18,7 @@ import {
   normalizeRegistryCell,
   parseFatherInitials,
   parseStudyYear,
+  matchCentre,
   programmeCell,
   registryDimensions,
 } from '../src/lib/import/students.ts'
@@ -75,6 +76,12 @@ const PROGRAMMES: ProgrammeChoice[] = [
   programme('master', 'if', 'Managementul relațiilor cu clienții', 'en'),
   programme('master', 'if', 'Managementul marketingului', 'ro'),
 ]
+
+/* The centres those programmes are taught at — which is what the registry's
+   `denumire` is now resolved against, instead of a table of spellings written
+   out in the importer. Derived from the fixture rather than listed, so a
+   programme moved to a new centre cannot leave the two disagreeing. */
+const CENTRES = [...new Set(PROGRAMMES.map((p) => p.location))]
 
 describe('normalizeRegistryCell', () => {
   /* The export pads every value to a fixed width and writes a missing one as
@@ -245,14 +252,14 @@ describe('deriveProgramme', () => {
   /* The five values, in the portal's own vocabulary, before anything is looked
      up: this is the whole of the translation that is left. */
   it('traduce vocabularul registrului în valorile stocate', () => {
-    assert.deepEqual(registryDimensions(cohort('LICENȚĂ', 'FRECVENȚĂ REDUSĂ', 'Marketing', 'Română')), {
+    assert.deepEqual(registryDimensions(cohort('LICENȚĂ', 'FRECVENȚĂ REDUSĂ', 'Marketing', 'Română'), CENTRES), {
       level: 'bachelor',
       form_of_study: 'ifr',
       specialisation: 'Marketing',
       language: 'ro',
       location: 'București',
     })
-    assert.deepEqual(registryDimensions(cohort('MASTERAT', 'LA DISTANȚĂ', 'Marketing online', 'Engleză', 'MRK - Buzău')), {
+    assert.deepEqual(registryDimensions(cohort('MASTERAT', 'LA DISTANȚĂ', 'Marketing online', 'Engleză', 'MRK - Buzău'), CENTRES), {
       level: 'master',
       form_of_study: 'id',
       specialisation: 'Marketing online',
@@ -320,9 +327,55 @@ describe('deriveProgramme', () => {
     assert.notEqual(buzau?.label, bucuresti?.label, 'două centre, două programe')
   })
 
+  /* WHY THE CENTRE IS NOT A TABLE IN THIS FILE ANY MORE. It was four
+     hand-written spellings, which was right for the two centres that existed
+     and wrong in shape: a second list of the faculty's centres, beside the one
+     in the database. The day a director opened a third one, the importer would
+     have gone on refusing every row of it until somebody edited a source file.
+     The candidates are the stored centres now. */
+  describe('matchCentre', () => {
+    it('trece peste prefixul facultății și ajunge la centrul stocat', () => {
+      assert.equal(matchCentre('MRK - București', CENTRES), 'București')
+      assert.equal(matchCentre('MRK - Buzău', CENTRES), 'Buzău')
+    })
+
+    it('citește și o foaie scrisă de mână, cu orașul singur', () => {
+      assert.equal(matchCentre('București', CENTRES), 'București')
+      assert.equal(matchCentre('  bucureşti  ', CENTRES), 'București')
+    })
+
+    it('leagă prefixul de oraș și fără spații în jurul liniuței', () => {
+      assert.equal(matchCentre('MRK-Buzău', CENTRES), 'Buzău')
+    })
+
+    /* A centre the faculty opens tomorrow resolves without this file changing —
+       which is the whole reason the list is passed in. */
+    it('un centru deschis după ziua de azi se potrivește fără să fie scris aici', () => {
+      const withNew = [...CENTRES, 'Slobozia']
+      assert.equal(matchCentre('MRK - Slobozia', withNew), 'Slobozia')
+      assert.equal(matchCentre('MRK - Slobozia', CENTRES), null, 'cât timp nu există, nu se inventează')
+    })
+
+    it('scrierea exactă bate potrivirea fără diacritice', () => {
+      const both = ['Buzau', 'Buzău']
+      assert.equal(matchCentre('MRK - Buzău', both), 'Buzău')
+      assert.equal(matchCentre('MRK - Buzau', both), 'Buzau')
+    })
+
+    it('alege centrul cel mai lung care se potrivește, nu primul', () => {
+      const tricky = ['Vâlcea', 'Râmnicu Vâlcea']
+      assert.equal(matchCentre('MRK - Râmnicu Vâlcea', tricky), 'Râmnicu Vâlcea')
+    })
+
+    it('o celulă goală nu este un centru', () => {
+      assert.equal(matchCentre('', CENTRES), null)
+      assert.equal(matchCentre('NULL', CENTRES), null)
+    })
+  })
+
   it('un centru necunoscut oprește rândul, nu îl trece pe București', () => {
     const strange = cohort('LICENȚĂ', 'LA DISTANȚĂ', 'Marketing', 'Română', 'MRK - Ploiești')
-    assert.equal(registryDimensions(strange), null, 'nu se ghicește un centru')
+    assert.equal(registryDimensions(strange, CENTRES), null, 'nu se ghicește un centru')
     assert.equal(deriveProgramme(strange, PROGRAMMES), null)
 
     /* And it is loud: the cell names the five values, and the row is refused

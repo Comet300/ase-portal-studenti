@@ -3,6 +3,7 @@ import Avatar from '../components/Avatar.astro'
 import ProfesorLayout from '../layouts/ProfesorLayout.astro'
 import StudentLayout from '../layouts/StudentLayout.astro'
 import { pairings, publicTopics, studentRequests, supervisors } from '../lib/repo'
+import { atLevel, fullBecause } from '../lib/seats'
 import { officialName } from '../lib/text'
 import { LANGUAGE_LABELS, LEVEL_LABELS, groupLabel, languageLabel } from '../lib/years'
 
@@ -201,6 +202,18 @@ const freeTeachers = teachers.filter((t) => !t.is_full).length
                     <span class="badge badge--aprobata">
                       {free} {free === 1 ? 'loc liber' : 'locuri libere'}
                     </span>
+                  )}
+
+                  {/* De ce este plin, nu doar că este.
+                      „Plin” a încetat să mai fie o însușire a coordonatorului:
+                      un loc suplimentar este rezervat unui singur program, deci
+                      un student vedea „Fără locuri disponibile” pe o fișă care
+                      spunea, cu un rând mai sus, că mai sunt nouă libere — și
+                      nu avea cum să afle că toate nouă sunt ale altui program. */}
+                  {isStudent && p.is_full && (
+                    <p class="coord__refuz">
+                      {fullBecause(atLevel(p.capacity, u?.program ?? null), u?.specialization ?? null)}
+                    </p>
                   )}
 
                   {/* «Depune cerere de coordonare» dispare de îndată ce ai una
@@ -720,6 +733,20 @@ const freeTeachers = teachers.filter((t) => !t.is_full).length
     display: flex;
     flex-direction: column;
     gap: var(--s-4);
+  }
+
+  /* Propoziția care spune de ce nu se poate, lângă insignă și nu în locul ei:
+     insigna se citește dintr-o privire, motivul are nevoie de o frază. */
+  .coord__refuz {
+    /* `.coord__head` is a wrapping flex row, so a full-width basis is what puts
+       the sentence on its own line under the badge instead of squeezing it in
+       beside one. */
+    flex-basis: 100%;
+    margin: 0;
+    font-size: var(--t-xs);
+    color: var(--ink-soft);
+    text-wrap: pretty;
+    max-width: 72ch;
   }
 
   /* A full coordinator stays legible, but no longer competes visually with the
