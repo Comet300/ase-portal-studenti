@@ -40,10 +40,18 @@ COPY --from=build --chown=node:node /app/dist ./dist
 COPY --chown=node:node package.json ./
 COPY --chown=node:node migrations ./migrations
 COPY --chown=node:node scripts ./scripts
-# `scripts/migrate.mjs` citește valorile implicite de acolo — în producție ele
-# nu se aplică (fără `DATABASE_URL` boot-ul se oprește), dar importul trebuie să
-# existe, altfel containerul cade la prima linie.
-COPY --chown=node:node src/lib/defaults.mjs ./src/lib/defaults.mjs
+# The plain-JS modules under src/lib that `scripts/` shares with the app. They
+# have to be in the image because migrating and seeding happen inside the
+# container: `migrate.mjs` reads the defaults from here (they do not apply in
+# production — without DATABASE_URL the boot stops — but the import has to
+# resolve or the container dies on its first line), and `seed.mjs` composes
+# programme titles with the same function the app uses, so a seeded database
+# cannot disagree with a migrated one.
+#
+# A wildcard rather than a list: naming one file is how seeding broke the day
+# `programmes.mjs` appeared — the image built, the container was healthy, and
+# the failure only surfaced when somebody ran the seed against production.
+COPY --chown=node:node src/lib/*.mjs ./src/lib/
 
 # Created in the image so a named volume mounted here inherits this ownership;
 # otherwise the mount arrives root-owned and the unprivileged process cannot write.
