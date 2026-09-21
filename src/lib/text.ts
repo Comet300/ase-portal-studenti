@@ -66,15 +66,30 @@ export function officialName(person: {
 }
 
 /**
- * „i” and „I” and „Gh” all come back as „I.” / „Gh.”.
+ * „i”, „I”, „Gh” and „M G” come back as „I.”, „Gh.” and „M. G.”.
  *
- * The registrar pastes the letter both with and without the point, and Romanian
- * abbreviates some given names with two letters — Gheorghe is „Gh.”, not „G.”.
+ * The registrar pastes the letters both with and without the point, and
+ * Romanian abbreviates some given names with two letters — Gheorghe is „Gh.”,
+ * not „G.”. A father with two given names has two initials, which is 329 rows
+ * of the registry's own export: while this printed only a single letter, every
+ * one of those students appeared on their own request under a name the
+ * secretariat could not match against the register.
+ *
  * Anything else returns empty, so a stray cell cannot end up printed inside
  * somebody's name on a document that gets signed.
+ *
+ * WHAT MAY BE STORED is decided by `parseFatherInitials` in
+ * `lib/import/students.ts`, not here — this module has no dependencies on
+ * purpose, because three client scripts import it for `numar` alone. A test in
+ * `import-students.test.ts` runs every form that parser produces through this
+ * one, which is what keeps the two from drifting.
  */
 export function formatInitial(raw: string | null | undefined): string {
-  const text = (raw ?? '').trim().replace(/\.+$/, '')
-  if (!/^[A-Za-zĂÂÎȘȚăâîșț]{1,2}$/.test(text)) return ''
-  return text.charAt(0).toLocaleUpperCase('ro-RO') + text.slice(1).toLocaleLowerCase('ro-RO') + '.'
+  const tokens = (raw ?? '').replace(/\./g, ' ').trim().split(/\s+/).filter(Boolean)
+  if (tokens.length === 0 || tokens.length > 3) return ''
+  if (!tokens.every((t) => /^[A-Za-zĂÂÎȘȚăâîșț]{1,2}$/.test(t))) return ''
+
+  return tokens
+    .map((t) => `${t.charAt(0).toLocaleUpperCase('ro-RO')}${t.slice(1).toLocaleLowerCase('ro-RO')}.`)
+    .join(' ')
 }

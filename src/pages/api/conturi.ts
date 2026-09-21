@@ -100,6 +100,11 @@ export const POST: APIRoute = async ({ request, locals }) => {
       String(form.get('grupa') ?? ''),
       String(form.get('serie') ?? ''),
       String(form.get('initiala_tatalui') ?? ''),
+      /* „Finanțare” has no field on the one-person form and is left empty on
+       * purpose: it comes from the registry's export, and asking a director
+       * typing in a single latecomer to remember „Bursier_RP” would be asking
+       * for a value they are guessing at. */
+      '',
     ]])
 
     // The same parsing as for the pasted list: one set of rules, not two.
@@ -268,14 +273,15 @@ async function adauga(
       const { rowCount } = await client.query(
         `INSERT INTO users (email, name, role, student_number, programme_id,
                             program, specialization, study_language, study_year, study_group,
-                            study_series, father_initial, created_by)
+                            study_series, father_initial, study_year_note, funding, created_by)
          VALUES ($1, $2, $3, NULLIF($4, ''), $5, $6, $7, COALESCE($8, 'ro'), NULLIF($9, '')::int,
-                 NULLIF($10, ''), NULLIF($11, ''), NULLIF($12, ''), $13)
+                 NULLIF($10, ''), NULLIF($11, ''), NULLIF($12, ''), NULLIF($13, ''),
+                 NULLIF($14, ''), $15)
          ON CONFLICT (email) DO NOTHING`,
         [
           r.email, r.name, r.role, r.studentNumber,
           p?.id ?? null, p?.level ?? null, p?.name ?? null, p?.language ?? null,
-          r.year, r.group, r.series, r.fatherInitial, createdBy,
+          r.year, r.group, r.series, r.fatherInitial, r.yearNote, r.funding, createdBy,
         ],
       )
       inserted += rowCount ?? 0

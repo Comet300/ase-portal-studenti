@@ -20,7 +20,7 @@ import {
  */
 
 const GOOD_ROW =
-  'Ioana Dumitru;ioana.dumitru@stud.ase.ro;student;MK-2025-0142;Marketing;3;RO-1503;B;I.'
+  'Ioana Dumitru;ioana.dumitru@stud.ase.ro;student;MK-2025-0142;Marketing;3;RO-1503;B;I.;Taxa'
 
 describe('parseAccountRows', () => {
   it('citește un rând complet', () => {
@@ -33,9 +33,11 @@ describe('parseAccountRows', () => {
       studentNumber: 'MK-2025-0142',
       programme: 'Marketing',
       year: '3',
+      yearNote: '',
       group: 'RO-1503',
       series: 'B',
       fatherInitial: 'I',
+      funding: 'Taxa',
     })
   })
 
@@ -236,7 +238,7 @@ describe('applyAccountMapping', () => {
       { kind: 'columns', columns: [3], joiner: ' ' },
       { kind: 'none' }, { kind: 'none' },
     ])
-    assert.deepEqual(composed[1], ['Țîrlea', 'bogdan@stud.ase.ro', 'student', '', 'Marketing', '3', '1504', '', ''])
+    assert.deepEqual(composed[1], ['Țîrlea', 'bogdan@stud.ase.ro', 'student', '', 'Marketing', '3', '1504', '', '', ''])
   })
 
   it('sare peste bucata goală, ca să nu rămână liantul singur', () => {

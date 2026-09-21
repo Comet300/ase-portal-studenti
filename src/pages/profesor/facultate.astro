@@ -702,10 +702,15 @@ const exportHref = (format: string) => {
             <div class="row row--wrap" style="gap:var(--s-3)">
               <div class="field" style="min-width:180px">
                 <label class="label" for="initiala_tatalui">Inițiala tatălui</label>
+                {/* Room for three initials, not one: a father with two given
+                    names is written „M G”, which is 329 of the 893 rows in the
+                    registry's own export, and the old limit of three characters
+                    cut the second one off as it was typed. */}
                 <input class="input" id="initiala_tatalui" name="initiala_tatalui"
-                  maxlength="3" placeholder="I" />
+                  maxlength="9" placeholder="I" />
                 <span class="hint">
-                  Face parte din numele oficial: „Popescu I. Maria”. Una sau două litere.
+                  Face parte din numele oficial: „Popescu I. Maria”. Una până la trei inițiale,
+                  de câte una sau două litere: I, Gh., M G.
                 </span>
               </div>
             </div>
@@ -742,6 +747,24 @@ const exportHref = (format: string) => {
               sigur — un .csv salvat din Excel pe Windows românesc scrie „ș” și „ț” în alt
               alfabet, iar portalul îți spune ce codificare a găsit și te lasă să o schimbi.
             </p>
+
+            {/* The template sits beside the file field, not on a screen of its
+                own: whoever opens this tab without an export in hand has
+                nothing else to try, and there is no way to guess from here
+                what the twenty-five columns are called. It is the registry's
+                format and not the portal's, so a secretariat that already has
+                the file does not have to rearrange it first. */}
+            <div class="row row--wrap sablon">
+              <a class="btn btn--secondary btn--sm" href="/profesor/facultate/sablon?format=xlsx">
+                Descarcă șablonul (Excel)
+              </a>
+              <a class="btn btn--ghost btn--sm" href="/profesor/facultate/sablon?format=csv">CSV</a>
+              <span class="hint sablon__nota">
+                Are cele 25 de coloane ale exportului din SIMUR, în ordinea lui, și două rânduri
+                de exemplu. Coloanele de CNP și de carte de identitate sunt acolo doar pentru că
+                exportul le are: portalul le citește și nu le păstrează.
+              </span>
+            </div>
 
             <div class="row row--wrap" style="gap:var(--s-5);align-items:flex-start">
               <div class="field" style="flex:1;min-width:260px">
@@ -1181,6 +1204,18 @@ Dumitru Ioana;ioana.dumitru@stud.ase.ro;student;MK-2025-0142;Marketing;3;RO-1503
 </script>
 
 <style>
+/* The template and the sentence that qualifies it are one thought, so they
+     sit on one line — and the sentence wraps onto its own line before it gets
+     narrow enough to break the warning about the identity columns in half. */
+  .sablon {
+    gap: var(--s-2);
+    align-items: center;
+  }
+
+.sablon__nota {
+    flex: 1 1 34ch;
+  }
+
 .respinse__titlu {
     margin-top: var(--s-3);
     font-size: var(--t-sm);

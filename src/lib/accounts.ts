@@ -1,3 +1,13 @@
+import {
+  deriveProgramme,
+  findRegistryColumns,
+  foldForMatching,
+  isNeverMappedHeader,
+  normalizeRegistryCell,
+  parseFatherInitials,
+  parseStudyYear,
+} from './import/students.ts'
+
 /**
  * The reader for account lists.
  *
@@ -7,17 +17,23 @@
  * import, and for the same reason: two readers would show one table and write
  * another.
  *
- * It has no dependencies, so that it can be imported in the browser too.
+ * It stays generic: what a father's initial may look like, what a year of study
+ * may say and which programme a cohort belongs to are the registry's business,
+ * and they are imported from `import/students.ts` rather than written twice.
+ * The one dependency is that module, which runs in the browser as this one
+ * does.
  */
 
 /**
  * The columns, in the order they are read off the pasted line.
  *
- * The two new ones are appended, not slotted in beside „An” where a person
- * reading the sheet would expect the series to sit. Reading is positional, so
- * inserting a column mid-list would silently reinterpret every list a registrar
- * saved from a previous term — the year would land in the series and nothing
- * would report an error. The order of an existing paste stays valid forever.
+ * The new ones are appended, not slotted in beside „An” where a person reading
+ * the sheet would expect the series to sit. Reading is positional, so inserting
+ * a column mid-list would silently reinterpret every list a registrar saved
+ * from a previous term — the year would land in the series and nothing would
+ * report an error. The order of an existing paste stays valid forever, which is
+ * why „Finanțare” is tenth and not next to „Program” where it belongs by
+ * meaning.
  */
 export const ACCOUNT_COLUMNS = [
   'Nume',
@@ -29,6 +45,7 @@ export const ACCOUNT_COLUMNS = [
   'Grupa',
   'Serie',
   'Inițiala tatălui',
+  'Finanțare',
 ] as const
 
 export type AccountRole = 'student' | 'teacher' | 'head'
@@ -40,10 +57,19 @@ export interface AccountRow {
   studentNumber: string
   programme: string
   year: string
+  /**
+   * What the registry wrote beside the year — „An suplimentar”, and nothing
+   * else so far. Kept rather than dropped: it is the whole reason a student is
+   * in a third year for the second time, and the coordinator would otherwise be
+   * the last person in the faculty to know.
+   */
+  yearNote: string
   group: string
   series: string
-  /** „I.” in „Popescu I. Maria”, stored as the bare letter. */
+  /** „I.” in „Popescu I. Maria”, stored as the bare letters: „I”, „M G”. */
   fatherInitial: string
+  /** `FormaFinantare`: „Taxa”, „Buget RO”, „Bursier_RP” — as written. */
+  funding: string
 }
 
 export interface RejectedAccountRow {
@@ -96,9 +122,16 @@ export function parseAccountRows(raw: string): ParsedAccounts {
      * address into the role. A tab arrives only from a paste or from the
      * composer, and neither puts one inside a field. */
     const sep = line.includes('\t') ? '\t' : ';'
-    const [name, email, role, studentNumber, programme, year, group, series, fatherInitial] = line
-      .split(sep)
-      .map((c) => c.trim())
+    /* Every cell is cleaned by the registry's own rule, not by `trim`.
+     *
+     * A row can reach this point without ever having passed through the file
+     * reader — typed straight into the box the route re-reads, or pasted out of
+     * the export into it. Those rows still carry the fixed-width padding, the
+     * literal „NULL” where a value is missing and the cedilla `ş`/`ţ`; left
+     * alone, one student was called „NULL” and one address was refused with a
+     * message about an e-mail. */
+    const [name, email, role, studentNumber, programme, year, group, series, fatherInitial, funding] =
+      line.split(sep).map(normalizeRegistryCell)
 
     if (!name || !email) {
       rejected.push({ numar, text: line, reason: 'lipsește numele sau adresa de email' })
@@ -129,24 +162,31 @@ export function parseAccountRows(raw: string): ParsedAccounts {
       continue
     }
 
-    const an = (year ?? '').trim()
-    if (an && !/^[1-6]$/.test(an)) {
-      rejected.push({ numar, text: line, reason: `anul „${an}” trebuie să fie între 1 și 6` })
-      continue
-    }
-
-    /* The initial is checked the way the year is: one or two letters, with or
-     * without the point the registrar sometimes types — „Gh.” is a real
-     * Romanian initial, not a typing mistake. A whole cell that slipped a column
-     * would otherwise end up printed inside somebody's name on a signed
-     * document. An empty one stays legal: a rejected row is a person who cannot
-     * sign in, and most lists arrive with the column half filled. */
-    const initiala = (fatherInitial ?? '').trim().replace(/\.+$/, '')
-    if (initiala && !/^[A-Za-zĂÂÎȘȚăâîșț]{1,2}$/.test(initiala)) {
+    /* The year and the initial are judged by the registry's rules, imported
+     * rather than written again here. Both used to live in this file as one
+     * regular expression each — one digit, one or two letters — and both were
+     * right for a list typed by hand and wrong for the file the registry
+     * exports: 350 rows of 893 were refused between them. */
+    const an = parseStudyYear(year)
+    if (!an) {
       rejected.push({
         numar,
         text: line,
-        reason: `inițiala tatălui „${initiala}” trebuie să fie una sau două litere (ex: I, Gh.)`,
+        reason: `anul „${year}” nu se poate citi — scrie o cifră de la 1 la 6, sau „3 Suplimentar”`,
+      })
+      continue
+    }
+
+    /* An empty initial stays legal: a rejected row is a person who cannot sign
+     * in, and most lists arrive with the column half filled. */
+    const initiala = parseFatherInitials(fatherInitial)
+    if (initiala === null) {
+      rejected.push({
+        numar,
+        text: line,
+        reason:
+          `inițiala tatălui „${fatherInitial}” nu se poate citi — una până la trei ` +
+          'inițiale de câte una sau două litere (ex: I, Gh., M G)',
       })
       continue
     }
@@ -157,16 +197,17 @@ export function parseAccountRows(raw: string): ParsedAccounts {
       role: parsedRole,
       studentNumber: studentNumber ?? '',
       programme: programme ?? '',
-      year: an,
+      year: an.year,
+      yearNote: an.note,
       group: group ?? '',
       // „a” and „A” are the same series; without this the catalogue's filter
       // would offer both as separate cohorts.
-      series: (series ?? '').trim().toLocaleUpperCase('ro-RO'),
-      // The point is added where the name is printed, not stored: „I” and „I.”
-      // arrive from the same spreadsheet in the same term.
-      fatherInitial: initiala
-        ? initiala.charAt(0).toLocaleUpperCase('ro-RO') + initiala.slice(1).toLocaleLowerCase('ro-RO')
-        : '',
+      series: (series ?? '').toLocaleUpperCase('ro-RO'),
+      fatherInitial: initiala,
+      // Written as the registry writes it: the twelve values are the
+      // secretariat's own vocabulary („Taxa”, „Buget RO”, „Bursier_RP”), and a
+      // portal that renamed them would be describing a fact it does not own.
+      funding: funding ?? '',
     })
   }
 
@@ -193,6 +234,17 @@ export type AccountFieldSource =
   | { kind: 'none' }
   | { kind: 'columns'; columns: number[]; joiner: string }
   | { kind: 'constant'; value: string }
+  /**
+   * The fourth shape, and the registry's alone: a programme is not in a column.
+   *
+   * The export describes a cohort with four independent columns — cycle, form
+   * of study, specialisation, language — while the portal's licență programme
+   * IS the form of study. Joining the four with a separator would compose a
+   * string that matches nothing; a constant would put all 893 students on one
+   * programme. So this source names the four columns and lets
+   * `deriveProgramme` answer, row by row.
+   */
+  | { kind: 'programme'; cycle: number; form: number; specialisation: number; language: number }
 
 /** One source per column of `ACCOUNT_COLUMNS`, in the same order. */
 export type AccountMapping = AccountFieldSource[]
@@ -207,42 +259,31 @@ export const JOINERS: { value: string; text: string }[] = [
 ]
 
 /**
- * The header text, compared the way a person compares it.
- *
- * „Număr matricol”, „NUMAR MATRICOL” and „Nr. Matricol” are the same column to
- * everyone except a string comparison. Diacritics are folded rather than
- * normalised, because a header is not stored anywhere — it only has to be
- * recognised.
- */
-function foldHeader(text: string): string {
-  return text
-    .normalize('NFD')
-    // U+0326, the comma below, sits outside the block the other marks live
-    // in. Left in, the rule underneath would read it as punctuation and
-    // „Număr” would fold to „numa r” — two words, matching no header at all.
-    .replace(/[\u0300-\u036f\u0326]/g, '')
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, ' ')
-    .trim()
-}
-
-/**
  * What each column is called in the files that actually arrive.
  *
- * `exact` matches the whole header, `loose` matches a word inside it. The
+ * `exact` matches the whole header, `loose` matches a word inside it, and
+ * `weak` matches the whole header but loses to any exact one. The exact/loose
  * distinction exists because of „An”: as a whole header it is the year of
  * study, but as a fragment it is inside „Anul nașterii”, „An universitar” and
  * half the words in Romanian.
+ *
+ * The folding these are compared through lives in `import/students.ts` — and
+ * with it the cut through `AnStudiu` and `FormaFinantare`, because the
+ * registry's headers are the reason it has to do more than drop the marks.
  */
-const HEADER_HINTS: { exact: string[]; loose: RegExp | null }[] = [
+const HEADER_HINTS: { exact: string[]; weak?: string[]; loose: RegExp | null }[] = [
   {
     exact: ['nume', 'numele', 'nume complet', 'nume si prenume', 'numele studentului', 'student', 'nume student'],
     loose: /\bnume/,
   },
   {
-    // „Adresa” alone is the e-mail here, but „Adresa de domiciliu” is not: a
-    // postal address mapped into this field rejects every row in the list.
-    exact: ['email', 'e mail', 'mail', 'adresa de email', 'adresa email', 'adresa', 'adresa electronica'],
+    // „Adresa” alone is the e-mail in a sheet the secretariat wrote by hand,
+    // and the postal address in the registry's export — which also carries an
+    // „Email” column. Weak rather than exact so the real one always wins:
+    // while both scored the same, the answer depended on which came first in
+    // the file, and the wrong one refuses every row in the list.
+    exact: ['email', 'e mail', 'mail', 'adresa de email', 'adresa email', 'adresa electronica'],
+    weak: ['adresa'],
     loose: /\b(e ?mail|adresa de e ?mail|adresa electronica)\b/,
   },
   { exact: ['rol', 'calitate', 'tip'], loose: /\brol\b/ },
@@ -251,14 +292,21 @@ const HEADER_HINTS: { exact: string[]; loose: RegExp | null }[] = [
     exact: ['program', 'program de studiu', 'programul de studiu', 'specializare', 'specializarea'],
     loose: /\b(program|specializar)/,
   },
-  { exact: ['an', 'anul', 'an de studiu', 'anul de studiu'], loose: null },
+  { exact: ['an', 'anul', 'an studiu', 'an de studiu', 'anul de studiu'], loose: null },
   { exact: ['grupa', 'grupa de studiu', 'gr'], loose: /\bgrup/ },
   { exact: ['serie', 'seria'], loose: /\bseri/ },
   {
-    exact: ['initiala', 'initiala tatalui', 'initiala tata', 'tatal', 'initiala parintelui'],
+    exact: ['initiala', 'initiale', 'initiala tatalui', 'initiala tata', 'tatal', 'initiala parintelui'],
     loose: /initial/,
   },
+  {
+    exact: ['finantare', 'forma finantare', 'forma de finantare', 'regim financiar'],
+    loose: /finant/,
+  },
 ]
+
+/** „Program” — the field a registry export cannot fill from a single column. */
+export const PROGRAMME_FIELD = 4
 
 /**
  * The mapping guessed from the header row.
@@ -272,9 +320,17 @@ const HEADER_HINTS: { exact: string[]; loose: RegExp | null }[] = [
  * splits the name in two is the ordinary case, and leaving the director to
  * assemble it by hand on the very first field would make the mapping look
  * harder than it is.
+ *
+ * Two columns it refuses to offer at all. The identity-card and domicile
+ * headers are skipped outright (`isNeverMappedHeader`) — „SerieCI” matches the
+ * study-series hint on the word „seri”, and an identity-card series in the
+ * study series of a whole promotion is wrong in a way nothing downstream can
+ * notice. And when the four cohort columns of a registry export are present,
+ * „Program” is derived from them rather than taken from „Specializare”, which
+ * at licență holds „Marketing” and matches no programme in the portal.
  */
 export function guessAccountMapping(header: string[]): AccountMapping {
-  const folded = header.map(foldHeader)
+  const folded = header.map(foldForMatching)
   const used = new Set<number>()
   const mapping: AccountMapping = ACCOUNT_COLUMNS.map(() => ({ kind: 'none' }) as AccountFieldSource)
 
@@ -282,8 +338,14 @@ export function guessAccountMapping(header: string[]): AccountMapping {
     let best = -1
     let bestScore = 0
     folded.forEach((text, index) => {
-      if (!text || used.has(index)) return
-      const score = hints.exact.includes(text) ? 2 : hints.loose?.test(text) ? 1 : 0
+      if (!text || used.has(index) || isNeverMappedHeader(header[index] ?? '')) return
+      const score = hints.exact.includes(text)
+        ? 3
+        : hints.loose?.test(text)
+          ? 2
+          : hints.weak?.includes(text)
+            ? 1
+            : 0
       if (score > bestScore) {
         best = index
         bestScore = score
@@ -299,6 +361,9 @@ export function guessAccountMapping(header: string[]): AccountMapping {
     mapping[field] = { kind: 'columns', columns: [at], joiner: ' ' }
   })
 
+  const registry = findRegistryColumns(header)
+  if (registry) mapping[PROGRAMME_FIELD] = { kind: 'programme', ...registry }
+
   const givenName = folded.findIndex((t) => t === 'prenume' || /\bprenume\b/.test(t))
   const nameSource = mapping[0]
   if (givenName >= 0 && !used.has(givenName) && nameSource?.kind === 'columns') {
@@ -310,16 +375,29 @@ export function guessAccountMapping(header: string[]): AccountMapping {
 
 /** One cell of one row, as the mapping composes it. */
 function composeField(row: string[], source: AccountFieldSource): string {
-  if (source.kind === 'constant') return source.value.trim()
+  if (source.kind === 'constant') return normalizeRegistryCell(source.value)
+  if (source.kind === 'programme') {
+    /* An unrecognised cohort composes an empty cell rather than a refusal: the
+     * import screen then names the value it could not place, in front of the
+     * director, before anything is written. Refusing here would lose it. */
+    return (
+      deriveProgramme({
+        cycle: row[source.cycle] ?? '',
+        form: row[source.form] ?? '',
+        specialisation: row[source.specialisation] ?? '',
+        language: row[source.language] ?? '',
+      })?.label ?? ''
+    )
+  }
   if (source.kind !== 'columns') return ''
   return source.columns
-    .map((c) => (row[c] ?? '').trim())
+    .map((c) => normalizeRegistryCell(row[c]))
     .filter((v) => v !== '')
     .join(source.joiner)
     .trim()
 }
 
-/** The file's rows, in the portal's nine columns. */
+/** The file's rows, in the portal's ten columns. */
 export function applyAccountMapping(rows: string[][], mapping: AccountMapping): string[][] {
   return rows.map((row) => ACCOUNT_COLUMNS.map((_, field) => composeField(row, mapping[field] ?? { kind: 'none' })))
 }

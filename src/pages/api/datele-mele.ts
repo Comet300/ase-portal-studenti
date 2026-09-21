@@ -26,8 +26,8 @@ export const GET: APIRoute = async ({ locals, request }) => {
        * year from now. `first_login_at` is here because it is stored about the
        * person and the notice says so — the copy has to be complete. */
       `SELECT name, email, role, student_number, father_initial, program, specialization,
-              study_language, study_group, study_series, study_year, bio, created_at,
-              first_login_at
+              study_language, study_group, study_series, study_year, study_year_note,
+              funding, bio, created_at, first_login_at
          FROM users WHERE id = $1`,
       [u.id],
     ),

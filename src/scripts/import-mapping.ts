@@ -23,6 +23,7 @@
 import {
   ACCOUNT_COLUMNS,
   JOINERS,
+  PROGRAMME_FIELD,
   applyAccountMapping,
   composeAccountRows,
   guessAccountMapping,
@@ -32,6 +33,7 @@ import {
   type AccountMapping,
   type ProgrammeChoice,
 } from '../lib/accounts'
+import { findRegistryColumns } from '../lib/import/students'
 import {
   ENCODING_LABELS,
   parseDelimited,
@@ -47,7 +49,6 @@ const REQUIRED_FIELDS = [0, 1]
 
 /** The fields whose value, when constant, must come from a list and not a keyboard. */
 const ROLE_FIELD = 2
-const PROGRAMME_FIELD = 4
 const YEAR_FIELD = 5
 
 const ROLE_OPTIONS = [
@@ -313,11 +314,11 @@ export function start(): void {
     const input = document.createElement('input')
     input.className = 'input input--mic'
     input.value = value
-    if (field === YEAR_FIELD) {
-      input.type = 'number'
-      input.min = '1'
-      input.max = '6'
-    }
+    /* The year is text and no longer a number field: „3 Suplimentar” is a legal
+     * year in the registry's vocabulary, and a `type="number"` refused to hold
+     * it — the whole point of a constant is the file that has no year column at
+     * all, which is exactly where a supplementary promotion is typed in once. */
+    if (field === YEAR_FIELD) input.placeholder = 'Ex: 3'
     return input
   }
 
@@ -376,10 +377,17 @@ export function start(): void {
       const controls = document.createElement('div')
       controls.className = 'potrivire__sursa'
 
+      /* „Din ciclu și formă” is offered only for „Program”, and only while the
+       * file carries the four columns it reads. A mode that is there but does
+       * nothing is worse than one that is absent: whoever picked it would see
+       * an empty sample and no reason for it. */
+      const registry = field === PROGRAMME_FIELD ? findRegistryColumns(headerRow()) : null
+
       const mode = document.createElement('select')
       mode.className = 'select select--mic'
       for (const o of [
         { value: 'coloane', text: 'Din fișier' },
+        ...(registry ? [{ value: 'program', text: 'Din ciclu, formă și limbă' }] : []),
         { value: 'constanta', text: 'Aceeași valoare' },
         { value: 'niciuna', text: 'Nimic' },
       ]) {
@@ -388,6 +396,7 @@ export function start(): void {
         option.textContent = o.text
         option.selected =
           (source.kind === 'columns' && o.value === 'coloane') ||
+          (source.kind === 'programme' && o.value === 'program') ||
           (source.kind === 'constant' && o.value === 'constanta') ||
           (source.kind === 'none' && o.value === 'niciuna')
         mode.appendChild(option)
@@ -397,13 +406,26 @@ export function start(): void {
         mapping[field] =
           mode.value === 'coloane'
             ? { kind: 'columns', columns: [0], joiner: ' ' }
-            : mode.value === 'constanta'
-              ? { kind: 'constant', value: '' }
-              : { kind: 'none' }
+            : mode.value === 'program' && registry
+              ? { kind: 'programme', ...registry }
+              : mode.value === 'constanta'
+                ? { kind: 'constant', value: '' }
+                : { kind: 'none' }
         renderMapping()
         applyMapping()
       })
       controls.appendChild(mode)
+
+      /* Nothing to configure, so the row says what it reads instead of showing
+       * four dropdowns nobody should touch: the sample on the right is the
+       * programme this row's student will be written onto. */
+      if (source.kind === 'programme') {
+        const explained = document.createElement('span')
+        explained.className = 'potrivire__cerut'
+        explained.textContent =
+          'Licența are forma de învățământ ca program; masterul, specializarea.'
+        controls.appendChild(explained)
+      }
 
       if (source.kind === 'columns') {
         /* Every handler reads the mapping as it is *now*, not as it was when the
