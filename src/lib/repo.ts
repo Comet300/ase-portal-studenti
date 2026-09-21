@@ -1043,6 +1043,18 @@ export interface DirectoryStudent {
   request_status: string | null
   /** The programme they are enrolled in, so a screen can filter by it. */
   programme_id: string | null
+  /**
+   * The specialisation of that programme — „Marketing”, „Marketing online”.
+   *
+   * Not the same thing as `specialization` next door, which is the programme's
+   * whole display title and at licență has always been the form of study. This
+   * one is a fact of its own since migration 0024, and it is the first time the
+   * faculty list can answer „show me everybody on Marketing, whatever form they
+   * are in”. NULL for a student with no programme, which is legal.
+   */
+  programme_specialisation: string | null
+  /** 'if' | 'ifr' | 'id', for a screen that groups by the form of study. */
+  programme_form_of_study: string | null
 }
 
 /** Every student in the session with their coordinator, if the request went through. */
@@ -1051,8 +1063,11 @@ export function studentDirectory(yearId?: string): Promise<DirectoryStudent[]> {
     `SELECT s.id, s.name, s.email, s.student_number, s.program, s.specialization,
             s.study_language, s.study_group, s.study_series, s.study_year,
             s.father_initial, s.first_login_at::text, s.avatar_path, s.programme_id::text,
+            sp.specialisation AS programme_specialisation,
+            sp.form_of_study AS programme_form_of_study,
             t.id AS teacher_id, t.name AS teacher_name, r.status AS request_status
        FROM users s
+       LEFT JOIN study_programmes sp ON sp.id = s.programme_id
        LEFT JOIN requests r
          ON r.student_id = s.id
         AND r.academic_year_id = ${thisYear(1)}

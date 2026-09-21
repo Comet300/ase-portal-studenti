@@ -343,7 +343,7 @@ export function start(): void {
    */
   const refreshSamples = () => {
     const first = dataRows()[0] ?? []
-    const composed = applyAccountMapping([first], mapping)[0] ?? []
+    const composed = applyAccountMapping([first], mapping, data.programme)[0] ?? []
     samples.forEach((cell, field) => {
       cell.textContent = composed[field] || '—'
     })
@@ -377,17 +377,17 @@ export function start(): void {
       const controls = document.createElement('div')
       controls.className = 'potrivire__sursa'
 
-      /* „Din ciclu și formă” is offered only for „Program”, and only while the
-       * file carries the four columns it reads. A mode that is there but does
-       * nothing is worse than one that is absent: whoever picked it would see
-       * an empty sample and no reason for it. */
+      /* „Din promoția din fișier” is offered only for „Program”, and only while
+       * the file carries the five columns it reads. A mode that is there but
+       * does nothing is worse than one that is absent: whoever picked it would
+       * see an empty sample and no reason for it. */
       const registry = field === PROGRAMME_FIELD ? findRegistryColumns(headerRow()) : null
 
       const mode = document.createElement('select')
       mode.className = 'select select--mic'
       for (const o of [
         { value: 'coloane', text: 'Din fișier' },
-        ...(registry ? [{ value: 'program', text: 'Din ciclu, formă și limbă' }] : []),
+        ...(registry ? [{ value: 'program', text: 'Din promoția din fișier' }] : []),
         { value: 'constanta', text: 'Aceeași valoare' },
         { value: 'niciuna', text: 'Nimic' },
       ]) {
@@ -417,13 +417,13 @@ export function start(): void {
       controls.appendChild(mode)
 
       /* Nothing to configure, so the row says what it reads instead of showing
-       * four dropdowns nobody should touch: the sample on the right is the
+       * five dropdowns nobody should touch: the sample on the right is the
        * programme this row's student will be written onto. */
       if (source.kind === 'programme') {
         const explained = document.createElement('span')
         explained.className = 'potrivire__cerut'
         explained.textContent =
-          'Licența are forma de învățământ ca program; masterul, specializarea.'
+          'Ciclu, formă de învățământ, specializare, limbă și centru — căutate în programele anului.'
         controls.appendChild(explained)
       }
 
@@ -518,7 +518,7 @@ export function start(): void {
 
       const sample = document.createElement('div')
       sample.className = 'potrivire__exemplu'
-      const composed = applyAccountMapping([first], mapping)[0]?.[field] ?? ''
+      const composed = applyAccountMapping([first], mapping, data.programme)[0]?.[field] ?? ''
       sample.textContent = composed || '—'
       samples[field] = sample
       row.appendChild(sample)
@@ -549,7 +549,7 @@ export function start(): void {
     textarea.value =
       missingFields().length > 0
         ? ''
-        : composeAccountRows(applyAccountMapping(dataRows(), mapping))
+        : composeAccountRows(applyAccountMapping(dataRows(), mapping, data.programme))
     renderPreview()
   }
 

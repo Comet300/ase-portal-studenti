@@ -12,9 +12,9 @@ import {
   type AccountRow,
   type ProgrammeChoice,
 } from '../../lib/accounts'
+import { programmeLabel } from '../../lib/programmes.mjs'
 import { MAX_IMPORT_ROWS } from '../../lib/tabular'
 import { numar } from '../../lib/text'
-import { LANGUAGE_LABELS, LEVEL_LABELS } from '../../lib/years'
 
 /**
  * The portal's accounts: who comes in, who goes out, with what address.
@@ -38,16 +38,23 @@ interface Programme extends ProgrammeChoice {
   id: string
 }
 
-/** The current year's programmes, so that a student can be tied to their group. */
+/**
+ * The current year's programmes, so that a student can be tied to their group.
+ *
+ * The five facts come with them, not only the name: since migration 0024 they
+ * are what identifies a programme, and the label is composed from them by the
+ * one function every caller uses. Composing it here out of `name` would have
+ * been a second spelling of the same sentence, and a label that differs by one
+ * word from the one the import wizard wrote puts a whole promotion on no
+ * programme.
+ */
 async function currentProgrammes(): Promise<Programme[]> {
-  const rows = await query<{ id: string; level: string; name: string; language: string }>(
-    `SELECT id, level, name, language FROM study_programmes
+  const rows = await query<Omit<Programme, 'label'>>(
+    `SELECT id, level, name, language, form_of_study, specialisation, location
+       FROM study_programmes
       WHERE academic_year_id = (SELECT id FROM academic_years WHERE is_current) AND is_active`,
   )
-  return rows.map((p) => ({
-    ...p,
-    label: `${LEVEL_LABELS[p.level] ?? p.level} · ${p.name} · ${LANGUAGE_LABELS[p.language] ?? p.language}`,
-  }))
+  return rows.map((p) => ({ ...p, label: programmeLabel(p) }))
 }
 
 /**

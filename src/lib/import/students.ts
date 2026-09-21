@@ -7,9 +7,9 @@ import { normalizeRomanian } from '../tabular.ts'
  * lives here: which columns arrive and in what order, which of them are read
  * and which are deliberately thrown away, how a padded cell is cleaned, how
  * „3 Suplimentar” becomes a year, how „M G” becomes a father's initial, and
- * which study programme a cohort belongs to. `accounts.ts` next door stays the
- * generic reader of rows — it takes its rules from here so there is one
- * definition of each, not two that drift.
+ * how the registry's words for a cohort become the values `study_programmes`
+ * stores. `accounts.ts` next door stays the generic reader of rows — it takes
+ * its rules from here so there is one definition of each, not two that drift.
  *
  * WHY A MODULE OF ITS OWN. The rules were inside the generic reader, written as
  * two regular expressions — one letter for the initial, one digit for the year.
@@ -38,6 +38,10 @@ export interface RegistryColumn {
    * A column that is read past is not a column that rejects a row: a surplus
    * column is ignored, always. This flag exists so the template below and the
    * sentence on the import screen cannot say something different from the code.
+   *
+   * „Reaches the database” includes reaching it as part of something else:
+   * `denumire` is stored as the teaching centre of the programme the student
+   * lands on, not as a column of `users`.
    */
   stored: boolean
 }
@@ -45,8 +49,9 @@ export interface RegistryColumn {
 /**
  * The 25 columns of the export, in the order the file writes them.
  *
- * The seven stored ones are what coordination needs: who the person is, how to
- * reach them, which cohort they are in, and who pays for their studies.
+ * The eight stored ones are what coordination needs: who the person is, how to
+ * reach them, which cohort they are in — all five facts of it, `denumire`
+ * included — and who pays for their studies.
  *
  * THE REST ARE READ PAST ON PURPOSE, AND MUST STAY THAT WAY. `CNP` is the
  * national identification number, a specially regulated identifier under
@@ -67,7 +72,11 @@ export interface RegistryColumn {
 export const REGISTRY_COLUMNS: RegistryColumn[] = [
   { name: 'TipCicluStudii', stored: true },
   { name: 'FormaInvatamant', stored: true },
-  { name: 'denumire', stored: false },
+  // The teaching centre — „MRK - București” on all 893 rows of the current
+  // file, and the only column that can ever say „Buzău”. It was read past
+  // until now, and the form-of-study table guessed București for every
+  // distance-learning row instead, which is a fact invented about a student.
+  { name: 'denumire', stored: true },
   { name: 'AnDebutOfertaStudii', stored: false },
   { name: 'AnStudiu', stored: true },
   { name: 'Specializare', stored: true },
@@ -251,162 +260,184 @@ export interface RegistryCohort {
   cycle: string
   /** `FormaInvatamant`: „CU FRECVENȚĂ”, „LA DISTANȚĂ”, „FRECVENȚĂ REDUSĂ”. */
   form: string
-  /** `Specializare`: „Marketing” at licență, the programme's name at master. */
+  /** `Specializare`: „Marketing” at licență, the specialisation at master. */
   specialisation: string
   /** `LimbaProgram`: „Română” or „Engleză”. */
   language: string
+  /** `denumire`: „MRK - București” — the centre the cohort is taught at. */
+  location: string
 }
 
-export interface DerivedProgramme {
-  level: 'bachelor' | 'master'
-  /** The name as `study_programmes` holds it, seeded by migration 0020. */
-  name: string
-  language: 'ro' | 'en'
-  /** „Master · Marketing online · Română” — and the value that identifies it. */
-  label: string
+/** A cohort, in the values `study_programmes` stores. */
+export interface ProgrammeIdentity {
+  level: string
+  form_of_study: string
+  specialisation: string
+  language: string
+  location: string
 }
 
-const CYCLES: Record<string, 'bachelor' | 'master'> = {
+/**
+ * THE VOCABULARY. The registry's words, in the portal's values.
+ *
+ * This is the whole translation now, and it is a translation of WORDS and not
+ * of MEANING. Until this release there was a table here that turned a cycle, a
+ * form of study and a language into one of five hand-written programme names,
+ * because the portal's licență programme WAS the form of study and had nowhere
+ * to put a specialisation. It worked only while the faculty ran exactly one
+ * licență specialisation; a second one could not be expressed at all, and two
+ * cohorts differing only by specialisation would have become the same
+ * programme — one pot of seats, one catalogue, one line in every report, for
+ * two different groups of students. `study_programmes` carries the four facts
+ * itself since migration 0024, so the importer looks up what the registry
+ * already states instead of deciding anything.
+ *
+ * The keys are folded by `foldForMatching`, so the cedilla, the fixed-width
+ * padding and the capitals of the export are all already gone.
+ */
+const CYCLES: Record<string, string> = {
   licenta: 'bachelor',
   masterat: 'master',
 }
 
-const LANGUAGES: Record<string, 'ro' | 'en'> = {
+const FORMS_OF_STUDY: Record<string, string> = {
+  'cu frecventa': 'if',
+  'frecventa redusa': 'ifr',
+  'la distanta': 'id',
+}
+
+const LANGUAGES: Record<string, string> = {
   romana: 'ro',
   engleza: 'en',
 }
 
 /**
- * The level and the language, in words, for the label.
+ * The teaching centres, and why this table refuses rather than defaults.
  *
- * They are written here and not imported from `years.ts`, which owns them,
- * because `years.ts` opens the database connection on its first line and this
- * module runs in the browser: the import wizard composes the label in the page,
- * before anything is sent. The exact label is pinned by a test — and if the two
- * spellings ever part, every imported row lands with no programme at all rather
- * than on the wrong one, which is the failure that gets noticed.
- */
-const LEVEL_WORDS: Record<'bachelor' | 'master', string> = {
-  bachelor: 'Licență',
-  master: 'Master',
-}
-
-const LANGUAGE_WORDS: Record<'ro' | 'en', string> = {
-  ro: 'Română',
-  en: 'Engleză',
-}
-
-/**
- * A programme's whole label, which is what identifies it.
+ * `denumire` reads „MRK - București” on all 893 rows of the current export, and
+ * the version this replaces took that as licence to answer „București” for
+ * every distance-learning row without reading the column at all. That is a fact
+ * invented about a student: the faculty teaches at Buzău too, migration 0020
+ * seeded the programme for it, and the day the registry sends those rows the
+ * old code would have filed every one of them under București and nothing would
+ * have said so.
  *
- * A bare name is not an identifier: a programme is unique on (year, level,
- * name, language), and „Managementul relațiilor cu clienții” now exists in both
- * Romanian and English. The label is what the portal's own lists send and what
- * `matchProgramme` resolves first.
+ * Both spellings of each centre are listed because the export writes the
+ * faculty's prefix and a hand-typed list will not. Anything else returns null
+ * and the row is refused by name — loudly, in the preview, in front of the
+ * director, before a single account is written.
  */
-export function programmeLabel(p: {
-  level: 'bachelor' | 'master'
-  name: string
-  language: 'ro' | 'en'
-}): string {
-  return `${LEVEL_WORDS[p.level]} · ${p.name} · ${LANGUAGE_WORDS[p.language]}`
+const CENTRES: Record<string, string> = {
+  'mrk bucuresti': 'București',
+  bucuresti: 'București',
+  'mrk buzau': 'Buzău',
+  buzau: 'Buzău',
 }
 
 /**
- * THE TABLE. A bachelor cohort's form of study, as the portal names it.
+ * The cohort, in the values `study_programmes` stores — or null.
  *
- * The registry puts „Marketing” in `Specializare` and the form of study in
- * `FormaInvatamant`. The portal does the opposite: at licență the faculty runs
- * one specialisation in several forms, and migration 0020 made the FORM the
- * programme — „Învățământ cu frecvență — RO”, „Învățământ la distanță —
- * București”. So „Marketing” matches no programme at all, which is why 350
- * accepted rows still landed nowhere, and why this table exists: form plus
- * language decide the programme, and a new form of study is one line.
- *
- * The — RO / — EN suffix exists only for „cu frecvență”: it is the only form
- * the faculty runs in two languages, and the other three programmes carry no
- * suffix at all. Written out per row rather than composed, because the name
- * must match `study_programmes` character for character.
- *
- * „FRECVENȚĂ REDUSĂ” maps to „Învățământ fără frecvență”. The two are not the
- * same words: the registry says „reduced attendance”, the portal says „without
- * attendance”. They are the same thing to the faculty — it is the only
- * non-IF, non-ID bachelor programme 0020 seeds — and the mapping is written out
- * explicitly for exactly that reason: no fuzzy match would ever connect them,
- * and one that did would be connecting them by accident.
- *
- * „LA DISTANȚĂ” resolves to București and not Buzău because `denumire` is
- * „MRK - București” on every row of the export; if Buzău ever appears there,
- * this is the line that has to learn to read it.
- *
- * WHAT THIS TABLE CANNOT EXPRESS, AND WHAT TO DO THEN. The derivation works
- * only because the faculty currently runs exactly ONE bachelor specialisation,
- * Marketing. A portal bachelor programme carries a form of study and no
- * specialisation; the registry models cycle × form × specialisation × language
- * as four independent columns. The moment a second bachelor specialisation
- * appears, „form + language” stops identifying a programme and no number of
- * lines here can fix it — `study_programmes` itself has to grow a form-of-study
- * column, and this function has to key on (form, specialisation, language).
- * That is a change to the programme model, not to this table.
+ * Null means one of the five cells says something this portal has never seen.
+ * It is not an error here: the caller turns it into a cell the director reads
+ * (see `describeCohort`), and the row is refused further down with the values
+ * in the message. Refusing inside this function would lose exactly the words
+ * somebody needs in order to fix it.
  */
-const BACHELOR_FORMS: { form: string; language: 'ro' | 'en'; name: string }[] = [
-  { form: 'cu frecventa', language: 'ro', name: 'Învățământ cu frecvență — RO' },
-  { form: 'cu frecventa', language: 'en', name: 'Învățământ cu frecvență — EN' },
-  { form: 'frecventa redusa', language: 'ro', name: 'Învățământ fără frecvență' },
-  { form: 'la distanta', language: 'ro', name: 'Învățământ la distanță — București' },
-]
-
-/**
- * The programme a registry row belongs to, or null when the cohort is unknown.
- *
- * Null is not an error here: the caller writes an empty „Program” cell, and the
- * import screen then says which value it did not recognise, in front of the
- * director, before anything is written. Refusing inside this function would
- * lose the cohort that caused it.
- *
- * At master there is no table: the registry's `Specializare` already IS the
- * programme's name, character for character, so a master programme added by the
- * faculty needs a row in `study_programmes` and no code at all. A name that
- * exists in neither language is reported by `matchProgramme` with the name in
- * the message, which is the sentence somebody can act on.
- */
-export function deriveProgramme(cohort: RegistryCohort): DerivedProgramme | null {
+export function registryDimensions(cohort: RegistryCohort): ProgrammeIdentity | null {
   const level = CYCLES[foldForMatching(cohort.cycle)]
+  const form_of_study = FORMS_OF_STUDY[foldForMatching(cohort.form)]
   const language = LANGUAGES[foldForMatching(cohort.language)]
-  if (!level || !language) return null
+  const location = CENTRES[foldForMatching(cohort.location)]
+  const specialisation = normalizeRegistryCell(cohort.specialisation)
 
-  if (level === 'master') {
-    const name = normalizeRegistryCell(cohort.specialisation)
-    if (!name) return null
-    return { level, name, language, label: programmeLabel({ level, name, language }) }
-  }
-
-  const form = foldForMatching(cohort.form)
-  const found = BACHELOR_FORMS.find((f) => f.form === form && f.language === language)
-  if (!found) return null
-  return {
-    level,
-    name: found.name,
-    language,
-    label: programmeLabel({ level, name: found.name, language }),
-  }
+  if (!level || !form_of_study || !language || !location || !specialisation) return null
+  return { level, form_of_study, specialisation, language, location }
 }
 
-/* --- finding the four columns in a header row ----------------------------------- */
+/**
+ * The five cells as the file wrote them, for the sentence that refuses the row.
+ *
+ * A cohort with no programme has to be readable as a cohort: „nu există” about
+ * an empty cell tells the director nothing, while „LICENȚĂ · LA DISTANȚĂ ·
+ * Marketing · Engleză · MRK - Buzău” names the exact group of students who have
+ * no programme defined and can be gone and defined in „An universitar”.
+ *
+ * Every cell empty means the file simply has no cohort in it — a list of
+ * teachers, or a registrar's sheet with the four columns blank — and that is
+ * legal and silent.
+ */
+export function describeCohort(cohort: RegistryCohort): string {
+  const cells = [cohort.cycle, cohort.form, cohort.specialisation, cohort.language, cohort.location]
+    .map(normalizeRegistryCell)
+  return cells.some(Boolean) ? cells.map((c) => c || '—').join(' · ') : ''
+}
+
+/**
+ * The programme a registry row belongs to, looked up among the year's own.
+ *
+ * No derivation is left: the five values come straight out of the row and the
+ * answer is whichever programme carries the same five. A cohort that matches
+ * none is a cohort the faculty has not defined for this year — which is a
+ * decision for the director and not a guess for the importer, and it is the
+ * whole reason this returns null instead of inventing a nearest match.
+ *
+ * The specialisation is compared case- and padding-insensitively, because it is
+ * the one value of the five that is free text on both sides: the registry
+ * writes „Marketing online” and a director may have typed „Marketing Online”.
+ */
+export function deriveProgramme<T extends ProgrammeIdentity>(
+  cohort: RegistryCohort,
+  programmes: T[],
+): T | null {
+  const wanted = registryDimensions(cohort)
+  if (!wanted) return null
+
+  const key = wanted.specialisation.toLocaleLowerCase('ro-RO')
+  return (
+    programmes.find(
+      (p) =>
+        p.level === wanted.level &&
+        p.form_of_study === wanted.form_of_study &&
+        p.language === wanted.language &&
+        p.location === wanted.location &&
+        normalizeRegistryCell(p.specialisation).toLocaleLowerCase('ro-RO') === key,
+    ) ?? null
+  )
+}
+
+/**
+ * What goes in the „Program” cell for one registry row.
+ *
+ * The label of the programme it matched, or — when it matched none — the five
+ * cells as the file wrote them, so that the refusal further down names the
+ * cohort. Both paths produce text, because the wizard's only channel to the
+ * route is text the route reads again with the same reader.
+ */
+export function programmeCell<T extends ProgrammeIdentity & { label: string }>(
+  cohort: RegistryCohort,
+  programmes: T[],
+): string {
+  return deriveProgramme(cohort, programmes)?.label ?? describeCohort(cohort)
+}
+
+/* --- finding the five columns in a header row ----------------------------------- */
 
 export interface RegistryProgrammeColumns {
   cycle: number
   form: number
   specialisation: number
   language: number
+  location: number
 }
 
 /**
- * Where the four columns a programme is derived from sit in this header.
+ * Where the five columns a programme is looked up by sit in this header.
  *
- * All four or nothing: a file with three of them is not a registry export, and
- * guessing from three would produce a programme for some rows and silence for
- * the others — the worst of the three possible answers.
+ * All five or nothing: a file with four of them is not a registry export, and
+ * guessing from four would produce a programme for some rows and silence for
+ * the others — the worst of the three possible answers. `denumire` is the fifth
+ * and it joined the set in this release: reading four and assuming București
+ * for the fifth is precisely the defect this change removes.
  */
 export function findRegistryColumns(header: string[]): RegistryProgrammeColumns | null {
   const folded = header.map(foldForMatching)
@@ -417,6 +448,7 @@ export function findRegistryColumns(header: string[]): RegistryProgrammeColumns 
     form: at('FormaInvatamant'),
     specialisation: at('Specializare'),
     language: at('LimbaProgram'),
+    location: at('denumire'),
   }
   return Object.values(columns).some((i) => i < 0) ? null : columns
 }

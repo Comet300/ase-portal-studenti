@@ -1,4 +1,5 @@
 import { query, queryOne, transaction } from './db'
+import { LANGUAGE_WORDS, LEVEL_WORDS } from './programmes.mjs'
 
 /**
  * The academic year.
@@ -94,9 +95,19 @@ export async function openYear(
     const from = previous[0]?.id
 
     if (from && options.copyProgrammes) {
+      /* The five facts travel with the programme.
+       *
+       * Copying level, name and language alone would have been enough before
+       * migration 0024 and is a broken year after it: `form_of_study`,
+       * `specialisation` and `location` are NOT NULL, so the insert would fail
+       * outright — and if they were nullable, every programme of every new year
+       * would start with no identity at all and the importer would match none
+       * of them. */
       await client.query(
-        `INSERT INTO study_programmes (academic_year_id, level, name, language, duration_years, is_active)
-         SELECT $1, level, name, language, duration_years, is_active
+        `INSERT INTO study_programmes (academic_year_id, level, name, language, duration_years,
+                                       is_active, form_of_study, specialisation, location)
+         SELECT $1, level, name, language, duration_years,
+                is_active, form_of_study, specialisation, location
            FROM study_programmes WHERE academic_year_id = $2
          ON CONFLICT DO NOTHING`,
         [yearId, from],
@@ -107,8 +118,9 @@ export async function openYear(
        * The copy above creates new rows, so without this every student would
        * still point at last year's programme: the new year's cohorts would all
        * read as empty while the students were plainly still there. Matched on
-       * the tuple that defines a programme, not on the id, because the id is
-       * exactly what changed. */
+       * the five facts that identify a programme, not on the id, because the id
+       * is exactly what changed — and not on `name` either, which is only the
+       * label those five compose. */
       await client.query(
         `UPDATE users u
             SET programme_id = nou.id
@@ -117,8 +129,10 @@ export async function openYear(
             AND vechi.academic_year_id = $2
             AND nou.academic_year_id = $1
             AND nou.level = vechi.level
-            AND nou.name = vechi.name
-            AND nou.language = vechi.language`,
+            AND nou.form_of_study = vechi.form_of_study
+            AND nou.specialisation = vechi.specialisation
+            AND nou.language = vechi.language
+            AND nou.location = vechi.location`,
         [yearId, from],
       )
     }
@@ -131,12 +145,12 @@ export async function openYear(
       )
     }
     if (from && options.copyTopics) {
-      /* The programme travels by name, not by id: the new year has its own
-       * `study_programmes` rows, so the old id points at last year's list. The
-       * tuple `(level, name, language)` is the same one `users.programme_id` is
-       * re-pointed by above. A topic whose programme was not carried over
-       * arrives without one and is shown as such, rather than pointing at a
-       * programme from a session that has ended. */
+      /* The programme travels by what it is, not by id: the new year has its
+       * own `study_programmes` rows, so the old id points at last year's list.
+       * The five facts are the same ones `users.programme_id` is re-pointed by
+       * above. A topic whose programme was not carried over arrives without one
+       * and is shown as such, rather than pointing at a programme from a
+       * session that has ended. */
       await client.query(
         `INSERT INTO topics (academic_year_id, teacher_id, title, description, level, language,
                              methodology, domain, programme_id, is_active)
@@ -147,8 +161,10 @@ export async function openYear(
            LEFT JOIN study_programmes nou
              ON nou.academic_year_id = $1
             AND nou.level = vechi.level
-            AND nou.name = vechi.name
+            AND nou.form_of_study = vechi.form_of_study
+            AND nou.specialisation = vechi.specialisation
             AND nou.language = vechi.language
+            AND nou.location = vechi.location
           WHERE t.academic_year_id = $2 AND t.is_active`,
         [yearId, from],
       )
@@ -199,8 +215,15 @@ export interface Programme {
   id: string
   academic_year_id: string
   level: 'bachelor' | 'master'
+  /** The display title, composed from the five facts below by 0024 and by
+   * every writer since. Presentation, never an identifier. */
   name: string
   language: 'ro' | 'en' | 'fr' | 'de'
+  /** 'if' | 'ifr' | 'id' — cu frecvență, cu frecvență redusă, la distanță. */
+  form_of_study: string
+  specialisation: string
+  /** The teaching centre: „București”, „Buzău”. */
+  location: string
   duration_years: number
   is_active: boolean
   students: number
@@ -212,24 +235,25 @@ export function programmes(yearId: string): Promise<Programme[]> {
             (SELECT count(*)::int FROM users u WHERE u.programme_id = p.id) AS students
        FROM study_programmes p
       WHERE p.academic_year_id = $1
-      ORDER BY p.level, p.name, p.language`,
+      /* Specialisation first, then the form: the faculty runs one
+         specialisation in four forms at licență, and ordering by the composed
+         title would still do that — but only for as long as the title happens
+         to start with the specialisation. */
+      ORDER BY p.level, p.specialisation, p.form_of_study, p.language, p.location`,
     [yearId],
   )
 }
 
 /* --- user-facing Romanian labels -------------------------------------------- */
 
-export const LANGUAGE_LABELS: Record<string, string> = {
-  ro: 'Română',
-  en: 'Engleză',
-  fr: 'Franceză',
-  de: 'Germană',
-}
+/* The words themselves live in `programmes.mjs`, which the browser and the seed
+ * script both run and this module cannot be: `db` opens a connection on its
+ * first line. They were written out a second time here and a third time in
+ * `import/students.ts`, and three copies of „Licență” is how an imported row
+ * lands on no programme at all — the label is matched character for character. */
+export const LANGUAGE_LABELS: Record<string, string> = LANGUAGE_WORDS
 
-export const LEVEL_LABELS: Record<string, string> = {
-  bachelor: 'Licență',
-  master: 'Master',
-}
+export const LEVEL_LABELS: Record<string, string> = LEVEL_WORDS
 
 export function languageLabel(code: string | null): string {
   return (code && LANGUAGE_LABELS[code]) || 'Română'

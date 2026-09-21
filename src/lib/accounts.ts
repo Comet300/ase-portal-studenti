@@ -1,11 +1,12 @@
 import {
-  deriveProgramme,
   findRegistryColumns,
   foldForMatching,
   isNeverMappedHeader,
   normalizeRegistryCell,
   parseFatherInitials,
   parseStudyYear,
+  programmeCell,
+  type ProgrammeIdentity,
 } from './import/students.ts'
 
 /**
@@ -237,14 +238,21 @@ export type AccountFieldSource =
   /**
    * The fourth shape, and the registry's alone: a programme is not in a column.
    *
-   * The export describes a cohort with four independent columns — cycle, form
-   * of study, specialisation, language — while the portal's licență programme
-   * IS the form of study. Joining the four with a separator would compose a
-   * string that matches nothing; a constant would put all 893 students on one
-   * programme. So this source names the four columns and lets
-   * `deriveProgramme` answer, row by row.
+   * The export describes a cohort with five independent columns — cycle, form
+   * of study, specialisation, language, teaching centre — and `study_programmes`
+   * has carried those same five since migration 0024. Joining them with a
+   * separator would compose a string that matches nothing; a constant would put
+   * all 893 students on one programme. So this source names the five columns
+   * and lets `deriveProgramme` look the row up among the year's programmes.
    */
-  | { kind: 'programme'; cycle: number; form: number; specialisation: number; language: number }
+  | {
+      kind: 'programme'
+      cycle: number
+      form: number
+      specialisation: number
+      language: number
+      location: number
+    }
 
 /** One source per column of `ACCOUNT_COLUMNS`, in the same order. */
 export type AccountMapping = AccountFieldSource[]
@@ -325,9 +333,9 @@ export const PROGRAMME_FIELD = 4
  * headers are skipped outright (`isNeverMappedHeader`) — „SerieCI” matches the
  * study-series hint on the word „seri”, and an identity-card series in the
  * study series of a whole promotion is wrong in a way nothing downstream can
- * notice. And when the four cohort columns of a registry export are present,
- * „Program” is derived from them rather than taken from „Specializare”, which
- * at licență holds „Marketing” and matches no programme in the portal.
+ * notice. And when the five cohort columns of a registry export are present,
+ * „Program” is looked up from them rather than taken from „Specializare”, which
+ * names only one of the five facts that tell two cohorts apart.
  */
 export function guessAccountMapping(header: string[]): AccountMapping {
   const folded = header.map(foldForMatching)
@@ -374,19 +382,28 @@ export function guessAccountMapping(header: string[]): AccountMapping {
 }
 
 /** One cell of one row, as the mapping composes it. */
-function composeField(row: string[], source: AccountFieldSource): string {
+function composeField(
+  row: string[],
+  source: AccountFieldSource,
+  programmes: ProgrammeChoice[],
+): string {
   if (source.kind === 'constant') return normalizeRegistryCell(source.value)
   if (source.kind === 'programme') {
-    /* An unrecognised cohort composes an empty cell rather than a refusal: the
-     * import screen then names the value it could not place, in front of the
-     * director, before anything is written. Refusing here would lose it. */
-    return (
-      deriveProgramme({
+    /* An unrecognised cohort composes the five cells the file wrote, not an
+     * empty one. Empty used to mean „no programme”, which is legal, so a whole
+     * promotion the faculty had not defined arrived looking like a promotion
+     * nobody had filled the column in for — and the words that would have told
+     * the director which cohort it was were gone by then. Now the cell carries
+     * them, and `matchProgramme` refuses the row with them in the sentence. */
+    return programmeCell(
+      {
         cycle: row[source.cycle] ?? '',
         form: row[source.form] ?? '',
         specialisation: row[source.specialisation] ?? '',
         language: row[source.language] ?? '',
-      })?.label ?? ''
+        location: row[source.location] ?? '',
+      },
+      programmes,
     )
   }
   if (source.kind !== 'columns') return ''
@@ -397,9 +414,29 @@ function composeField(row: string[], source: AccountFieldSource): string {
     .trim()
 }
 
-/** The file's rows, in the portal's ten columns. */
-export function applyAccountMapping(rows: string[][], mapping: AccountMapping): string[][] {
-  return rows.map((row) => ACCOUNT_COLUMNS.map((_, field) => composeField(row, mapping[field] ?? { kind: 'none' })))
+/**
+ * The file's rows, in the portal's ten columns.
+ *
+ * The year's programmes are passed in because „Program” is no longer composed
+ * out of the file at all: it is looked up among them. They arrive from the page
+ * (the import wizard has them in an island) or from a test, never from a
+ * database call in here — this module runs in the browser.
+ *
+ * With no programmes the lookup matches nothing, and a registry file's rows all
+ * come out naming their cohort and are refused by name. That is the honest
+ * answer for a page that failed to send the list: it stops the import and says
+ * which cohorts it stopped, rather than opening 893 accounts with no programme.
+ */
+export function applyAccountMapping(
+  rows: string[][],
+  mapping: AccountMapping,
+  programmes: ProgrammeChoice[] = [],
+): string[][] {
+  return rows.map((row) =>
+    ACCOUNT_COLUMNS.map((_, field) =>
+      composeField(row, mapping[field] ?? { kind: 'none' }, programmes),
+    ),
+  )
 }
 
 /**
@@ -425,15 +462,19 @@ export function composeAccountRows(rows: string[][]): string {
 /**
  * A study programme, as much of it as matching needs.
  *
- * The label is passed in rather than composed here: the Romanian names of the
- * levels and languages live in `years.ts`, which reads the database and
- * therefore cannot be imported into a module the browser also runs.
+ * The five dimensions are the identity — that is what migration 0024 made of
+ * them — and `name` is the display title derived from them. Both travel,
+ * because both are matched against: the label for the portal's own lists, the
+ * dimensions for a registry row, and `name` for a file saved before the
+ * dimensions existed.
+ *
+ * The label is passed in rather than computed here so that a caller who has one
+ * already (the import wizard's island, a test) does not compute a second one;
+ * `programmeLabel` in `programmes.mjs` is what every caller uses to make it.
  */
-export interface ProgrammeChoice {
-  level: string
+export interface ProgrammeChoice extends ProgrammeIdentity {
   name: string
-  language: string
-  /** „Licență · Marketing · Română” — and also the value that identifies it. */
+  /** „Licență · Marketing · învățământ cu frecvență · Română”. */
   label: string
 }
 
@@ -451,28 +492,58 @@ export type ProgrammeMatch<T> = { ok: true; programme: T | null } | { ok: false;
  * row and say which value was not recognised.
  *
  * The full label matches first, and that is why the portal's own lists send the
- * label rather than the bare name: a programme is unique on (year, level, name,
- * language), so „Marketing” alone is not an identifier — it exists at bachelor
- * in Romanian and at master in English, and a lookup keyed on the name kept
- * whichever row the query happened to return last. A bare name is still
- * accepted, because that is what a registrar's file contains, but only while it
- * points at exactly one programme.
+ * label rather than the bare name: a programme is identified by five facts —
+ * level, form of study, specialisation, language and teaching centre — so
+ * „Marketing” alone is not an identifier. It is the specialisation of all five
+ * licență programmes at this faculty, and a lookup keyed on it kept
+ * whichever row the query happened to return last. A bare value is still
+ * accepted, because that is what a registrar's own sheet contains, but only
+ * while it points at exactly one programme.
+ *
+ * Two passes, and what neither of them settles is refused rather than guessed:
+ *
+ *   1. the label the portal's own lists send, computed from the five facts;
+ *   2. the display title, or the bare specialisation — the title because an
+ *      edited preview cell often has the level and the language deleted off the
+ *      front of it, and the specialisation because that is new and is the point
+ *      of this change: a registrar's sheet with a „Specializare” column of
+ *      „Marketing online” resolves by itself, while „Marketing” — five
+ *      programmes at this faculty — is refused with all four listed instead of
+ *      silently becoming one of them.
+ *
+ * A label saved BEFORE migration 0024 („Licență · Învățământ cu frecvență — RO
+ * · Română”) matches nothing here, and deliberately so: 0024 rewrote `name`
+ * from the dimensions, that old name is not in the database any more, and a
+ * table of former spellings would be a second, ageing definition of a programme
+ * to keep in step with the first. The row is refused with the value named, and
+ * the director picks the programme from the list once.
  */
 export function matchProgramme<T extends ProgrammeChoice>(raw: string, programmes: T[]): ProgrammeMatch<T> {
   const text = (raw ?? '').trim()
   if (!text) return { ok: true, programme: null }
 
   const key = text.toLocaleLowerCase('ro-RO')
-  const exact = programmes.find((p) => p.label.toLocaleLowerCase('ro-RO') === key)
+  const fold = (value: string) => (value ?? '').trim().toLocaleLowerCase('ro-RO')
+
+  const exact = programmes.find((p) => fold(p.label) === key)
   if (exact) return { ok: true, programme: exact }
 
-  const byName = programmes.filter((p) => p.name.toLocaleLowerCase('ro-RO') === key)
-  if (byName.length === 1) return { ok: true, programme: byName[0]! }
-  if (byName.length > 1) {
+  /* The title and the specialisation are tried as one list, not one after the
+   * other: „Marketing online” is both the title of one programme and the
+   * specialisation of the same one, and two separate passes would have called
+   * that an ambiguity and refused the row. */
+  const candidates = programmes.filter((p) => fold(p.name) === key || fold(p.specialisation) === key)
+  if (candidates.length === 1) return { ok: true, programme: candidates[0]! }
+  if (candidates.length > 1) {
     return {
       ok: false,
-      reason: `programul „${text}” există în mai multe variante (${byName.map((p) => p.label).join(', ')}) — alege-l din listă, nu dintr-o coloană`,
+      reason: `programul „${text}” există în mai multe variante (${candidates.map((p) => p.label).join(', ')}) — alege-l din listă, nu dintr-o coloană`,
     }
   }
-  return { ok: false, reason: `programul „${text}” nu există în anul curent` }
+  return {
+    ok: false,
+    reason:
+      `programul „${text}” nu există în anul curent — adaugă-l în „An universitar” ` +
+      'sau alege altul din listă',
+  }
 }

@@ -4,6 +4,7 @@ import { execute, queryOne, transaction } from '../../lib/db'
 import { deadEnd, redirectWithNotice } from '../../lib/http'
 import { parseArchiveRows, parseArchiveLevel } from '../../lib/archive'
 import { formAction } from '../../lib/forms'
+import { FORMS_OF_STUDY, programmeTitle } from '../../lib/programmes.mjs'
 import { openYear } from '../../lib/years'
 import { id as formId } from '../../lib/ids'
 
@@ -87,22 +88,61 @@ export const POST: APIRoute = async ({ request, locals }) => {
     )
   }
 
+  /* A programme is five answers now, not a name typed into a box.
+   *
+   * The box was the whole problem. „Învățământ la distanță — Buzău” typed into
+   * it was a form of study, a centre and an unstated specialisation in one
+   * string, and nothing downstream could take it apart — which is why a second
+   * licență specialisation could not be expressed at all. The five fields are
+   * what the registry has always sent and what `study_programmes` has carried
+   * since migration 0024; the name is composed from them, so the label on every
+   * screen is the same one the importer matches against, character for
+   * character. */
   if (action === 'adauga_program') {
     const level = String(form.get('nivel') ?? '')
-    const name = String(form.get('denumire') ?? '').trim()
+    const specialisation = String(form.get('specializare') ?? '').trim()
+    const formOfStudy = String(form.get('forma') ?? '')
+    const location = String(form.get('locatie') ?? '').trim()
     const language = String(form.get('limba') ?? 'ro')
     const years = Number(form.get('durata') ?? 3)
 
     if (!['bachelor', 'master'].includes(level)) return back('Nivel invalid.', true)
     if (!['ro', 'en', 'fr', 'de'].includes(language)) return back('Limbă invalidă.', true)
-    if (!name) return back('Denumirea programului este obligatorie.', true)
+    if (!FORMS_OF_STUDY.includes(formOfStudy)) {
+      return back('Alege forma de învățământ: cu frecvență, cu frecvență redusă sau la distanță.', true)
+    }
+    if (!specialisation) {
+      return back('Scrie specializarea — „Marketing”, „Marketing online”.', true)
+    }
+    if (!location) {
+      return back('Scrie centrul în care se predă — „București”, „Buzău”.', true)
+    }
 
+    const dimensions = {
+      level,
+      form_of_study: formOfStudy,
+      specialisation,
+      language,
+      location,
+    }
+    const name = programmeTitle(dimensions)
+
+    /* The conflict is on the identity, not on the name. On the name it would
+     * have matched a programme by what it is CALLED: renaming a label would
+     * have opened a second row for the same cohort, and the seats, topics and
+     * students would have stayed on the first one. */
     await execute(
-      `INSERT INTO study_programmes (academic_year_id, level, name, language, duration_years)
-       VALUES ((SELECT id FROM academic_years WHERE is_current), $1, $2, $3, $4)
-       ON CONFLICT (academic_year_id, level, name, language)
-       DO UPDATE SET duration_years = EXCLUDED.duration_years, is_active = true`,
-      [level, name, language, Math.min(6, Math.max(1, Math.trunc(years) || 3))],
+      `INSERT INTO study_programmes (academic_year_id, level, name, language, duration_years,
+                                     form_of_study, specialisation, location)
+       VALUES ((SELECT id FROM academic_years WHERE is_current), $1, $2, $3, $4, $5, $6, $7)
+       ON CONFLICT (academic_year_id, level, form_of_study, specialisation, language, location)
+       DO UPDATE SET duration_years = EXCLUDED.duration_years,
+                     name = EXCLUDED.name,
+                     is_active = true`,
+      [
+        level, name, language, Math.min(6, Math.max(1, Math.trunc(years) || 3)),
+        formOfStudy, specialisation, location,
+      ],
     )
 
     return back(`Programul „${name}” a fost adăugat.`)

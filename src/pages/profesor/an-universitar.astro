@@ -3,6 +3,7 @@ import AlegeData from '../../components/AlegeData.astro'
 import ProfesorLayout from '../../layouts/ProfesorLayout.astro'
 import { query } from '../../lib/db'
 import { formatDate } from '../../lib/repo'
+import { FORM_WORDS, MAIN_LOCATION } from '../../lib/programmes.mjs'
 import { LANGUAGE_LABELS, LEVEL_LABELS, allYears, programmes } from '../../lib/years'
 
 /**
@@ -39,6 +40,12 @@ const byLevel = {
   bachelor: programList.filter((p) => p.level === 'bachelor'),
   master: programList.filter((p) => p.level === 'master'),
 }
+
+/* Centrele care există deja, pentru completarea din listă. Din programele
+ * anului, nu dintr-o listă scrisă în cod: facultatea deschide și închide
+ * centre fără ca portalul să afle, iar „Buzău” apare aici pentru că are un
+ * program, nu pentru că l-a prevăzut cineva. */
+const centre = [...new Set([MAIN_LOCATION, ...programList.map((p) => p.location)])].sort()
 ---
 
 <ProfesorLayout
@@ -237,10 +244,16 @@ const byLevel = {
                   <ul>
                     {byLevel[level].map((p) => (
                       <li class:list={['program', { 'is-inactiv': !p.is_active }]}>
+                        {/* Specializarea sus, restul dedesubt. Până acum aici
+                            stătea o singură denumire care, la licență, era de
+                            fapt forma de învățământ — deci ecranul pe care se
+                            administrează programele era singurul care nu putea
+                            arăta ce specializare se predă. */}
                         <div class="stack stack--tight" style="gap:0">
-                          <strong>{p.name}</strong>
+                          <strong>{p.specialisation}</strong>
                           <span class="muted text-xs">
-                            {LANGUAGE_LABELS[p.language]} · {p.duration_years} ani ·{' '}
+                            {FORM_WORDS[p.form_of_study] ?? p.form_of_study} ·{' '}
+                            {p.location} · {LANGUAGE_LABELS[p.language]} · {p.duration_years} ani ·{' '}
                             {p.students} {p.students === 1 ? 'student' : 'studenți'}
                           </span>
                         </div>
@@ -262,11 +275,21 @@ const byLevel = {
       }
 
       <div class="panel__footer">
+        {/* Cinci întrebări, nu o denumire.
+            O casetă de text cerea o singură denumire pentru cinci lucruri —
+            „Învățământ la distanță — Buzău” este o formă de învățământ, un
+            centru și o specializare nescrisă, într-un singur șir pe care nimic
+            nu îl mai putea desface. De aceea facultatea nu putea avea două
+            specializări la licență. Denumirea se compune acum din răspunsuri,
+            iar eticheta de pe ecran este exact cea după care se potrivesc
+            rândurile importate. */}
         <form method="POST" action="/api/an-universitar" class="row row--wrap" style="gap:var(--s-3);align-items:flex-end">
           <input type="hidden" name="actiune" value="adauga_program" />
           <div class="field" style="flex:2;min-width:220px">
-            <label class="label" for="denumire">Program nou</label>
-            <input class="input" id="denumire" name="denumire" required placeholder="Ex: Marketing digital" />
+            <label class="label" for="specializare">Specializarea</label>
+            <input class="input" id="specializare" name="specializare" required
+              placeholder="Ex: Marketing, Marketing online" />
+            <span class="hint">Ce scrie pe diplomă, nu forma de învățământ.</span>
           </div>
           <div class="field" style="min-width:140px">
             <label class="label" for="nivel">Nivel</label>
@@ -274,6 +297,26 @@ const byLevel = {
               <option value="bachelor">Licență</option>
               <option value="master">Master</option>
             </select>
+          </div>
+          <div class="field" style="min-width:210px">
+            <label class="label" for="forma">Forma de învățământ</label>
+            <select class="select" id="forma" name="forma">
+              {Object.entries(FORM_WORDS).map(([cod, text]) => (
+                <option value={cod}>{text[0]!.toLocaleUpperCase('ro-RO') + text.slice(1)}</option>
+              ))}
+            </select>
+          </div>
+          <div class="field" style="min-width:170px">
+            <label class="label" for="locatie">Centrul</label>
+            {/* Listă cu scriere liberă: centrele sunt ale facultății și se
+                deschid fără ca portalul să afle, dar cele două existente nu
+                trebuie tastate — două scrieri ale aceluiași oraș ar fi două
+                programe diferite. */}
+            <input class="input" id="locatie" name="locatie" required list="centre"
+              value={MAIN_LOCATION} placeholder="Ex: București" />
+            <datalist id="centre">
+              {centre.map((c) => <option value={c}></option>)}
+            </datalist>
           </div>
           <div class="field" style="min-width:150px">
             <label class="label" for="limba">Limba de studiu</label>

@@ -7,6 +7,7 @@ import Taburi from '../../components/Taburi.astro'
 import { isDepartmentHead } from '../../lib/auth'
 import { ACCOUNT_COLUMNS, type ProgrammeChoice } from '../../lib/accounts'
 import { query } from '../../lib/db'
+import { programmeLabel } from '../../lib/programmes.mjs'
 import { studentDirectory } from '../../lib/repo'
 import { officialName } from '../../lib/text'
 import {
@@ -47,6 +48,7 @@ import {
  * conținutul. */
 const nivel = Astro.url.searchParams.get('nivel') ?? ''
 const searchQuery = (Astro.url.searchParams.get('q') ?? '').trim().toLowerCase()
+const specializareAleasa = Astro.url.searchParams.get('specializare') ?? ''
 
 /* The year, and what changing it actually does.
  *
@@ -116,6 +118,16 @@ const totals = {
 }
 const neinceput = totals.toti - totals.supervised - totals.asteptare
 
+/* Specializările pe care stau oameni, nu cele definite.
+ *
+ * Un filtru cu o opțiune care lasă zero rânduri este un filtru care minte, iar
+ * lista programelor este oricum goală pentru cine nu este director. Ordinea
+ * este a facultății: „Marketing” înaintea lui „Marketing online”, adică
+ * alfabetic, cu regulile limbii. */
+const specializari = [
+  ...new Set(all.map((s) => s.programme_specialisation).filter((v): v is string => Boolean(v))),
+].sort((a, b) => a.localeCompare(b, 'ro'))
+
 
 
 /* Where a save comes back to.
@@ -147,7 +159,10 @@ const programmeChoices: ProgrammeChoice[] = yearProgrammes.map((p) => ({
   level: p.level,
   name: p.name,
   language: p.language,
-  label: `${LEVEL_LABELS[p.level]} · ${p.name} · ${LANGUAGE_LABELS[p.language]}`,
+  form_of_study: p.form_of_study,
+  specialisation: p.specialisation,
+  location: p.location,
+  label: programmeLabel(p),
 }))
 
 const adreseExistente = (
@@ -255,12 +270,29 @@ const exportHref = (format: string) => {
           </div>
         </fieldset>
 
+        {/* Specializarea, înaintea programului: este întrebarea mai largă.
+            Până la modelul cu cinci coloane nici nu se putea pune — la licență
+            specializarea nu era scrisă nicăieri, era subînțeleasă. Acum
+            „toți studenții de la Marketing, indiferent de forma de învățământ”
+            este un filtru, nu o căutare după cuvinte. */}
+        {specializari.length > 1 && (
+          <div class="field filtre__program">
+            <label class="label" for="specializare">Specializarea</label>
+            <select class="select" id="specializare" name="specializare">
+              <option value="">Toate specializările</option>
+              {specializari.map((s) => (
+                <option value={s} selected={s === specializareAleasa}>{s}</option>
+              ))}
+            </select>
+          </div>
+        )}
+
         <div class="field filtre__program">
           <label class="label" for="program">Program de studii</label>
           <select class="select" id="program" name="program" data-programe>
             <option value="">Toate programele</option>
             {yearProgrammes.map((p) => (
-              <option value={p.id} data-nivel={p.level}>
+              <option value={p.id} data-nivel={p.level} data-specializare={p.specialisation}>
                 {p.name}
                 {p.language !== 'ro' ? ` · ${LANGUAGE_LABELS[p.language]}` : ''}
               </option>
@@ -477,6 +509,7 @@ const exportHref = (format: string) => {
                       data-rand
                       data-nivel={s.program ?? 'bachelor'}
                       data-program={s.programme_id ?? ''}
+                      data-specializare={s.programme_specialisation ?? ''}
                       data-serie={s.study_series ?? ''}
                       data-grupa={s.study_group ?? ''}
                       data-cont={s.first_login_at ? 'intrat' : 'neintrat'}
@@ -951,6 +984,9 @@ Dumitru Ioana;ioana.dumitru@stud.ase.ro;student;MK-2025-0142;Marketing;3;RO-1503
     const cauta = form.querySelector<HTMLInputElement>('#q')!
     const niveluri = [...form.querySelectorAll<HTMLInputElement>('input[name="nivel"]')]
     const program = form.querySelector<HTMLSelectElement>('#program')!
+    /* Poate lipsi: caseta se arată doar când facultatea are mai multe
+       specializări, iar un filtru cu o singură opțiune este mobilier. */
+    const specializare = form.querySelector<HTMLSelectElement>('#specializare')
     const serie = form.querySelector<HTMLSelectElement>('#serie')!
     const grupa = form.querySelector<HTMLSelectElement>('#grupa')!
     const stare = form.querySelector<HTMLSelectElement>('#stare')!
@@ -963,11 +999,18 @@ Dumitru Ioana;ioana.dumitru@stud.ase.ro;student;MK-2025-0142;Marketing;3;RO-1503
 
     const nivelAles = () => niveluri.filter((c) => c.checked).map((c) => c.value)
 
-    type Cheie = 'nivel' | 'program' | 'serie' | 'grupa' | 'stare' | 'cauta'
+    type Cheie = 'nivel' | 'specializare' | 'program' | 'serie' | 'grupa' | 'stare' | 'cauta'
 
     const trece = (r: HTMLElement, ignora?: Cheie) => {
       const n = nivelAles()
       if (ignora !== 'nivel' && n.length > 0 && !n.includes(r.dataset.nivel ?? '')) return false
+      if (
+        ignora !== 'specializare' &&
+        specializare?.value &&
+        (r.dataset.specializare ?? '') !== specializare.value
+      ) {
+        return false
+      }
       if (ignora !== 'program' && program.value && r.dataset.program !== program.value) return false
       if (ignora !== 'serie' && serie.value && (r.dataset.serie ?? '') !== serie.value) return false
       if (ignora !== 'grupa' && grupa.value && (r.dataset.grupa ?? '') !== grupa.value) return false
@@ -1016,6 +1059,7 @@ Dumitru Ioana;ioana.dumitru@stud.ase.ro;student;MK-2025-0142;Marketing;3;RO-1503
       const set = (k: string, v: string) => (v ? p.set(k, v) : p.delete(k))
       set('q', cauta.value.trim())
       set('nivel', nivelAles().join(','))
+      set('specializare', specializare?.value ?? '')
       set('program', program.value)
       set('serie', serie.value)
       set('grupa', grupa.value)
@@ -1025,10 +1069,17 @@ Dumitru Ioana;ioana.dumitru@stud.ase.ro;student;MK-2025-0142;Marketing;3;RO-1503
     }
 
     const aplica = () => {
-      /* Programele urmează nivelul, ca la „Teme propuse”. */
+      /* Programele urmează nivelul și specializarea, ca la „Teme propuse”.
+         Specializarea este întrebarea mai largă — „Marketing” are patru
+         programe la licență — deci ea îngustează lista de programe, nu invers:
+         altfel ai alege un program și ai vedea o specializare care nu îl
+         conține. */
       const n = nivelAles()
+      const spec = specializare?.value ?? ''
       for (const o of program.options) {
-        const seVede = !o.dataset.nivel || n.length === 0 || n.includes(o.dataset.nivel)
+        const seVede =
+          (!o.dataset.nivel || n.length === 0 || n.includes(o.dataset.nivel)) &&
+          (!spec || !o.dataset.specializare || o.dataset.specializare === spec)
         o.hidden = !seVede
         o.disabled = !seVede
       }
@@ -1059,8 +1110,14 @@ Dumitru Ioana;ioana.dumitru@stud.ase.ro;student;MK-2025-0142;Marketing;3;RO-1503
       }
 
       const activ =
-        Boolean(cauta.value.trim() || program.value || serie.value || grupa.value || stare.value) ||
-        nivelAles().length > 0
+        Boolean(
+          cauta.value.trim() ||
+            specializare?.value ||
+            program.value ||
+            serie.value ||
+            grupa.value ||
+            stare.value,
+        ) || nivelAles().length > 0
       goleste.hidden = !activ
 
       const gol = document.querySelector<HTMLElement>('[data-fara-rezultate]')
@@ -1069,7 +1126,9 @@ Dumitru Ioana;ioana.dumitru@stud.ase.ro;student;MK-2025-0142;Marketing;3;RO-1503
       if (contorTotal) contorTotal.textContent = String(vizibile)
     }
 
-    for (const el of [cauta, program, serie, grupa, stare, ...niveluri]) {
+    const controale = [cauta, program, serie, grupa, stare, ...niveluri]
+    if (specializare) controale.push(specializare)
+    for (const el of controale) {
       el.addEventListener('input', () => {
         aplica()
         scrieAdresa()
@@ -1078,6 +1137,7 @@ Dumitru Ioana;ioana.dumitru@stud.ase.ro;student;MK-2025-0142;Marketing;3;RO-1503
 
     const golesteTot = () => {
       cauta.value = ''
+      if (specializare) specializare.value = ''
       program.value = ''
       serie.value = ''
       grupa.value = ''
@@ -1095,6 +1155,7 @@ Dumitru Ioana;ioana.dumitru@stud.ase.ro;student;MK-2025-0142;Marketing;3;RO-1503
 
     /* Adresa lipită în bară arată exact lista pe care o descrie. */
     const p = new URLSearchParams(location.search)
+    if (specializare) specializare.value = p.get('specializare') ?? ''
     program.value = p.get('program') ?? ''
     serie.value = p.get('serie') ?? ''
     grupa.value = p.get('grupa') ?? ''

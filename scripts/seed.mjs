@@ -8,6 +8,7 @@
  */
 
 import { databaseUrl } from '../src/lib/defaults.mjs'
+import { programmeTitle } from '../src/lib/programmes.mjs'
 import pg from 'pg'
 
 const connectionString = databaseUrl()
@@ -53,36 +54,51 @@ const olderYear = await pastYear(2)
 
 /* --- study programmes ------------------------------------------------------ */
 
-/* The faculty's real programmes, the same list migration 0020 writes into the
- * current year. At licență the programme is Marketing and what distinguishes
- * one student from another is the form of study; at master they are separate
- * programmes. The demo data has to name the same things the portal does, or
- * every screenshot of it teaches the wrong vocabulary. */
+/* The faculty's real programmes, the same list migrations 0020 and 0023 write
+ * into the current year, in the five facts 0024 made columns of: the cycle, the
+ * form of study, the specialisation, the language and the teaching centre. At
+ * licență the faculty runs one specialisation, Marketing, in four forms; at
+ * master, eight specialisations all „cu frecvență”. The demo data has to name
+ * the same things the portal does, or every screenshot of it teaches the wrong
+ * vocabulary.
+ *
+ * The display name is composed by `programmeTitle` and not typed here. Typing
+ * it was the obvious alternative and it is a trap: a name spelled one character
+ * differently from the one migration 0024 wrote does not update that row, it
+ * inserts a second — and then the unique index on the five facts rejects it, at
+ * startup, in a seed script nobody reads the output of. */
 const PROGRAMMES = [
-  ['bachelor', 'Învățământ cu frecvență — RO', 'ro', 3],
-  ['bachelor', 'Învățământ cu frecvență — EN', 'en', 3],
-  ['bachelor', 'Învățământ fără frecvență', 'ro', 3],
-  ['bachelor', 'Învățământ la distanță — București', 'ro', 3],
-  ['bachelor', 'Învățământ la distanță — Buzău', 'ro', 3],
-  ['master', 'Cercetări de marketing', 'ro', 2],
-  ['master', 'Marketing și comunicare în afaceri', 'ro', 2],
-  ['master', 'Marketing online', 'ro', 2],
-  ['master', 'Relații publice în marketing', 'ro', 2],
-  ['master', 'Marketing strategic', 'ro', 2],
-  ['master', 'Managementul relațiilor cu clienții', 'ro', 2],
-]
+  { level: 'bachelor', form_of_study: 'if',  specialisation: 'Marketing', language: 'ro', location: 'București', years: 3 },
+  { level: 'bachelor', form_of_study: 'if',  specialisation: 'Marketing', language: 'en', location: 'București', years: 3 },
+  { level: 'bachelor', form_of_study: 'ifr', specialisation: 'Marketing', language: 'ro', location: 'București', years: 3 },
+  { level: 'bachelor', form_of_study: 'id',  specialisation: 'Marketing', language: 'ro', location: 'București', years: 3 },
+  { level: 'bachelor', form_of_study: 'id',  specialisation: 'Marketing', language: 'ro', location: 'Buzău',     years: 3 },
+  { level: 'master', form_of_study: 'if', specialisation: 'Cercetări de marketing',             language: 'ro', location: 'București', years: 2 },
+  { level: 'master', form_of_study: 'if', specialisation: 'Marketing și comunicare în afaceri', language: 'ro', location: 'București', years: 2 },
+  { level: 'master', form_of_study: 'if', specialisation: 'Marketing online',                   language: 'ro', location: 'București', years: 2 },
+  { level: 'master', form_of_study: 'if', specialisation: 'Relații publice în marketing',       language: 'ro', location: 'București', years: 2 },
+  { level: 'master', form_of_study: 'if', specialisation: 'Marketing strategic',                language: 'ro', location: 'București', years: 2 },
+  { level: 'master', form_of_study: 'if', specialisation: 'Managementul relațiilor cu clienții', language: 'ro', location: 'București', years: 2 },
+].map((p) => ({ ...p, name: programmeTitle(p) }))
+
+/* Keyed on what identifies a programme, not on what it is called: the label is
+ * derived, so a key made of it would go stale the moment the derivation
+ * changes, and every seeded student would land with no programme. */
+const programmeKey = (p) =>
+  `${p.level}|${p.form_of_study}|${p.specialisation}|${p.language}|${p.location}`
 
 const programmeIds = new Map()
-for (const [level, name, language, years] of PROGRAMMES) {
+for (const p of PROGRAMMES) {
   const row = await one(
-    `INSERT INTO study_programmes (academic_year_id, level, name, language, duration_years)
-     VALUES ($1, $2, $3, $4, $5)
-     ON CONFLICT (academic_year_id, level, name, language)
-       DO UPDATE SET duration_years = EXCLUDED.duration_years
+    `INSERT INTO study_programmes (academic_year_id, level, name, language, duration_years,
+                                   form_of_study, specialisation, location)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+     ON CONFLICT (academic_year_id, level, form_of_study, specialisation, language, location)
+       DO UPDATE SET duration_years = EXCLUDED.duration_years, name = EXCLUDED.name
      RETURNING id`,
-    [currentYear.id, level, name, language, years],
+    [currentYear.id, p.level, p.name, p.language, p.years, p.form_of_study, p.specialisation, p.location],
   )
-  programmeIds.set(`${level}|${name}|${language}`, row.id)
+  programmeIds.set(programmeKey(p), row.id)
 }
 
 /* --- session stages --------------------------------------------------------
@@ -182,16 +198,35 @@ const STUDENT_NAMES = [
 const SERIES = ['A', 'B']
 const FATHER_INITIALS = ['I', 'Gh', 'C', 'M', 'D', 'N']
 
-/** Each student's programme: [level, specialization, language, year]. */
+/* Each student's programme, taken from `PROGRAMMES` itself rather than written
+ * out again: a second spelling of a programme is a student on no programme, and
+ * the display name is composed now, so there is nothing here to spell. */
+const programmeOf = (specialisation, form, language, location = 'București') =>
+  PROGRAMMES.find(
+    (p) =>
+      p.specialisation === specialisation &&
+      p.form_of_study === form &&
+      p.language === language &&
+      p.location === location,
+  )
+
+/* Each demo cohort: the programme, and the year of study it is in.
+ *
+ * All five licență programmes, not three. One specialisation in four forms and
+ * two centres is the shape this release gives the faculty, and a demo that only
+ * ever fills „cu frecvență” shows none of it — the form-of-study column reads
+ * the same on every row and the specialisation filter has one value. */
 const BACHELOR_GROUPS = [
-  ['bachelor', 'Învățământ cu frecvență — RO', 'ro', 3],
-  ['bachelor', 'Învățământ cu frecvență — EN', 'en', 3],
-  ['bachelor', 'Învățământ la distanță — București', 'ro', 3],
+  [programmeOf('Marketing', 'if', 'ro'), 3],
+  [programmeOf('Marketing', 'if', 'en'), 3],
+  [programmeOf('Marketing', 'ifr', 'ro'), 3],
+  [programmeOf('Marketing', 'id', 'ro'), 3],
+  [programmeOf('Marketing', 'id', 'ro', 'Buzău'), 3],
 ]
 const MASTER_GROUPS = [
-  ['master', 'Marketing strategic', 'ro', 2],
-  ['master', 'Cercetări de marketing', 'ro', 2],
-  ['master', 'Marketing online', 'ro', 2],
+  [programmeOf('Marketing strategic', 'if', 'ro'), 2],
+  [programmeOf('Cercetări de marketing', 'if', 'ro'), 2],
+  [programmeOf('Marketing online', 'if', 'ro'), 2],
 ]
 
 /* --- topics ---------------------------------------------------------------- */
@@ -339,16 +374,27 @@ for (const [i, name] of STUDENT_NAMES.entries()) {
   // Split on the position within the master's series, not on the global index:
   // `i % 3` is constantly 2 for every master's student, so
   // `i % MASTER_GROUPS.length` would have sent them all to the same programme.
-  const [level, specialization, limba, an] = isMaster
+  //
+  // The same arithmetic was wrong at licență in the other direction: `i % 3` is
+  // 0 or 1 for a licență student and never 2, so the third group never got
+  // anybody and the demo had students in two of the five licență programmes.
+  // Nothing said so — three programmes simply read „0 studenți” — and they are
+  // exactly the ones this release makes distinguishable: frecvență redusă, la
+  // distanță, Buzău.
+  const [programme, an] = isMaster
     ? MASTER_GROUPS[Math.floor(i / 3) % MASTER_GROUPS.length]
-    : BACHELOR_GROUPS[i % BACHELOR_GROUPS.length]
+    : BACHELOR_GROUPS[Math.floor(i / 3) % BACHELOR_GROUPS.length]
+  const limba = programme.language
   const email = `${name.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, '.')}@stud.ase.ro`
   studentIds.push(
     await upsertUser([
       email, name, 'student',
       `MK-${startYear}-${String(i + 1).padStart(4, '0')}`,
-      level, specialization, an,
-      programmeIds.get(`${level}|${specialization}|${limba}`), limba, `${limba.toUpperCase()}-${1500 + (i % 4)}`,
+      /* `specialization` on a student is the programme's display title, not its
+       * specialisation: six screens group and filter on it without a join, and
+       * a licență cohort split by form of study has to stay split. */
+      programme.level, programme.name, an,
+      programmeIds.get(programmeKey(programme)), limba, `${limba.toUpperCase()}-${1500 + (i % 4)}`,
       // A series above the group, and the father's initial: „Popescu I. Maria”
       // is the name the secretariat reads on the printed request.
       SERIES[i % SERIES.length], FATHER_INITIALS[i % FATHER_INITIALS.length],
@@ -380,11 +426,12 @@ await q(
  * no thread, no bookable consultation — is reachable from the sign-in page
  * instead of only existing in theory.
  */
+const dayProgramme = programmeOf('Marketing', 'if', 'ro')
 const unassignedStudentId = await upsertUser([
   'ana.lupu@stud.ase.ro', 'Ana-Maria Lupu', 'student',
   `MK-${startYear}-0099`,
-  'bachelor', 'Învățământ cu frecvență — RO', 3,
-  programmeIds.get('bachelor|Învățământ cu frecvență — RO|ro'), 'ro', 'RO-1503', 'A', 'V',
+  dayProgramme.level, dayProgramme.name, 3,
+  programmeIds.get(programmeKey(dayProgramme)), 'ro', 'RO-1503', 'A', 'V',
   null, 'Marketing', null, null, null,
   true,
 ])

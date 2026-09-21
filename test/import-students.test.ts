@@ -1,5 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import {
   ACCOUNT_COLUMNS,
   applyAccountMapping,
@@ -13,11 +14,20 @@ import {
   REGISTRY_HEADER,
   REGISTRY_TEMPLATE_ROWS,
   deriveProgramme,
+  describeCohort,
   normalizeRegistryCell,
   parseFatherInitials,
   parseStudyYear,
-  programmeLabel,
+  programmeCell,
+  registryDimensions,
 } from '../src/lib/import/students.ts'
+import {
+  FORMS_OF_STUDY,
+  FORM_WORDS,
+  MAIN_LOCATION,
+  programmeLabel,
+  programmeTitle,
+} from '../src/lib/programmes.mjs'
 import { formatInitial, officialName } from '../src/lib/text.ts'
 
 /**
@@ -30,29 +40,41 @@ import { formatInitial, officialName } from '../src/lib/text.ts'
  * says how many people it is about.
  */
 
-/** What migrations 0020 and 0023 seed for the year under way. */
-const PROGRAMMES: ProgrammeChoice[] = (
-  [
-    ['bachelor', 'Învățământ cu frecvență — RO', 'ro'],
-    ['bachelor', 'Învățământ cu frecvență — EN', 'en'],
-    ['bachelor', 'Învățământ fără frecvență', 'ro'],
-    ['bachelor', 'Învățământ la distanță — București', 'ro'],
-    ['bachelor', 'Învățământ la distanță — Buzău', 'ro'],
-    ['master', 'Cercetări de marketing', 'ro'],
-    ['master', 'Marketing și comunicare în afaceri', 'ro'],
-    ['master', 'Marketing online', 'ro'],
-    ['master', 'Relații publice în marketing', 'ro'],
-    ['master', 'Marketing strategic', 'ro'],
-    ['master', 'Managementul relațiilor cu clienții', 'ro'],
-    ['master', 'Managementul relațiilor cu clienții', 'en'],
-    ['master', 'Managementul marketingului', 'ro'],
-  ] as const
-).map(([level, name, language]) => ({
-  level,
-  name,
-  language,
-  label: programmeLabel({ level, name, language }),
-}))
+/**
+ * A study programme the way the portal holds one, from its five facts.
+ *
+ * The name and the label are composed, never typed: that is the guarantee the
+ * whole change rests on. A fixture that spelled them by hand would go on
+ * passing after the composition changed, and the first thing anybody would hear
+ * about it is a promotion imported onto no programme at all.
+ */
+function programme(
+  level: string,
+  form_of_study: string,
+  specialisation: string,
+  language: string,
+  location = MAIN_LOCATION,
+): ProgrammeChoice {
+  const p = { level, form_of_study, specialisation, language, location }
+  return { ...p, name: programmeTitle(p), label: programmeLabel(p) }
+}
+
+/** What migrations 0020 and 0023 seed, in the five columns 0024 gives them. */
+const PROGRAMMES: ProgrammeChoice[] = [
+  programme('bachelor', 'if', 'Marketing', 'ro'),
+  programme('bachelor', 'if', 'Marketing', 'en'),
+  programme('bachelor', 'ifr', 'Marketing', 'ro'),
+  programme('bachelor', 'id', 'Marketing', 'ro'),
+  programme('bachelor', 'id', 'Marketing', 'ro', 'Buzău'),
+  programme('master', 'if', 'Cercetări de marketing', 'ro'),
+  programme('master', 'if', 'Marketing și comunicare în afaceri', 'ro'),
+  programme('master', 'if', 'Marketing online', 'ro'),
+  programme('master', 'if', 'Relații publice în marketing', 'ro'),
+  programme('master', 'if', 'Marketing strategic', 'ro'),
+  programme('master', 'if', 'Managementul relațiilor cu clienții', 'ro'),
+  programme('master', 'if', 'Managementul relațiilor cu clienții', 'en'),
+  programme('master', 'if', 'Managementul marketingului', 'ro'),
+]
 
 describe('normalizeRegistryCell', () => {
   /* The export pads every value to a fixed width and writes a missing one as
@@ -160,68 +182,216 @@ describe('parseFatherInitials', () => {
   })
 })
 
+/** The registry's five cells for one cohort, as the export writes them. */
+const BUCHAREST = 'MRK - București'
+const cohort = (
+  cycle: string,
+  form: string,
+  specialisation: string,
+  language: string,
+  location = BUCHAREST,
+) => ({ cycle, form, specialisation, language, location })
+
 describe('deriveProgramme', () => {
   /**
    * The eleven cohorts of the real export, with the number of students in each.
    *
-   * At licență the registry writes „Marketing” in `Specializare` and the form
-   * of study in `FormaInvatamant`; the portal does the opposite, and the form
-   * IS the programme. That mismatch is what left 350 accepted rows on no
-   * programme at all.
+   * Nothing is derived any more: the registry states five facts, the portal
+   * stores the same five, and the lookup is a comparison. The table that used
+   * to translate „CU FRECVENȚĂ” + „Română” into the name „Învățământ cu
+   * frecvență — RO” is gone, and with it the reason the faculty could run only
+   * one licență specialisation.
    */
-  const COHORTS: [number, string, string, string, string, string][] = [
-    [388, 'LICENȚĂ', 'CU FRECVENȚĂ', 'Marketing', 'Română', 'Licență · Învățământ cu frecvență — RO · Română'],
-    [82, 'LICENȚĂ', 'LA DISTANȚĂ', 'Marketing', 'Română', 'Licență · Învățământ la distanță — București · Română'],
-    [74, 'LICENȚĂ', 'CU FRECVENȚĂ', 'Marketing', 'Engleză', 'Licență · Învățământ cu frecvență — EN · Engleză'],
-    [58, 'LICENȚĂ', 'FRECVENȚĂ REDUSĂ', 'Marketing', 'Română', 'Licență · Învățământ fără frecvență · Română'],
-    [77, 'MASTERAT', 'CU FRECVENȚĂ', 'Marketing online', 'Română', 'Master · Marketing online · Română'],
-    [67, 'MASTERAT', 'CU FRECVENȚĂ', 'Marketing și comunicare în afaceri', 'Română', 'Master · Marketing și comunicare în afaceri · Română'],
-    [44, 'MASTERAT', 'CU FRECVENȚĂ', 'Relații publice în marketing', 'Română', 'Master · Relații publice în marketing · Română'],
-    [39, 'MASTERAT', 'CU FRECVENȚĂ', 'Marketing strategic', 'Română', 'Master · Marketing strategic · Română'],
-    [33, 'MASTERAT', 'CU FRECVENȚĂ', 'Cercetări de marketing', 'Română', 'Master · Cercetări de marketing · Română'],
-    [30, 'MASTERAT', 'CU FRECVENȚĂ', 'Managementul relațiilor cu clienții', 'Engleză', 'Master · Managementul relațiilor cu clienții · Engleză'],
-    [1, 'MASTERAT', 'CU FRECVENȚĂ', 'Managementul marketingului', 'Română', 'Master · Managementul marketingului · Română'],
+  const COHORTS: [number, ReturnType<typeof cohort>][] = [
+    [388, cohort('LICENȚĂ', 'CU FRECVENȚĂ', 'Marketing', 'Română')],
+    [82, cohort('LICENȚĂ', 'LA DISTANȚĂ', 'Marketing', 'Română')],
+    [74, cohort('LICENȚĂ', 'CU FRECVENȚĂ', 'Marketing', 'Engleză')],
+    [58, cohort('LICENȚĂ', 'FRECVENȚĂ REDUSĂ', 'Marketing', 'Română')],
+    [77, cohort('MASTERAT', 'CU FRECVENȚĂ', 'Marketing online', 'Română')],
+    [67, cohort('MASTERAT', 'CU FRECVENȚĂ', 'Marketing și comunicare în afaceri', 'Română')],
+    [44, cohort('MASTERAT', 'CU FRECVENȚĂ', 'Relații publice în marketing', 'Română')],
+    [39, cohort('MASTERAT', 'CU FRECVENȚĂ', 'Marketing strategic', 'Română')],
+    [33, cohort('MASTERAT', 'CU FRECVENȚĂ', 'Cercetări de marketing', 'Română')],
+    [30, cohort('MASTERAT', 'CU FRECVENȚĂ', 'Managementul relațiilor cu clienții', 'Engleză')],
+    [1, cohort('MASTERAT', 'CU FRECVENȚĂ', 'Managementul marketingului', 'Română')],
+  ]
+
+  /** What the eleven must land on, written out so a change of rule is visible. */
+  const EXPECTED = [
+    'Licență · Marketing · învățământ cu frecvență · Română',
+    'Licență · Marketing · învățământ la distanță · Română',
+    'Licență · Marketing · învățământ cu frecvență · Engleză',
+    'Licență · Marketing · învățământ cu frecvență redusă · Română',
+    'Master · Marketing online · învățământ cu frecvență · Română',
+    'Master · Marketing și comunicare în afaceri · învățământ cu frecvență · Română',
+    'Master · Relații publice în marketing · învățământ cu frecvență · Română',
+    'Master · Marketing strategic · învățământ cu frecvență · Română',
+    'Master · Cercetări de marketing · învățământ cu frecvență · Română',
+    'Master · Managementul relațiilor cu clienții · învățământ cu frecvență · Engleză',
+    'Master · Managementul marketingului · învățământ cu frecvență · Română',
   ]
 
   it('duce fiecare din cele 11 promoții la programul ei', () => {
-    for (const [students, cycle, form, specialisation, language, label] of COHORTS) {
-      const derived = deriveProgramme({ cycle, form, specialisation, language })
-      assert.equal(derived?.label, label, `${students} studenți: ${cycle} · ${form} · ${specialisation}`)
-    }
-  })
-
-  /* The whole point of the derivation: every one of those labels has to name a
-     programme the portal really has, otherwise the row is accepted and then
-     invisible on every screen that filters by programme. */
-  it('fiecare program dedus există printre cele semănate de 0020 și 0023', () => {
-    for (const [students, cycle, form, specialisation, language] of COHORTS) {
-      const derived = deriveProgramme({ cycle, form, specialisation, language })
-      const match = matchProgramme(derived?.label ?? '', PROGRAMMES)
-      assert.ok(match.ok && match.programme, `${students} studenți fără program: ${specialisation}`)
-    }
-  })
-
-  /* The registry says „reduced attendance”, the portal says „without
-     attendance”. No fuzzy match would ever connect the two, and one that did
-     would be connecting them by accident. */
-  it('„FRECVENȚĂ REDUSĂ” este „Învățământ fără frecvență”, explicit', () => {
-    const derived = deriveProgramme({
-      cycle: 'LICENȚĂ', form: 'FRECVENȚĂ REDUSĂ', specialisation: 'Marketing', language: 'Română',
+    COHORTS.forEach(([students, c], i) => {
+      const found = deriveProgramme(c, PROGRAMMES)
+      assert.equal(
+        found?.label,
+        EXPECTED[i],
+        `${students} studenți: ${c.cycle} · ${c.form} · ${c.specialisation} · ${c.language} · ${c.location}`,
+      )
     })
-    assert.equal(derived?.name, 'Învățământ fără frecvență')
+  })
+
+  /* The five values, in the portal's own vocabulary, before anything is looked
+     up: this is the whole of the translation that is left. */
+  it('traduce vocabularul registrului în valorile stocate', () => {
+    assert.deepEqual(registryDimensions(cohort('LICENȚĂ', 'FRECVENȚĂ REDUSĂ', 'Marketing', 'Română')), {
+      level: 'bachelor',
+      form_of_study: 'ifr',
+      specialisation: 'Marketing',
+      language: 'ro',
+      location: 'București',
+    })
+    assert.deepEqual(registryDimensions(cohort('MASTERAT', 'LA DISTANȚĂ', 'Marketing online', 'Engleză', 'MRK - Buzău')), {
+      level: 'master',
+      form_of_study: 'id',
+      specialisation: 'Marketing online',
+      language: 'en',
+      location: 'Buzău',
+    })
   })
 
   it('citește și cu sedilă, și cu umplutură, ca în fișier', () => {
-    const derived = deriveProgramme({
-      cycle: '  LICENŢĂ ', form: ' CU FRECVENŢĂ  ', specialisation: 'Marketing', language: ' Română ',
-    })
-    assert.equal(derived?.name, 'Învățământ cu frecvență — RO')
+    const found = deriveProgramme(
+      cohort('  LICENŢĂ ', ' CU FRECVENŢĂ  ', ' Marketing  ', ' Română ', '  MRK - Bucureşti '),
+      PROGRAMMES,
+    )
+    assert.equal(found?.specialisation, 'Marketing')
+    assert.equal(found?.form_of_study, 'if')
+  })
+
+  /* WHY THIS CHANGE EXISTS. Until now a licență programme WAS its form of
+     study, so two cohorts differing only by specialisation were one row: one
+     pot of seats, one catalogue, one line in every report, for two different
+     groups of students. Neither could even be written down. */
+  it('a doua specializare la licență se poate exprima și nu se ciocnește de prima', () => {
+    const publicitate = programme('bachelor', 'if', 'Publicitate', 'ro')
+    const withBoth = [...PROGRAMMES, publicitate]
+
+    const marketing = deriveProgramme(cohort('LICENȚĂ', 'CU FRECVENȚĂ', 'Marketing', 'Română'), withBoth)
+    const second = deriveProgramme(cohort('LICENȚĂ', 'CU FRECVENȚĂ', 'Publicitate', 'Română'), withBoth)
+
+    assert.equal(marketing?.specialisation, 'Marketing')
+    assert.equal(second?.specialisation, 'Publicitate')
+    assert.notEqual(marketing?.label, second?.label, 'două promoții, două programe')
+    assert.notEqual(marketing?.name, second?.name, 'și două etichete pe ecran')
+
+    /* And the whole way through the reader, which is where the collision would
+       actually have been paid for: two rows, two programmes, no merge. */
+    const rows = [
+      registryRow({ ...fields(SAMPLE), Specializare: 'Marketing', Email: 'a@stud.ase.ro' }),
+      registryRow({ ...fields(SAMPLE), Specializare: 'Publicitate', Email: 'b@stud.ase.ro' }),
+    ]
+    const { accepted } = importRows(rows, withBoth)
+    assert.equal(accepted.length, 2)
+    assert.notEqual(accepted[0]!.programme, accepted[1]!.programme)
+    for (const person of accepted) {
+      const match = matchProgramme(person.programme, withBoth)
+      assert.ok(match.ok && match.programme, `${person.email}: ${person.programme}`)
+    }
+  })
+
+  /* „LA DISTANȚĂ” used to resolve to București because `denumire` said so on
+     every row of the file — which is a fact invented about a student, and the
+     day Buzău appears the invention becomes a whole cohort filed in the wrong
+     city with nothing saying so. */
+  it('citește centrul din „denumire”, nu îl presupune', () => {
+    const buzau = deriveProgramme(
+      cohort('LICENȚĂ', 'LA DISTANȚĂ', 'Marketing', 'Română', 'MRK - Buzău'),
+      PROGRAMMES,
+    )
+    assert.equal(buzau?.location, 'Buzău')
+    assert.equal(buzau?.label, 'Licență · Marketing · învățământ la distanță · Buzău · Română')
+
+    const bucuresti = deriveProgramme(
+      cohort('LICENȚĂ', 'LA DISTANȚĂ', 'Marketing', 'Română', 'MRK - București'),
+      PROGRAMMES,
+    )
+    assert.notEqual(buzau?.label, bucuresti?.label, 'două centre, două programe')
+  })
+
+  it('un centru necunoscut oprește rândul, nu îl trece pe București', () => {
+    const strange = cohort('LICENȚĂ', 'LA DISTANȚĂ', 'Marketing', 'Română', 'MRK - Ploiești')
+    assert.equal(registryDimensions(strange), null, 'nu se ghicește un centru')
+    assert.equal(deriveProgramme(strange, PROGRAMMES), null)
+
+    /* And it is loud: the cell names the five values, and the row is refused
+       with them in the sentence the director reads in the preview. */
+    const cell = programmeCell(strange, PROGRAMMES)
+    assert.match(cell, /Ploiești/)
+    const match = matchProgramme(cell, PROGRAMMES)
+    assert.ok(!match.ok && /Ploiești/.test(match.reason), match.ok ? 'a fost acceptat' : match.reason)
   })
 
   it('o promoție necunoscută rămâne fără program, fără să inventeze unul', () => {
-    assert.equal(deriveProgramme({ cycle: 'DOCTORAT', form: 'CU FRECVENȚĂ', specialisation: 'x', language: 'Română' }), null)
-    assert.equal(deriveProgramme({ cycle: 'LICENȚĂ', form: 'SERAL', specialisation: 'Marketing', language: 'Română' }), null)
-    assert.equal(deriveProgramme({ cycle: 'LICENȚĂ', form: 'LA DISTANȚĂ', specialisation: 'Marketing', language: 'Engleză' }), null)
+    assert.equal(deriveProgramme(cohort('DOCTORAT', 'CU FRECVENȚĂ', 'x', 'Română'), PROGRAMMES), null)
+    assert.equal(deriveProgramme(cohort('LICENȚĂ', 'SERAL', 'Marketing', 'Română'), PROGRAMMES), null)
+    /* Licență la distanță in English is a cohort the faculty does not run; the
+       five values exist, no programme carries them, and that is a decision for
+       the director rather than a nearest match for the importer. */
+    assert.equal(deriveProgramme(cohort('LICENȚĂ', 'LA DISTANȚĂ', 'Marketing', 'Engleză'), PROGRAMMES), null)
+  })
+
+  /* A row with no cohort at all is a teacher, or a registrar's sheet with the
+     columns blank. That is legal and has to stay silent — an „unknown cohort”
+     made of five dashes would refuse every teacher in the list. */
+  it('cinci celule goale înseamnă „fără program”, nu o promoție necunoscută', () => {
+    assert.equal(describeCohort(cohort('', '', '', '', '')), '')
+    assert.deepEqual(matchProgramme(programmeCell(cohort('', '', '', '', ''), PROGRAMMES), PROGRAMMES), {
+      ok: true,
+      programme: null,
+    })
+  })
+})
+
+/* --- the label, and the way back from it -------------------------------------- */
+
+describe('eticheta programului', () => {
+  /* The label is what the portal's own lists send and what every imported row
+     is matched by. If it stopped resolving to the programme it was made from,
+     every single import would land on no programme — so the round trip is
+     checked on all thirteen, not on an example. */
+  it('fiecare program se regăsește după propria etichetă', () => {
+    for (const p of PROGRAMMES) {
+      const match = matchProgramme(p.label, PROGRAMMES)
+      assert.ok(match.ok && match.programme === p, `nu se regăsește: ${p.label}`)
+    }
+  })
+
+  it('cele treisprezece etichete sunt distincte două câte două', () => {
+    assert.equal(new Set(PROGRAMMES.map((p) => p.label)).size, PROGRAMMES.length)
+  })
+
+  /* The form of study is written out even when it is the ordinary one. It is
+     the distinction the faculty actually makes at licență, and leaving it off
+     would have made the two „cu frecvență” programmes read identically on the
+     screen where a director moves a student between them. */
+  it('scrie forma de învățământ și când este cea obișnuită', () => {
+    assert.equal(
+      programmeTitle({ level: 'bachelor', form_of_study: 'if', specialisation: 'Marketing', language: 'ro', location: 'București' }),
+      'Marketing · învățământ cu frecvență',
+    )
+  })
+
+  /* The centre is named only where it distinguishes: eleven options each ending
+     in „· București” would bury the two that are not. Nothing is assumed on the
+     way in — `location` is NOT NULL and the importer refuses a centre it cannot
+     read — so this is presentation and not a default. */
+  it('numește centrul doar când nu este cel principal', () => {
+    const at = (location: string) =>
+      programmeTitle({ level: 'bachelor', form_of_study: 'id', specialisation: 'Marketing', language: 'ro', location })
+    assert.equal(at(MAIN_LOCATION), 'Marketing · învățământ la distanță')
+    assert.equal(at('Buzău'), 'Marketing · învățământ la distanță · Buzău')
   })
 })
 
@@ -252,9 +422,9 @@ const SAMPLE = registryRow({
 })
 
 /** Header → mapping → composed text → the reader the route runs. */
-function importRows(rows: string[][]) {
+function importRows(rows: string[][], programmes: ProgrammeChoice[] = PROGRAMMES) {
   const mapping = guessAccountMapping(REGISTRY_HEADER)
-  return parseAccountRows(composeAccountRows(applyAccountMapping(rows, mapping)))
+  return parseAccountRows(composeAccountRows(applyAccountMapping(rows, mapping, programmes)))
 }
 
 describe('exportul registrului, citit cap-coadă', () => {
@@ -266,7 +436,7 @@ describe('exportul registrului, citit cap-coadă', () => {
       email: 'mihai.sarbu23@gmail.com',
       role: 'student',
       studentNumber: '',
-      programme: 'Licență · Învățământ cu frecvență — RO · Română',
+      programme: 'Licență · Marketing · învățământ cu frecvență · Română',
       year: '3',
       yearNote: 'An suplimentar',
       group: '',
@@ -349,7 +519,7 @@ describe('exportul registrului, citit cap-coadă', () => {
     assert.deepEqual(mapping[9], { kind: 'columns', columns: [REGISTRY_HEADER.indexOf('FormaFinantare')], joiner: ' ' })
   })
 
-  it('deduce programul din patru coloane, nu din „Specializare”', () => {
+  it('caută programul după cinci coloane, nu după „Specializare”', () => {
     const mapping = guessAccountMapping(REGISTRY_HEADER)
     assert.deepEqual(mapping[4], {
       kind: 'programme',
@@ -357,12 +527,13 @@ describe('exportul registrului, citit cap-coadă', () => {
       form: REGISTRY_HEADER.indexOf('FormaInvatamant'),
       specialisation: REGISTRY_HEADER.indexOf('Specializare'),
       language: REGISTRY_HEADER.indexOf('LimbaProgram'),
+      location: REGISTRY_HEADER.indexOf('denumire'),
     })
   })
 
   it('„NULL” în inițiale nu respinge rândul și nu ajunge în nume', () => {
     const row = registryRow({
-      TipCicluStudii: 'MASTERAT', FormaInvatamant: 'CU FRECVENȚĂ', AnStudiu: '2',
+      TipCicluStudii: 'MASTERAT', FormaInvatamant: 'CU FRECVENȚĂ', denumire: BUCHAREST, AnStudiu: '2',
       Specializare: 'Marketing online', LimbaProgram: 'Română',
       Nume: 'POPA', Initiale: 'NULL', Prenume: 'ANDREI',
       Email: 'andrei.popa@stud.ase.ro', FormaFinantare: 'Taxa',
@@ -444,6 +615,146 @@ describe('șablonul de import', () => {
         if (!['CNP', 'SerieCI', 'NumarCI', 'DataNastere', 'DataCI', 'telefon1', 'telefon2'].includes(column)) continue
         assert.equal(cell, 'nu se importă', `„${column}” nu are voie să arate a valoare reală`)
       }
+    }
+  })
+})
+
+/* --- migration 0024, read as text --------------------------------------------- */
+
+/**
+ * The backfill, checked against the module it has to agree with.
+ *
+ * No database is reachable from a test, so the migration is read as the text it
+ * is. That is enough for the two things that can actually go wrong with it and
+ * would go unnoticed until a deploy: a programme that 0020 or 0023 seeded and
+ * 0024 forgot — which becomes a row with the general rule's guess instead of
+ * its real dimensions — and the title expression in the SQL drifting from
+ * `programmeTitle`, which is how one programme becomes two rows on the next
+ * seed and the importer stops matching the labels the portal itself writes.
+ */
+describe('migrarea 0024', () => {
+  const read = (file: string) =>
+    readFileSync(new URL(`../migrations/${file}`, import.meta.url), 'utf8')
+
+  const seeded = [
+    ...read('0020_topic_shape.sql').matchAll(/\('(bachelor|master)',\s*'([^']+)',\s*'(ro|en)',\s*\d+\)/g),
+    ...read('0023_registry_import.sql').matchAll(/\('(bachelor|master)',\s*'([^']+)',\s*'(ro|en)',\s*\d+\)/g),
+  ].map((m) => ({ level: m[1]!, name: m[2]!, language: m[3]! }))
+
+  const sql0024 = read('0024_programme_dimensions.sql')
+  const backfilled = [
+    ...sql0024.matchAll(
+      /\('(bachelor|master)',\s*'([^']+)',\s*'(if|ifr|id)',\s*'([^']+)',\s*'([^']+)'\)/g,
+    ),
+  ].map((m) => ({
+    level: m[1]!,
+    name: m[2]!,
+    form_of_study: m[3]!,
+    specialisation: m[4]!,
+    location: m[5]!,
+  }))
+
+  it('cele treisprezece rânduri semănate sunt toate acoperite', () => {
+    assert.equal(seeded.length, 13, 'unsprezece din 0020 și două din 0023')
+    for (const row of seeded) {
+      const found = backfilled.find((b) => b.level === row.level && b.name === row.name)
+      assert.ok(found, `0024 nu spune ce este „${row.name}” (${row.level})`)
+      assert.ok(FORMS_OF_STUDY.includes(found!.form_of_study))
+      assert.ok(found!.specialisation.length > 0)
+      assert.ok(found!.location.length > 0)
+    }
+  })
+
+  /* The five licență rows are the whole reason for the change: one
+     specialisation, four forms, two centres — and the old `name` was the only
+     place any of it was written down. */
+  it('formele de la licență se citesc exact, nu se ghicesc', () => {
+    const at = (name: string) => backfilled.find((b) => b.level === 'bachelor' && b.name === name)
+    assert.equal(at('Învățământ cu frecvență — RO')?.form_of_study, 'if')
+    assert.equal(at('Învățământ cu frecvență — EN')?.form_of_study, 'if')
+    assert.equal(at('Învățământ fără frecvență')?.form_of_study, 'ifr')
+    assert.equal(at('Învățământ la distanță — București')?.form_of_study, 'id')
+    assert.equal(at('Învățământ la distanță — Buzău')?.form_of_study, 'id')
+    assert.equal(at('Învățământ la distanță — Buzău')?.location, 'Buzău')
+    for (const b of backfilled.filter((x) => x.level === 'bachelor')) {
+      assert.equal(b.specialisation, 'Marketing', `licență: ${b.name}`)
+    }
+  })
+
+  /* At master the name has always BEEN the specialisation, so the backfill must
+     copy it and not reword it: a single retyped diacritic is a programme the
+     registry's rows stop matching. */
+  it('la master specializarea este numele, caracter cu caracter', () => {
+    for (const b of backfilled.filter((x) => x.level === 'master')) {
+      assert.equal(b.specialisation, b.name)
+      assert.equal(b.form_of_study, 'if')
+    }
+  })
+
+  /* The migration composes `name` in SQL and `programmeTitle` composes it in
+     JavaScript. Two spellings of one rule is how a seeded programme and a
+     migrated one become two rows for the same cohort. */
+  it('cuvintele formelor din SQL sunt cele din `programmes.mjs`', () => {
+    const words = Object.fromEntries(
+      [...sql0024.matchAll(/WHEN '(if|ifr|id)'\s+THEN '([^']+)'/g)].map((m) => [m[1]!, m[2]!]),
+    )
+    assert.deepEqual(words, FORM_WORDS)
+    assert.ok(
+      sql0024.includes(`location <> '${MAIN_LOCATION}'`),
+      'centrul principal este același în SQL și în modul',
+    )
+  })
+
+  it('titlurile pe care le scrie 0024 sunt cele pe care le compune portalul', () => {
+    for (const b of backfilled) {
+      const title = programmeTitle({ ...b, language: 'ro' })
+      assert.ok(title.startsWith(b.specialisation), `„${b.name}” → „${title}”`)
+      assert.ok(title.includes(FORM_WORDS[b.form_of_study]!))
+      assert.equal(title.includes(b.location), b.location !== MAIN_LOCATION)
+    }
+  })
+
+  /* `name` is materialised from `programmeTitle`, and a dozen queries print
+     `name` on its own — a coordinator's topic list, the catalogue, a seat
+     withdrawal refusal, the audit log's subject. So two programmes that differ
+     only by language have to differ in their title, or a director picks between
+     two identical lines and the log records which one was touched ambiguously.
+     This shipped wrong once: the title wrote the form and the centre but not
+     the language, so both licență „cu frecvență” rows and both „Managementul
+     relațiilor cu clienții” rows carried the same string. */
+  it('două programe care diferă doar prin limbă au titluri diferite', () => {
+    const ro = { level: 'bachelor', form_of_study: 'if', specialisation: 'Marketing', language: 'ro', location: MAIN_LOCATION }
+    const en = { ...ro, language: 'en' }
+    assert.notEqual(programmeTitle(ro), programmeTitle(en))
+    assert.equal(programmeTitle(ro), 'Marketing · învățământ cu frecvență')
+    assert.equal(programmeTitle(en), 'Marketing · învățământ cu frecvență · Engleză')
+  })
+
+  it('limba nu se scrie de două ori în eticheta completă', () => {
+    const en = { level: 'master', form_of_study: 'if', specialisation: 'Marketing online', language: 'en', location: MAIN_LOCATION }
+    const label = programmeLabel(en)
+    assert.equal(label.split('Engleză').length - 1, 1, label)
+  })
+
+  it('cele treisprezece programe semănate au titluri distincte', () => {
+    const titles = PROGRAMMES.map((p) => p.name)
+    assert.equal(new Set(titles).size, titles.length, JSON.stringify(titles, null, 1))
+  })
+
+  it('0024 scrie și limba în `name`, nu doar forma și centrul', () => {
+    assert.ok(/language\s*<>\s*'ro'/.test(sql0024), 'SQL compune numele cu limba')
+    assert.ok(sql0024.includes("WHEN 'en' THEN 'Engleză'"), 'SQL folosește același cuvânt ca modulul')
+  })
+
+  /* A plain unique index, not a partial one: the database is going to be ported
+     to MySQL, which has none, and five partial unique indexes are already a
+     known cost of that port. */
+  it('indexul de unicitate este simplu, nu parțial', () => {
+    const index = sql0024.match(/CREATE UNIQUE INDEX idx_programmes_identity[\s\S]*?;/)?.[0] ?? ''
+    assert.ok(index, 'indexul de identitate există')
+    assert.ok(!/\bWHERE\b/i.test(index), 'fără WHERE: MySQL nu are indecși parțiali')
+    for (const column of ['academic_year_id', 'level', 'form_of_study', 'specialisation', 'language', 'location']) {
+      assert.ok(index.includes(column), `identitatea conține ${column}`)
     }
   })
 })

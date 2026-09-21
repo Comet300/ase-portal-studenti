@@ -8,6 +8,7 @@ import {
   parseAccountRole,
   parseAccountRows,
 } from '../src/lib/accounts.ts'
+import { programmeLabel, programmeTitle } from '../src/lib/programmes.mjs'
 
 /**
  * The reader of lists of people.
@@ -283,38 +284,74 @@ describe('composeAccountRows', () => {
 })
 
 describe('matchProgramme', () => {
+  const of = (
+    level: string,
+    form_of_study: string,
+    specialisation: string,
+    language: string,
+    location = 'București',
+  ) => {
+    const p = { level, form_of_study, specialisation, language, location }
+    return { ...p, name: programmeTitle(p), label: programmeLabel(p) }
+  }
+
+  /* One specialisation in two forms, one in one, and the same specialisation
+     at master in English: between them they carry every ambiguity the bare
+     value can have. */
   const programmes = [
-    { level: 'bachelor', name: 'Marketing', language: 'ro', label: 'Licență · Marketing · Română' },
-    { level: 'master', name: 'Marketing', language: 'en', label: 'Master · Marketing · Engleză' },
-    { level: 'bachelor', name: 'Publicitate', language: 'ro', label: 'Licență · Publicitate · Română' },
+    of('bachelor', 'if', 'Marketing', 'ro'),
+    of('bachelor', 'id', 'Marketing', 'ro'),
+    of('master', 'if', 'Marketing', 'en'),
+    of('bachelor', 'if', 'Publicitate', 'ro'),
   ]
 
   it('gol înseamnă „fără program”, nu o eroare — cadrele didactice nu au niciunul', () => {
     assert.deepEqual(matchProgramme('  ', programmes), { ok: true, programme: null })
   })
 
-  it('găsește după nume când numele este al unui singur program', () => {
+  it('găsește după specializare când specializarea este a unui singur program', () => {
     const m = matchProgramme('publicitate', programmes)
     assert.ok(m.ok && m.programme?.level === 'bachelor')
   })
 
-  /* „Marketing” is both bachelor in Romanian and master in English. The lookup
-     by name kept whichever row the query returned last — a whole cohort tied to
+  /* „Marketing” is the specialisation of three of these. The lookup by bare
+     value kept whichever row the query returned last — a whole cohort tied to
      the wrong programme, with nothing anywhere saying so. */
-  it('refuză un nume care aparține mai multor programe, în loc să aleagă unul', () => {
+  it('refuză o valoare care aparține mai multor programe, în loc să aleagă unul', () => {
     const m = matchProgramme('Marketing', programmes)
     assert.ok(!m.ok && /mai multe variante/.test(m.reason))
+    assert.ok(!m.ok && /învățământ la distanță/.test(m.reason), 'le numește pe toate')
   })
 
   /* The portal's own lists send the whole label for exactly the case above: it
      reads for a person and for the machine, and it is not ambiguous. */
   it('acceptă eticheta întreagă, cum o trimit listele portalului', () => {
-    const m = matchProgramme('Master · Marketing · Engleză', programmes)
+    const m = matchProgramme('Master · Marketing · învățământ cu frecvență · Engleză', programmes)
     assert.ok(m.ok && m.programme?.language === 'en')
+  })
+
+  /* The two licență programmes differ only by the form of study, which before
+     migration 0024 was not written down anywhere except inside the name. This
+     is the pair that used to be impossible to tell apart from a cell. */
+  it('deosebește două programe care diferă numai prin forma de învățământ', () => {
+    const la_distanta = matchProgramme('Licență · Marketing · învățământ la distanță · Română', programmes)
+    const cu_frecventa = matchProgramme('Licență · Marketing · învățământ cu frecvență · Română', programmes)
+    assert.ok(la_distanta.ok && la_distanta.programme?.form_of_study === 'id')
+    assert.ok(cu_frecventa.ok && cu_frecventa.programme?.form_of_study === 'if')
+  })
+
+  /* A label saved before 0024 names a programme that does not exist any more —
+     0024 rewrote every `name` from the five facts. It is refused with the value
+     in the sentence rather than matched to the nearest thing: a table of former
+     spellings would be a second, ageing definition of a programme. */
+  it('refuză o etichetă dinaintea migrării 0024, cu valoarea în mesaj', () => {
+    const m = matchProgramme('Licență · Învățământ cu frecvență — RO · Română', programmes)
+    assert.ok(!m.ok && /Învățământ cu frecvență — RO/.test(m.reason))
   })
 
   it('refuză un program care nu există, ca să nu creeze studenți fără program', () => {
     const m = matchProgramme('Markting', programmes)
     assert.ok(!m.ok && /nu există în anul curent/.test(m.reason))
+    assert.ok(!m.ok && /An universitar/.test(m.reason), 'spune și ce e de făcut')
   })
 })
