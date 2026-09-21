@@ -4,7 +4,7 @@ import ProfesorLayout from '../layouts/ProfesorLayout.astro'
 import StudentLayout from '../layouts/StudentLayout.astro'
 import { pairings, publicTopics, studentRequests, supervisors } from '../lib/repo'
 import { atLevel, fullBecause } from '../lib/seats'
-import { officialName } from '../lib/text'
+import { numar, officialName } from '../lib/text'
 import { LANGUAGE_LABELS, LEVEL_LABELS, groupLabel, languageLabel } from '../lib/years'
 
 /**
@@ -76,6 +76,12 @@ const Shell = isStudent ? StudentLayout : ProfesorLayout
 
 const languages = [...new Set(allTopics.map((t) => t.language))]
 const freeTeachers = teachers.filter((t) => !t.is_full).length
+/* „Pentru tine” se poate spune doar despre un cititor care are un nivel în
+ * fișă: `freeFor` răspunde pe nivel și pe program, iar pentru un student
+ * importat fără nivel — și pentru un cadru didactic — numărul rămâne cel
+ * general. Aceeași condiție decide și insigna de pe fiecare fișă, ca eticheta
+ * de sus și numărul de jos să nu vorbească despre lucruri diferite. */
+const countsForViewer = Boolean(viewer?.program)
 
 ---
 
@@ -162,7 +168,7 @@ const freeTeachers = teachers.filter((t) => !t.is_full).length
       {
         view === 'teme'
           ? `${allTopics.length} teme propuse`
-          : `${teachers.length} cadre didactice · ${freeTeachers} cu locuri libere`
+          : `${teachers.length} cadre didactice · ${freeTeachers} ${countsForViewer ? 'cu locuri pentru tine' : 'cu locuri libere'}`
       }
     </p>
 
@@ -173,7 +179,26 @@ const freeTeachers = teachers.filter((t) => !t.is_full).length
           {teachers.map((p) => {
             const theirTopics = topicsByTeacher.get(p.id) ?? []
             const theirStudents = studentsByTeacher.get(p.id) ?? []
-            const free = p.bachelor_seats + p.master_seats - (p.bachelor_taken + p.master_taken)
+            /* Câte locuri are, pentru cine citește.
+             *
+             * Era `bachelor_seats + master_seats - (bachelor_taken +
+             * master_taken)`: cele două niveluri adunate, rezervările pe
+             * programe ignorate — adică exact numărul pe care restul portalului
+             * a încetat să-l folosească la 3f93866, rămas pe singurul ecran pe
+             * care studenții chiar îl răsfoiesc. Un masterand citea locurile de
+             * licență ca fiind ale lui, iar un loc rezervat altui program se
+             * numără o dată în plus, tot pentru el.
+             *
+             * `free_for_viewer` este răspunsul lui `freeFor` pentru nivelul și
+             * programul cititorului — același număr pe care îl aplică poarta
+             * din `/api/cereri/depune`, deci ecranul și refuzul nu mai pot
+             * spune lucruri diferite.
+             *
+             * Fără cititor (un cadru didactic care răsfoiește, sau un student
+             * fără nivel în fișă) nu există un singur număr onest: locurile se
+             * numără pe nivel, iar o sumă a lor este tocmai minciuna de mai
+             * sus. Atunci se scriu amândouă, fiecare cu nivelul lui. */
+            const free = p.free_for_viewer
             return (
               <li
                 class:list={['coord', { 'is-full': p.is_full }]}
@@ -197,10 +222,16 @@ const freeTeachers = teachers.filter((t) => !t.is_full).length
                   </div>
 
                   {p.is_full ? (
-                    <span class="badge badge--neutru">Fără locuri disponibile</span>
+                    <span class="badge badge--neutru">
+                      {free === null ? 'Fără locuri la niciun nivel' : 'Fără locuri disponibile'}
+                    </span>
+                  ) : free !== null ? (
+                    <span class="badge badge--aprobata">
+                      {numar(free, 'loc pentru tine', 'locuri pentru tine')}
+                    </span>
                   ) : (
                     <span class="badge badge--aprobata">
-                      {free} {free === 1 ? 'loc liber' : 'locuri libere'}
+                      Licență {p.capacity.bachelor.free_any} · master {p.capacity.master.free_any}
                     </span>
                   )}
 

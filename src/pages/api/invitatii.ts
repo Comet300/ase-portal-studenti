@@ -4,10 +4,16 @@ import { postEvent } from '../../lib/chat'
 import { execute, queryOne } from '../../lib/db'
 import { formAction } from '../../lib/forms'
 import { deadEnd, redirect, redirectWithNotice, sessionExpired } from '../../lib/http'
-import { INVITATION_WINDOW_DAYS, openInvitationFor } from '../../lib/lifecycle'
+import {
+  INVITATION_WINDOW_DAYS,
+  openInvitationFor,
+  openInvitationPots,
+  tellCoordinatorSeatIsGone,
+} from '../../lib/lifecycle'
 import { html, quote, sendEmail, template } from '../../lib/mail'
 import { teacherCapacity } from '../../lib/repo'
 import { freeFor } from '../../lib/seats'
+import { numar } from '../../lib/text'
 import { id as formId } from '../../lib/ids'
 
 /**
@@ -21,6 +27,18 @@ import { id as formId } from '../../lib/ids'
  * the full request — the faculty needs the title, the objectives and the
  * motivation on record either way — but it is approved on submission rather than
  * queued behind a decision that has already been made.
+ *
+ * SENDING MORE PROPOSALS THAN SEATS IS ALLOWED, and deliberately so: not
+ * everybody accepts, and a coordinator who may only ever have three offers open
+ * for three seats will end the session with two students. What is NOT allowed is
+ * a proposal that cannot be honoured turning into an approved supervision by
+ * itself — that gate is in `/api/cereri/depune`, and it applies to invited
+ * students exactly as it does to everybody else. Between those two, this route
+ * does the third thing: it refuses a proposal that has no seat AT THE MOMENT it
+ * is written (writing one then is not optimism, it is a promise nobody can
+ * keep), and it says out loud how many offers are already outstanding against
+ * how few seats, so the overcommitment is a number the coordinator chose rather
+ * than one they discover through somebody else's refusal.
  */
 
 const TEACHER_PAGE = '/profesor/studenti?sectiune=invitatii'
@@ -129,7 +147,31 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
       ),
     })
 
-    return redirectWithNotice(TEACHER_PAGE, `Propunerea a fost trimisă către ${student.name}.`)
+    /* „Trimisă” on its own hid the only thing worth knowing afterwards.
+     *
+     * The seats left for this cohort were counted a moment ago; the proposals
+     * already outstanding against them are counted now, with this one in. When
+     * the offers outnumber the seats the notice says so and names the way out,
+     * because the alternative is that the coordinator finds out when a student
+     * they invited is refused — and that student is the one who pays for it. */
+    const pots = await openInvitationPots(u.id)
+    const outstanding =
+      pots.find(
+        (p) =>
+          p.level === (student.program === 'master' ? 'master' : 'bachelor') &&
+          p.programme_id === student.programme_id,
+      )?.open ?? 1
+    const seatsLeft = freeFor(level, student.programme_id)
+
+    return redirectWithNotice(
+      TEACHER_PAGE,
+      outstanding > seatsLeft
+        ? `Propunerea a fost trimisă către ${student.name}. Ai acum ${numar(outstanding, 'propunere deschisă', 'propuneri deschise')} pentru ${cohort} și doar ${numar(seatsLeft, 'loc liber', 'locuri libere')}: dacă acceptă mai mulți decât încap, portalul refuză cererea ultimilor. Cere directorului locuri pentru ${cohort} sau ține cont de asta la următoarea propunere.`
+        /* „Mai ai”, nu „Îți rămâne/rămân”: `numar` acordă substantivul, nu și
+         * verbul dinaintea lui, iar propoziția trebuie să fie corectă și la 1,
+         * și la 3. */
+        : `Propunerea a fost trimisă către ${student.name}. Mai ai ${numar(seatsLeft, 'loc liber', 'locuri libere')} pentru ${cohort}.`,
+    )
   }
 
   /* --- the student answers -------------------------------------------------- */
@@ -156,6 +198,56 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
         'Scrie pe scurt de ce refuzi — coordonatorul primește motivul.',
         true,
       )
+    }
+
+    /* Accepting an offer that can no longer be honoured is stopped HERE, not
+     * three screens later.
+     *
+     * The binding gate is on the request itself, where the seat is actually
+     * spent, and it stays there — seats can go in the minutes between the two.
+     * But sending the student on to write a title, objectives and forty
+     * characters of motivation, only to refuse the result, is making somebody
+     * do work for nothing. The proposal is left PENDING rather than accepted:
+     * an accepted one they cannot redeem is a dead end they cannot back out of,
+     * while a pending one is still there to accept the day a seat appears.
+     *
+     * No lock and no transaction: accepting spends nothing, so two students
+     * accepting at once is not a race — it is two people reaching a gate that
+     * will let exactly one of them through when they get to it. */
+    if (answer === 'accepted') {
+      const capacity = await teacherCapacity(invitation.teacher_id)
+      const level = u.program === 'master' ? capacity.master : capacity.bachelor
+      const cohort = u.specialization ?? (u.program === 'master' ? 'master' : 'licență')
+
+      if (freeFor(level, u.programme_id) === 0) {
+        const teacherNow = await queryOne<{ email: string; name: string }>(
+          `SELECT email, name FROM users WHERE id = $1`,
+          [invitation.teacher_id],
+        )
+        const told = teacherNow
+          ? await tellCoordinatorSeatIsGone({
+              invitationId: invitation.id,
+              teacherId: invitation.teacher_id,
+              teacherName: teacherNow.name,
+              teacherEmail: teacherNow.email,
+              studentId: u.id,
+              studentName: u.name,
+              cohort,
+              baseUrl: base,
+            })
+          : false
+
+        return redirectWithNotice(
+          '/lucrarea-mea',
+          `${invitation.teacher_name} nu mai are niciun loc liber pentru ${cohort}, așa că ` +
+            `propunerea nu poate fi dusă până la capăt acum. Nu ai greșit nimic — locurile ` +
+            `s-au ocupat după ce ți-a scris. ` +
+            `${told ? 'L-am anunțat și poate' : 'Poate'} cere directorului de departament un ` +
+            `loc pentru ${cohort}. Propunerea rămâne deschisă până expiră, deci o poți accepta ` +
+            `din nou dacă apare un loc. Poți și să alegi alt coordonator din catalog.`,
+          true,
+        )
+      }
     }
 
     // The status change carries the ownership condition, so a second submission

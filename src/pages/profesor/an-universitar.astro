@@ -361,7 +361,7 @@ const centre = await teachingLocations()
           </div>
         ) : (
           <ul class="centre">
-            {centre.map((c) => (
+            {centre.map((c, i) => (
               <li class="centru">
                 <div class="stack stack--tight" style="gap:0">
                   <strong>{c.name}</strong>
@@ -371,6 +371,28 @@ const centre = await teachingLocations()
                       : numar(c.programmes, 'program de studiu', 'programe de studiu')}
                   </span>
                 </div>
+
+                {/* Corectarea scrierii, pe loc.
+                    „Buzau” în loc de „Buzău” se putea șterge doar cât timp
+                    niciun program nu-l numea, deci din clipa în care o cohortă
+                    era pe el greșeala rămânea definitivă — iar singura ieșire
+                    era un al doilea centru, un al doilea program și o cohortă
+                    ruptă în două. Redenumirea duce numele prin cascada din
+                    0025 și recompune denumirile programelor, care sunt compuse
+                    din cele cinci fapte, nu scrise de mână. */}
+                <form method="POST" action="/api/an-universitar" class="centru__redenumire">
+                  <input type="hidden" name="actiune" value="redenumeste_centru" />
+                  <input type="hidden" name="centru" value={c.name} />
+                  <div class="field">
+                    <label class="label visually-hidden" for={`nume-centru-${i}`}>
+                      Numele corect al centrului „{c.name}”
+                    </label>
+                    <input class="input" id={`nume-centru-${i}`} name="nume_nou" required
+                      maxlength="120" value={c.name} autocomplete="off" />
+                  </div>
+                  <button class="btn btn--ghost btn--sm" type="submit">Redenumește</button>
+                </form>
+
                 {/* Un centru cu programe nu se șterge — cheia străină din 0025
                     refuză, cu ON DELETE RESTRICT. Butonul lipsește în loc să
                     fie afișat și refuzat: un buton care arată apăsabil și nu
@@ -737,6 +759,7 @@ Ana Petre;MK-2021-0142;Marketing strategic;master;ro;Conf. univ. dr. Cristian Va
     display: flex;
     align-items: center;
     justify-content: space-between;
+    flex-wrap: wrap;
     gap: var(--s-3);
     padding: var(--s-3) 0;
     border-bottom: 1px solid var(--border);
@@ -746,5 +769,19 @@ Ana Petre;MK-2021-0142;Marketing strategic;master;ro;Conf. univ. dr. Cristian Va
   }
   .centru strong {
     font-size: var(--t-sm);
+  }
+  /* Câmpul și butonul pe aceeași linie, iar pe telefon rândul se rupe la
+     `flex-wrap` de mai sus în loc să strivească inputul sub 12rem — un nume
+     de oraș tăiat la jumătate este exact ce se corectează aici. */
+  .centru__redenumire {
+    display: flex;
+    align-items: center;
+    gap: var(--s-2);
+    flex: 1 1 18rem;
+    justify-content: flex-end;
+  }
+  .centru__redenumire .field {
+    flex: 1 1 12rem;
+    max-width: 22rem;
   }
 </style>

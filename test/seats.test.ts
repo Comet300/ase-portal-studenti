@@ -114,6 +114,129 @@ describe('freeFor — rezerva pe program', () => {
   })
 })
 
+/**
+ * Every state the database can actually be in, side by side.
+ *
+ * Written as a table because the interesting thing is not any one row but the
+ * COLUMN: `free_any` and `freeFor` disagree on purpose, and the disagreement is
+ * the feature. A row where they match proves nothing; the rows where they do
+ * not are the ones that decide whether a student is accepted.
+ *
+ * The ugly states are here on purpose too. A base lowered under what is already
+ * supervised, a programme spilling off its earmark onto the shared base, a
+ * reservation for a programme the coordinator supervises nobody in, a base of
+ * zero with live grants — each of them is a real row of `seat_allocations` plus
+ * `seat_grants`, reachable from the director's two forms, and each of them used
+ * to produce either a negative number or a promise nobody could keep.
+ */
+describe('aritmetica locurilor, stare cu stare', () => {
+  const cases: {
+    name: string
+    base: number
+    pots: PotInput[]
+    total: number
+    taken: number
+    base_free: number
+    free_any: number
+    forMarketing: number
+    forOnline: number
+    forNone: number
+  }[] = [
+    {
+      name: 'nimic alocat, nimic acordat',
+      base: 0, pots: [],
+      total: 0, taken: 0, base_free: 0, free_any: 0,
+      forMarketing: 0, forOnline: 0, forNone: 0,
+    },
+    {
+      name: 'doar bază, nimeni coordonat',
+      base: 5, pots: [],
+      total: 5, taken: 0, base_free: 5, free_any: 5,
+      forMarketing: 5, forOnline: 5, forNone: 5,
+    },
+    {
+      // The one the owner's complaint is about, in arithmetic: nine free and
+      // none of them yours.
+      name: 'bază zero, rezerve vii pentru un singur program',
+      base: 0, pots: [pot(ONLINE, 9, 0)],
+      total: 9, taken: 0, base_free: 0, free_any: 9,
+      forMarketing: 0, forOnline: 9, forNone: 0,
+    },
+    {
+      name: 'rezervă pentru un program în care nu coordonează pe nimeni',
+      base: 2, pots: [pot(ONLINE, 3, 0), pot(MARKETING, 0, 2)],
+      total: 5, taken: 2, base_free: 0, free_any: 3,
+      forMarketing: 0, forOnline: 3, forNone: 0,
+    },
+    {
+      name: 'un program își depășește rezerva și se revarsă pe bază',
+      base: 4, pots: [pot(MARKETING, 2, 5)],
+      total: 6, taken: 5, base_free: 1, free_any: 1,
+      forMarketing: 1, forOnline: 1, forNone: 1,
+    },
+    {
+      // Reachable in one save: the director types 2 for somebody who already
+      // supervises seven. The refusal has to be „zero”, never „-5”.
+      name: 'baza coborâtă sub câți sunt deja coordonați',
+      base: 2, pots: [pot(MARKETING, 0, 7)],
+      total: 2, taken: 7, base_free: 0, free_any: 0,
+      forMarketing: 0, forOnline: 0, forNone: 0,
+    },
+    {
+      name: 'bază și rezervă, amândouă cu loc',
+      base: 3, pots: [pot(MARKETING, 2, 1)],
+      total: 5, taken: 1, base_free: 3, free_any: 4,
+      forMarketing: 4, forOnline: 3, forNone: 3,
+    },
+    {
+      // A revoked grant is simply absent from the pots — `teacherCapacities`
+      // filters on `revoked_at IS NULL` — so what it leaves behind is the
+      // students who were sitting on it, now charged to the shared base.
+      name: 'o acordare retrasă: rezerva dispare, studenții rămân pe bază',
+      base: 4, pots: [pot(MARKETING, 0, 2)],
+      total: 4, taken: 2, base_free: 2, free_any: 2,
+      forMarketing: 2, forOnline: 2, forNone: 2,
+    },
+  ]
+
+  for (const c of cases) {
+    it(c.name, () => {
+      const cap = master(c.pots, c.base)
+      assert.equal(cap.total, c.total, 'total')
+      assert.equal(cap.taken, c.taken, 'taken')
+      assert.equal(cap.base_free, c.base_free, 'base_free')
+      assert.equal(cap.free_any, c.free_any, 'free_any')
+      assert.equal(freeFor(cap, MARKETING), c.forMarketing, 'freeFor(Marketing)')
+      assert.equal(freeFor(cap, ONLINE), c.forOnline, 'freeFor(Marketing online)')
+      assert.equal(freeFor(cap, null), c.forNone, 'freeFor(fără program)')
+      assert.ok(cap.base_free >= 0 && cap.free_any >= 0, 'niciun număr negativ')
+      assert.ok(
+        freeFor(cap, MARKETING) <= cap.free_any,
+        'ce poate cheltui un student nu poate depăși totalul liber',
+      )
+    })
+  }
+
+  /* The whole point of the two numbers, stated once: `free_any` is what a
+     screen with no reader may say, and it is NOT what a gate may ask. */
+  it('free_any și freeFor se contrazic exact acolo unde rezerva contează', () => {
+    const cap = master([pot(ONLINE, 9, 0)], 0)
+    assert.equal(cap.free_any, 9, 'onest ca total')
+    assert.equal(freeFor(cap, MARKETING), 0, 'și inutilizabil ca poartă')
+    assert.notEqual(cap.free_any, freeFor(cap, MARKETING))
+  })
+
+  it('o acordare retrasă nu mai este capacitate, dar nici nu ia locul cuiva', () => {
+    const inainte = master([pot(MARKETING, 2, 2)], 4)
+    const dupa = master([pot(MARKETING, 0, 2)], 4)
+
+    assert.equal(freeFor(inainte, MARKETING), 4, 'rezerva era ocupată, baza întreagă')
+    assert.equal(dupa.base_used, 2, 'după retragere cei doi trec pe bază')
+    assert.equal(freeFor(dupa, MARKETING), 2, 'și consumă două locuri comune')
+    assert.equal(dupa.granted, 0)
+  })
+})
+
 describe('fullBecause — refuzul spune pentru ce program', () => {
   it('numește programul și pasul următor când locurile rămase sunt rezervate', () => {
     const cap = master([pot(ONLINE, 4, 0)], 0)
@@ -182,6 +305,23 @@ describe('limitele care au un motiv', () => {
 const source = (path: string) =>
   readFileSync(fileURLToPath(new URL(`../src/${path}`, import.meta.url)), 'utf8')
 
+/**
+ * The same file with its prose taken out.
+ *
+ * This codebase explains a defect in the comment above the line that fixes it,
+ * so „`form.get('pe_norma')` used to be read here” is written, verbatim, two
+ * lines above the `getAll` that replaced it. A check for „the old call is gone”
+ * that reads the comments finds the story and fails on it — which is a test
+ * punishing the one habit worth keeping. Only `/* … *␘/` blocks and whole-line
+ * `//` comments are removed, so a `//` inside a string is untouched.
+ */
+const code = (path: string) =>
+  source(path)
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .split('\n')
+    .filter((line) => !/^\s*\/\//.test(line))
+    .join('\n')
+
 /** The markup of the one form inside `file` that posts `actiune=<action>`. */
 function seatForm(file: string, action: string): string {
   const text = source(file)
@@ -244,5 +384,72 @@ describe('formularele de locuri numesc programul pe care îl cer', () => {
       /name="actiune" value="retrage"/,
       'o acordare fără cale de întoarcere este o ușă cu un singur sens',
     )
+  })
+
+  /* „Pe normă” existed in the route from 0019 and in no form at all, so every
+     save wrote a fixed number and a coordinator could never be put back on the
+     year's norm. Two boxes sharing one name, read with `getAll`: with `get`,
+     which is what the route used, ticking both would have returned only the
+     first and master would have been silently fixed. */
+  it('alocarea bazei poate pune la loc pe norma anului, pe fiecare nivel', () => {
+    const form = seatForm('pages/profesor/departament.astro', 'aloca')
+    const boxes = [...form.matchAll(/name="pe_norma"[^>]*value="(licenta|master)"/g)].map(
+      (m) => m[1],
+    )
+    assert.deepEqual(boxes.sort(), ['licenta', 'master'], 'câte o bifă pentru fiecare nivel')
+    assert.match(form, /type="checkbox"/)
+
+    const route = code('pages/api/locuri.ts')
+    assert.ok(
+      route.includes(`form.getAll('pe_norma')`),
+      "`form.get` ar întoarce doar prima dintre cele două bife",
+    )
+    assert.ok(!route.includes(`form.get('pe_norma')`), 'nicio citire veche rămasă în urmă')
+  })
+})
+
+/**
+ * THE BYPASS, as a tripwire on the source.
+ *
+ * `/api/cereri/depune` read `if (!invitation && freeFor(…) === 0)`, so an
+ * invited student skipped the seat gate entirely and `preApproved` then wrote
+ * an approved row: a coordinator with three seats who had sent five proposals
+ * ended the week supervising five students. That is the owner's complaint, and
+ * it is checked behaviourally against a real database in `capacity-db.test.ts`.
+ *
+ * This is the cheap half of the same guard, and it runs without a database: the
+ * condition must not acquire an escape hatch again. It is deliberately about
+ * the SHAPE of the gate — a seat check with nothing in front of it — because
+ * the defect was not a wrong number, it was a number nobody looked at.
+ */
+describe('poarta locurilor nu are portiță pentru invitați', () => {
+  it('depunerea verifică locul fără să întrebe întâi dacă există o invitație', () => {
+    const route = code('pages/api/cereri/depune.ts')
+
+    const gate = route.match(/if \(([^)]*freeFor\([^)]*\)[^)]*)\)/)
+    assert.ok(gate, '/api/cereri/depune nu mai conține o poartă pe freeFor')
+    assert.doesNotMatch(
+      gate[1],
+      /invitation|invitatie|preApproved/,
+      'poarta s-a întors la „!invitation &&”: un invitat ar trece din nou peste locuri',
+    )
+
+    /* And the gate has to be the thing the INSERT is behind, not a check on the
+       pool a paragraph earlier — otherwise two students accepting the last seat
+       in the same second both get a row. */
+    assert.ok(
+      route.includes('capacityForUpdate'),
+      'verificarea trebuie să stea în aceeași tranzacție cu scrierea',
+    )
+  })
+
+  it('decizia coordonatorului verifică locul în aceeași tranzacție', () => {
+    assert.ok(code('pages/api/cereri/decizie.ts').includes('capacityForUpdate'))
+  })
+
+  it('acceptarea unei propuneri este oprită înainte de a cere studentului o cerere', () => {
+    const route = code('pages/api/invitatii.ts')
+    const accept = route.slice(route.indexOf("if (action === 'raspunde')"))
+    assert.match(accept, /freeFor\(/, 'acceptarea nu mai verifică locul deloc')
   })
 })

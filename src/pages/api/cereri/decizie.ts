@@ -4,7 +4,7 @@ import { postEvent } from '../../../lib/chat'
 import { queryOne, transaction } from '../../../lib/db'
 import { html, quote, sendEmail, template } from '../../../lib/mail'
 import { deadEnd, redirectWithNotice, sessionExpired } from '../../../lib/http'
-import { DEFAULT_MILESTONES, teacherCapacity } from '../../../lib/repo'
+import { capacityForUpdate, DEFAULT_MILESTONES } from '../../../lib/repo'
 import { freeFor } from '../../../lib/seats'
 import { id as formId } from '../../../lib/ids'
 
@@ -34,51 +34,55 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
     return redirectWithNotice(redirectTo, 'Motivul respingerii este obligatoriu (minimum 10 caractere).', true)
   }
 
-  /* Capacity is answered for THIS student, not for the coordinator in general.
-   *
-   * It used to be answered on the sum of both levels, so somebody with zero
-   * bachelor's seats and five master's seats could accept five bachelor's
-   * students. Now the level is the student's level and the seats reserved for
-   * other study programmes are not offered here — which means a coordinator who
-   * could accept yesterday may be refused today. The message says so, because
-   * otherwise this reads as the portal breaking. */
-  if (decision === 'approved') {
-    const target = await queryOne<{
-      programme_id: string | null
-      programme_name: string | null
-      level: 'bachelor' | 'master' | null
-    }>(
-      `SELECT COALESCE(r.programme_id, s.programme_id) AS programme_id,
-              p.name AS programme_name,
-              COALESCE(p.level, s.program) AS level
-         FROM requests r
-         JOIN users s ON s.id = r.student_id
-         LEFT JOIN study_programmes p ON p.id = COALESCE(r.programme_id, s.programme_id)
-        WHERE r.id = $1 AND r.teacher_id = $2 AND r.status = 'pending'`,
-      [requestId, u!.id],
-    )
-
-    if (target) {
-      const capacity = await teacherCapacity(u!.id)
-      const level = target.level === 'master' ? capacity.master : capacity.bachelor
-      const cohort = target.programme_name ?? (target.level === 'master' ? 'master' : 'licență')
-
-      if (freeFor(level, target.programme_id) === 0) {
-        const reserved = level.free_any - level.base_free
-        return redirectWithNotice(
-          redirectTo,
-          reserved > 0
-            ? `Nu mai ai locuri pentru ${cohort} (${level.taken} din ${level.total} ocupate la acest nivel). Cele ${reserved} locuri rămase sunt rezervate altor programe de studiu și nu pot fi folosite aici. Cere directorului locuri pentru ${cohort}.`
-            : `Nu mai ai locuri pentru ${cohort} (${level.taken} din ${level.total} ocupate la acest nivel). Locurile se numără separat pe nivel și pe program de studiu, așa că locurile de la celălalt nivel nu se pot folosi aici. Cere directorului locuri pentru ${cohort}.`,
-          true,
-        )
-      }
-    }
-  }
-
   // The ownership condition sits in the same statement as the write: another
   // coordinator's request does not match, so nothing changes.
-  const cerere = await transaction(async (client) => {
+  const outcome = await transaction(async (client) => {
+    /* Capacity is answered for THIS student, not for the coordinator in
+     * general, and inside the transaction that spends the seat.
+     *
+     * It used to be answered on the sum of both levels, so somebody with zero
+     * bachelor's seats and five master's seats could accept five bachelor's
+     * students. Now the level is the student's level and the seats reserved for
+     * other study programmes are not offered here — which means a coordinator
+     * who could accept yesterday may be refused today. The message says so,
+     * because otherwise this reads as the portal breaking.
+     *
+     * It also used to be answered on the pool, above this block, and the write
+     * happened afterwards: a coordinator approving two pending requests from
+     * two browser tabs on their last seat got both. `capacityForUpdate` holds
+     * their allocation row until this transaction ends, so the second read sees
+     * the first approval. */
+    if (decision === 'approved') {
+      const { rows: targets } = await client.query<{
+        programme_id: string | null
+        programme_name: string | null
+        level: 'bachelor' | 'master' | null
+      }>(
+        `SELECT COALESCE(r.programme_id, s.programme_id) AS programme_id,
+                p.name AS programme_name,
+                COALESCE(p.level, s.program) AS level
+           FROM requests r
+           JOIN users s ON s.id = r.student_id
+           LEFT JOIN study_programmes p ON p.id = COALESCE(r.programme_id, s.programme_id)
+          WHERE r.id = $1 AND r.teacher_id = $2 AND r.status = 'pending'`,
+        [requestId, u!.id],
+      )
+      const target = targets[0]
+
+      if (target) {
+        const capacity = await capacityForUpdate(client, u!.id)
+        const level = target.level === 'master' ? capacity.master : capacity.bachelor
+
+        if (freeFor(level, target.programme_id) === 0) {
+          return {
+            kind: 'no-seat' as const,
+            level,
+            cohort: target.programme_name ?? (target.level === 'master' ? 'master' : 'licență'),
+          }
+        }
+      }
+    }
+
     const { rows } = await client.query<{
       id: string
       student_id: string
@@ -107,7 +111,7 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
     )
 
     const c = rows[0]
-    if (!c) return null
+    if (!c) return { kind: 'gone' as const }
 
     if (decision === 'approved') {
       for (const [index, [title, description, days]] of DEFAULT_MILESTONES.entries()) {
@@ -125,13 +129,26 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
       )
     }
 
-    return c
+    return { kind: 'decided' as const, request: c }
   })
 
-  if (!cerere) {
+  if (outcome.kind === 'no-seat') {
+    const { level, cohort } = outcome
+    const reserved = level.free_any - level.base_free
+    return redirectWithNotice(
+      redirectTo,
+      reserved > 0
+        ? `Nu mai ai locuri pentru ${cohort} (${level.taken} din ${level.total} ocupate la acest nivel). Cele ${reserved} locuri rămase sunt rezervate altor programe de studiu și nu pot fi folosite aici. Cere directorului locuri pentru ${cohort}.`
+        : `Nu mai ai locuri pentru ${cohort} (${level.taken} din ${level.total} ocupate la acest nivel). Locurile se numără separat pe nivel și pe program de studiu, așa că locurile de la celălalt nivel nu se pot folosi aici. Cere directorului locuri pentru ${cohort}.`,
+      true,
+    )
+  }
+
+  if (outcome.kind === 'gone') {
     return redirectWithNotice(redirectTo, 'Cererea nu mai poate fi modificată.', true)
   }
 
+  const cerere = outcome.request
   const approved = decision === 'approved'
 
   await postEvent({

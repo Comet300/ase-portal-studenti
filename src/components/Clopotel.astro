@@ -32,6 +32,10 @@ const EVENT_LABELS: Record<string, string> = {
   invitation_sent: 'Propunere de coordonare',
   invitation_accepted: 'Propunere acceptată',
   invitation_declined: 'Propunere refuzată',
+  /* Nici refuzată, nici expirată: studentul a spus da, iar propunerea este încă
+     deschisă. Tocmai de asta are nevoie de cuvântul ei — celelalte două s-ar
+     citi ca o decizie a cuiva, iar asta nu este a nimănui. */
+  invitation_no_seat: 'Propunere fără loc',
   consultation_scheduled: 'Consultație programată',
   consultation_cancelled: 'Consultație anulată',
   thesis_uploaded: 'Lucrare încărcată',

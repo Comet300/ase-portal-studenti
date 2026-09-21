@@ -3,9 +3,10 @@ import { postEvent } from '../../../lib/chat'
 import { queryOne, transaction } from '../../../lib/db'
 import { template, sendEmail, html } from '../../../lib/mail'
 import { deadEnd, redirectWithNotice, sessionExpired } from '../../../lib/http'
-import { DECISION_WINDOW_DAYS } from '../../../lib/lifecycle'
-import { seedMilestones, teacherCapacity } from '../../../lib/repo'
+import { DECISION_WINDOW_DAYS, tellCoordinatorSeatIsGone } from '../../../lib/lifecycle'
+import { capacityForUpdate, seedMilestones } from '../../../lib/repo'
 import { freeFor } from '../../../lib/seats'
+import { formatDate } from '../../../lib/date'
 import { id as formId } from '../../../lib/ids'
 
 /**
@@ -15,6 +16,17 @@ import { id as formId } from '../../../lib/ids'
  * if they are answering an invitation they already accepted, the same form is
  * approved on submission — the decision was made when the coordinator wrote it,
  * and asking them to press a second button would only add a day.
+ *
+ * AN INVITATION IS NOT A SEAT. Until this release the seat check read
+ * `if (!invitation && freeFor(…) === 0)`, so an invited student skipped the
+ * gate entirely and `preApproved` then wrote an approved row: a coordinator
+ * with three seats who had sent five proposals ended the week supervising five
+ * students. The check at the moment the proposal is SENT does nothing about it
+ * — two weeks pass between sending and accepting, and the seats are spent in
+ * between by whoever submits first. So the gate applies to everybody now, and
+ * what the invitation changes is the WORDING: a student who was invited did
+ * nothing wrong and can do nothing about it, and the sentence has to say so and
+ * name who can.
  */
 export const POST: APIRoute = async ({ request, locals, url }) => {
   const u = locals.user
@@ -92,46 +104,47 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
     : null
 
   const invitation = invitationId
-    ? await queryOne<{ id: string }>(
-        `SELECT id FROM invitations
+    ? await queryOne<{ id: string; expires_at: string }>(
+        `SELECT id, expires_at FROM invitations
           WHERE id = $1 AND student_id = $2 AND teacher_id = $3
             AND status = 'accepted' AND expires_at > now()`,
         [invitationId, u.id, teacherId],
       )
     : null
 
-  /* The seat is checked at the student's own level and study programme.
-   *
-   * Extra seats are reserved to the programme they were granted for, so „has
-   * free seats” is not a fact about a coordinator any more — it is a fact about
-   * a coordinator and a student. A catalogue entry that looked available to
-   * everybody was the reason this refusal used to arrive as a surprise. */
-  const capacity = await teacherCapacity(teacherId)
-  const level = u.program === 'master' ? capacity.master : capacity.bachelor
-  const cohort = programme?.name ?? (u.program === 'master' ? 'master' : 'licență')
-
-  if (!invitation && freeFor(level, u.programme_id) === 0) {
-    const reserved = level.free_any - level.base_free
-    return back(
-      reserved > 0
-        ? `${teacher.name} nu mai are locuri pentru ${cohort}: cele ${reserved} locuri rămase sunt rezervate altor programe de studiu. Alege alt coordonator din catalog — acolo scrie câte locuri are fiecare pentru programul tău.`
-        : `${teacher.name} nu mai are locuri pentru ${cohort} (${level.taken} din ${level.total} ocupate). Alege alt coordonator din catalog — acolo scrie câte locuri are fiecare pentru programul tău.`,
-      true,
-    )
-  }
-
   const preApproved = Boolean(invitation)
+  const cohort = programme?.name ?? (u.program === 'master' ? 'master' : 'licență')
 
   // The partial unique index on (student_id) for live statuses prevents a second
   // open request; the violation is caught here so the message is useful.
   try {
-    /* The number and the row are allocated together.
+    /* The seat check, the number and the row are one transaction.
      *
-     * The counter sits on the academic year and is bumped inside this
-     * transaction, so numbers run sequentially within the session they belong
-     * to, stay unique without depending on a clock, and leave no gap when the
-     * insert below is refused by the live-request index. */
-    const { number, created } = await transaction(async (tx) => {
+     * The check used to sit above this block, on the pool: two students
+     * accepting the last seat in the same second both read „one free” and both
+     * got a row. `capacityForUpdate` holds the coordinator's allocation row for
+     * the rest of the transaction, so the second one reads the capacity the
+     * first one has already changed and is refused — which is the answer that
+     * was always intended, only now it also arrives.
+     *
+     * The counter is bumped AFTER the check, inside the same transaction, so
+     * numbers run sequentially within the session they belong to, stay unique
+     * without depending on a clock, and a refusal leaves no gap. */
+    const outcome = await transaction(async (tx) => {
+      /* The seat is checked at the student's own level and study programme.
+       *
+       * Extra seats are reserved to the programme they were granted for, so
+       * „has free seats” is not a fact about a coordinator any more — it is a
+       * fact about a coordinator and a student. A catalogue entry that looked
+       * available to everybody was the reason this refusal used to arrive as a
+       * surprise. */
+      const capacity = await capacityForUpdate(tx, teacherId)
+      const level = u.program === 'master' ? capacity.master : capacity.bachelor
+
+      if (freeFor(level, u.programme_id) === 0) {
+        return { kind: 'no-seat' as const, level }
+      }
+
       const { rows: years } = await tx.query<{ label: string; request_counter: number }>(
         `UPDATE academic_years SET request_counter = request_counter + 1
           WHERE is_current
@@ -161,10 +174,52 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
         ],
       )
 
-      return { number: allocated, created: rows[0] ?? null }
+      return { kind: 'created' as const, number: allocated, created: rows[0] ?? null }
     })
 
     const base = process.env.APP_BASE_URL ?? url.origin
+
+    if (outcome.kind === 'no-seat') {
+      const level = outcome.level
+      const reserved = level.free_any - level.base_free
+
+      /* A student who was invited is refused in different words, because it is
+       * a different fact about them: they did not choose a full coordinator,
+       * they were asked by one, and there is nothing in this portal they can do
+       * to make a seat appear. The one who chose from the catalogue is sent
+       * back to it; the one who was invited is told who can act, what happens
+       * to the proposal meanwhile, and that the coordinator has been told. */
+      if (invitation) {
+        const told = await tellCoordinatorSeatIsGone({
+          invitationId: invitation.id,
+          teacherId,
+          teacherName: teacher.name,
+          teacherEmail: teacher.email,
+          studentId: u.id,
+          studentName: u.name,
+          cohort,
+          baseUrl: base,
+        })
+        return back(
+          `${teacher.name} nu mai are niciun loc pentru ${cohort}, așa că portalul nu poate ` +
+            `aproba coordonarea acum. Nu ai greșit nimic: locurile s-au ocupat după ce ai ` +
+            `primit propunerea. ${told ? 'Coordonatorul a fost anunțat și poate' : 'Coordonatorul poate'} ` +
+            `cere directorului de departament un loc pentru ${cohort}. Propunerea rămâne ` +
+            `valabilă până la ${formatDate(invitation.expires_at)}: dacă apare un loc, depui ` +
+            `cererea de aici, fără să o iei de la capăt. Poți și să alegi alt coordonator din catalog.`,
+          true,
+        )
+      }
+
+      return back(
+        reserved > 0
+          ? `${teacher.name} nu mai are locuri pentru ${cohort}: cele ${reserved} locuri rămase sunt rezervate altor programe de studiu. Alege alt coordonator din catalog — acolo scrie câte locuri are fiecare pentru programul tău.`
+          : `${teacher.name} nu mai are locuri pentru ${cohort} (${level.taken} din ${level.total} ocupate). Alege alt coordonator din catalog — acolo scrie câte locuri are fiecare pentru programul tău.`,
+        true,
+      )
+    }
+
+    const { number, created } = outcome
 
     if (preApproved && created) {
       await seedMilestones(created.id)

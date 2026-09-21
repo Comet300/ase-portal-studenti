@@ -79,6 +79,15 @@ const PROGRAMMES = [
   { level: 'master', form_of_study: 'if', specialisation: 'Relații publice în marketing',       language: 'ro', location: 'București', years: 2 },
   { level: 'master', form_of_study: 'if', specialisation: 'Marketing strategic',                language: 'ro', location: 'București', years: 2 },
   { level: 'master', form_of_study: 'if', specialisation: 'Managementul relațiilor cu clienții', language: 'ro', location: 'București', years: 2 },
+  /* The two the list was missing. Migrations 0020, 0023 and 0024 leave thirteen
+   * programmes in the current year and this list named eleven, so two of them
+   * existed only as an empty row: no student, no topic, no seat, no line in any
+   * report. „Managementul relațiilor cu clienții” in English is the one that
+   * matters most — it is the pair that proves the language belongs in the
+   * title, and with only the Romanian one seeded the two never appeared side by
+   * side on a screen. */
+  { level: 'master', form_of_study: 'if', specialisation: 'Managementul relațiilor cu clienții', language: 'en', location: 'București', years: 2 },
+  { level: 'master', form_of_study: 'if', specialisation: 'Managementul marketingului',          language: 'ro', location: 'București', years: 2 },
 ].map((p) => ({ ...p, name: programmeTitle(p) }))
 
 /* Keyed on what identifies a programme, not on what it is called: the label is
@@ -181,7 +190,13 @@ const TEACHERS = [
   ['Conf. univ. dr. Alina Georgescu', 'alina.georgescu@ase.ro', 'Marketing digital', 'Conf. univ. dr.', 'Corp Virgil Madgearu, sala 1301', 8, 6, false,
     'Marketing digital, performance și automatizare. Lucrez bine cu studenți care au acces la un cont real de campanii.',
     'Marketing digital · performance · automatizare'],
-  ['Lect. univ. dr. Radu Stoica', 'radu.stoica@ase.ro', 'Marketing internațional', 'Lect. univ. dr.', 'Corp Ion Angelescu, sala 2205', 4, 4, false,
+  /* `null` is not „no seats”: it is „nobody has decided about this one”, and
+   * `teacherCapacities` reads it as the year's norm — the state a coordinator
+   * hired in March starts in, and the one the director's „Pe norma anului”
+   * checkbox puts them back into. Every seeded coordinator had an explicit
+   * base, so the whole norm path — the hint on the allocation form, the number
+   * that follows a change of the norm — existed in the code and in no demo. */
+  ['Lect. univ. dr. Radu Stoica', 'radu.stoica@ase.ro', 'Marketing internațional', 'Lect. univ. dr.', 'Corp Ion Angelescu, sala 2205', null, null, false,
     'Internaționalizare și piețe emergente. Coordonez și lucrări redactate în limba engleză.',
     'Marketing internațional · piețe emergente'],
 ]
@@ -198,6 +213,15 @@ const STUDENT_NAMES = [
   'Ștefan Ilie', 'Raluca Sandu', 'Vlad Petrescu', 'Bianca Toma', 'George Ionescu',
   'Maria Lungu', 'Cătălin Enache', 'Roxana Dinu', 'Paul Nistor', 'Alexandra Iordache',
   'Sorin Bălan', 'Teodora Rusu', 'Adrian Costache', 'Gabriela Matei',
+  /* Enough people for thirteen programmes to each hold a cohort rather than a
+   * single row. Twenty-four over thirteen is one or two per programme, which
+   * reads as a database with a fault in it; forty-two is two rotations and a
+   * bit, so every programme has three or four and the filters, the grouping and
+   * the seat arithmetic all have something to bite on. */
+  'Iulia Crețu', 'Mircea Tudor', 'Oana Dobre', 'Cosmin Filip', 'Larisa Ene',
+  'Bogdan Oprea', 'Daria Stan', 'Victor Moldovan', 'Anca Pavel', 'Tudor Grigore',
+  'Simona Albu', 'Robert Nedelcu', 'Ilinca Zamfir', 'Marius Cristea', 'Ruxandra Voicu',
+  'Emil Pascu', 'Carmen Iacob', 'Horia Bădescu',
 ]
 
 /* A year is split into series before it is split into groups, and the father's
@@ -235,7 +259,28 @@ const MASTER_GROUPS = [
   [programmeOf('Marketing strategic', 'if', 'ro'), 2],
   [programmeOf('Cercetări de marketing', 'if', 'ro'), 2],
   [programmeOf('Marketing online', 'if', 'ro'), 2],
+  [programmeOf('Marketing și comunicare în afaceri', 'if', 'ro'), 2],
+  [programmeOf('Relații publice în marketing', 'if', 'ro'), 2],
+  [programmeOf('Managementul relațiilor cu clienții', 'if', 'ro'), 2],
+  [programmeOf('Managementul relațiilor cu clienții', 'if', 'en'), 2],
+  [programmeOf('Managementul marketingului', 'if', 'ro'), 2],
 ]
+
+/* One rotation through the faculty, licență twice for every master round.
+ *
+ * The assignment used to be `i % 3 === 2 ? MASTER_GROUPS[…] : BACHELOR_GROUPS[…]`,
+ * which is two independent rotations and left whichever list was longer
+ * partly unfilled — five of the thirteen programmes had no student at all, and
+ * a programme with nobody in it is invisible on every screen that matters: the
+ * catalogue, the faculty list, the seats ledger, every filter. One list and one
+ * index instead, so „every programme has somebody” is a property of the data
+ * rather than of an arithmetic coincidence.
+ *
+ * Licență appears twice per round because that is the faculty's real shape —
+ * one specialisation in four forms carries far more people than eight master
+ * programmes — and a demo where master outnumbers licență teaches the wrong
+ * thing about the numbers on every screen. */
+const COHORTS = [...BACHELOR_GROUPS, ...MASTER_GROUPS, ...BACHELOR_GROUPS]
 
 /* --- topics ---------------------------------------------------------------- */
 
@@ -355,8 +400,16 @@ for (const [name, email, department, titlu, office, bachelorSeats, masterSeats, 
     titlu, department, office, bio, interests, demo,
   ])
   teacherIds.push(id)
+  /* The BASE, not the frozen fused column.
+   *
+   * This wrote `bachelor_seats` / `master_seats` — the columns migration 0019
+   * stopped reading and 0027 removed. The result was a demo database that
+   * looked authoritative and was ignored: every coordinator's base was NULL,
+   * that is „on the year's norm”, so the nine different allocations above all
+   * came out as 5 and 3 on every screen. The numbers in TEACHERS are the
+   * department's decision about each person, which is exactly what a base is. */
   await q(
-    `INSERT INTO seat_allocations (teacher_id, academic_year_id, bachelor_seats, master_seats)
+    `INSERT INTO seat_allocations (teacher_id, academic_year_id, bachelor_base, master_base)
      VALUES ($1, $2, $3, $4)
      ON CONFLICT (teacher_id, academic_year_id) DO NOTHING`,
     [id, currentYear.id, bachelorSeats, masterSeats],
@@ -370,7 +423,7 @@ const headId = await upsertUser([
   titluD, headDepartment, headOffice, headBio, headInterests, true,
 ])
 await q(
-  `INSERT INTO seat_allocations (teacher_id, academic_year_id, bachelor_seats, master_seats)
+  `INSERT INTO seat_allocations (teacher_id, academic_year_id, bachelor_base, master_base)
    VALUES ($1, $2, $3, $4) ON CONFLICT (teacher_id, academic_year_id) DO NOTHING`,
   [headId, currentYear.id, headBachelorSeats, headMasterSeats],
 )
@@ -378,20 +431,7 @@ await q(
 console.log('[seed] studenți')
 const studentIds = []
 for (const [i, name] of STUDENT_NAMES.entries()) {
-  const isMaster = i % 3 === 2
-  // Split on the position within the master's series, not on the global index:
-  // `i % 3` is constantly 2 for every master's student, so
-  // `i % MASTER_GROUPS.length` would have sent them all to the same programme.
-  //
-  // The same arithmetic was wrong at licență in the other direction: `i % 3` is
-  // 0 or 1 for a licență student and never 2, so the third group never got
-  // anybody and the demo had students in two of the five licență programmes.
-  // Nothing said so — three programmes simply read „0 studenți” — and they are
-  // exactly the ones this release makes distinguishable: frecvență redusă, la
-  // distanță, Buzău.
-  const [programme, an] = isMaster
-    ? MASTER_GROUPS[Math.floor(i / 3) % MASTER_GROUPS.length]
-    : BACHELOR_GROUPS[Math.floor(i / 3) % BACHELOR_GROUPS.length]
+  const [programme, an] = COHORTS[i % COHORTS.length]
   const limba = programme.language
   const email = `${name.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, '.')}@stud.ase.ro`
   studentIds.push(
@@ -489,9 +529,20 @@ for (const [i, studentId] of studentIds.entries()) {
   const requestNumber = `CRR-${startYear}-${String(i + 1).padStart(4, '0')}`
 
   const { rows } = await q(
+    /* The programme is pinned on the row, exactly as `/api/cereri/depune`
+     * writes it and `/api/cereri/decizie` re-pins it at approval.
+     *
+     * Left NULL — which is what this seed did — every seeded supervision landed
+     * in the pot with no programme, so it charged the shared base and no
+     * earmark was ever spent by anybody. The reserved-per-programme half of the
+     * model, which is the whole point of `seat_grants`, was unreachable in demo
+     * data: a director could grant seats for Marketing online and watch them
+     * stay free forever. */
     `INSERT INTO requests (academic_year_id, number, student_id, teacher_id, title_ro, title_en,
-                           objectives, motivation, status, rejection_reason, submitted_at, decided_at, expires_at)
+                           objectives, motivation, status, rejection_reason, programme_id,
+                           submitted_at, decided_at, expires_at)
      SELECT $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,
+            (SELECT programme_id FROM users WHERE id = $3),
             now() - ($11 || ' days')::interval,
             CASE WHEN $9 = 'pending' THEN NULL ELSE now() - ($12 || ' days')::interval END,
             CASE WHEN $9 = 'pending' THEN now() + ($13 || ' days')::interval END
@@ -801,14 +852,19 @@ await q(
  * The one with the fewest approved students is picked, so that the change is
  * minimal, and never the demo account: its queue has to stay free.
  */
-await q(
+const plin = await q(
   `UPDATE seat_allocations a
       -- Exactly as many as are taken. A GREATEST(…, 1) here gave one extra
       -- bachelor seat to a supervisor whose only student is on a master's
       -- programme, so they were not full at all any more. The HAVING below
       -- guarantees that the total is not zero.
-      SET bachelor_seats = ocupate.b,
-          master_seats   = ocupate.m
+      -- The base, for the same reason as above: written into the frozen
+      -- columns this demo state was invisible, because the portal read the
+      -- base and the base said „on the year's norm” — five and three. The
+      -- „full supervisor” the catalogue, the submit button and the invitation
+      -- form were supposed to be compared against was never full at all.
+      SET bachelor_base = ocupate.b,
+          master_base   = ocupate.m
      FROM (
        SELECT r.teacher_id,
               count(*) FILTER (WHERE s.program = 'bachelor')::int AS b,
@@ -823,9 +879,113 @@ await q(
         ORDER BY count(*), r.teacher_id
         LIMIT 1
      ) ocupate
-    WHERE a.teacher_id = ocupate.teacher_id AND a.academic_year_id = $1`,
+    WHERE a.teacher_id = ocupate.teacher_id AND a.academic_year_id = $1
+    RETURNING a.teacher_id`,
   [currentYear.id],
 )
+const fullTeacherId = plin.rows[0]?.teacher_id ?? null
+
+/* --- the ledger of extra seats ---------------------------------------------
+ *
+ * A grant is the half of capacity that is NOT the base: seats reserved to one
+ * study programme, spendable only by a student of it. Nothing seeded any, so
+ * every demo database had `seat_grants` empty — the director's ledger panel was
+ * an empty state, „Rezervate” read „—” on every row of the load table, and
+ * `freeFor` could only ever return `base_free`, which is the arithmetic this
+ * whole release is about.
+ *
+ * Three rows, on purpose: a live grant somebody is already sitting on, a live
+ * grant still waiting for a student of its programme (so „nine free, none for
+ * you” is visible on a real card), and one that was taken back — the ledger has
+ * to show a revocation with its reason, and 0019 keeps the row rather than
+ * deleting it precisely so that it can.
+ *
+ * The coordinator who is exactly full is deliberately not among them: a grant
+ * would give them a free seat again and undo the one state this seed builds by
+ * hand.
+ */
+const grantTargets = teacherIds.filter((id) => id !== fullTeacherId)
+const GRANTS = [
+  {
+    teacher: grantTargets[1],
+    programme: programmeOf('Marketing online', 'if', 'ro'),
+    seats: 3,
+    reason: 'A preluat trei studenți de la colegul plecat în concediu medical, toți de la Marketing online.',
+    revoked: null,
+  },
+  {
+    teacher: grantTargets[2],
+    programme: programmeOf('Managementul relațiilor cu clienții', 'if', 'en'),
+    seats: 2,
+    reason: 'Singurul coordonator care acceptă lucrări redactate în engleză la acest program.',
+    revoked: null,
+  },
+  {
+    teacher: grantTargets[3],
+    programme: programmeOf('Marketing', 'id', 'ro', 'Buzău'),
+    seats: 2,
+    reason: 'Deplasare săptămânală la Buzău, convenită pentru semestrul întâi.',
+    revoked: 'Deplasările la Buzău au fost preluate de altcineva din februarie. Locurile se întorc la departament.',
+  },
+]
+
+for (const g of GRANTS) {
+  if (!g.teacher || !g.programme) continue
+  const programmeId = programmeIds.get(programmeKey(g.programme))
+  await q(
+    `INSERT INTO seat_grants (academic_year_id, teacher_id, programme_id, level, seats, reason,
+                              granted_by, granted_at, revoked_at, revoked_by, revoke_reason)
+     SELECT $1, $2, $3, $4, $5, $6, $7, now() - interval '40 days',
+            CASE WHEN $8::text IS NULL THEN NULL ELSE now() - interval '12 days' END,
+            CASE WHEN $8::text IS NULL THEN NULL ELSE $7::uuid END,
+            $8
+      WHERE NOT EXISTS (
+        SELECT 1 FROM seat_grants
+         WHERE academic_year_id = $1 AND teacher_id = $2 AND programme_id = $3 AND reason = $6
+      )`,
+    [currentYear.id, g.teacher, programmeId, g.programme.level, g.seats, g.reason, headId, g.revoked],
+  )
+}
+
+/* --- a proposal that has run out of seats -----------------------------------
+ *
+ * The state the owner's complaint was about, made visible without anyone having
+ * to build it by hand: a coordinator who is exactly full, with an offer still
+ * outstanding. The portal reaches it by itself every time — seats fill in the
+ * two weeks between writing a proposal and its being answered — so this is not
+ * an impossible row, it is the ordinary one. `/api/invitatii` refuses to WRITE
+ * such a proposal, which is a different claim: it refuses to promise today what
+ * it cannot keep today, not to keep a promise that has since gone bad.
+ *
+ * What it puts on screen: „Fără loc pentru … în acest moment” on the
+ * coordinator's own list of proposals, the overcommitment notice above it, and
+ * — the moment the student presses „Acceptă” — the refusal that says whose
+ * problem it is and who can do something about it.
+ *
+ * Keyed on the message text, so a second run finds its own row instead of
+ * picking another student and issuing a second proposal.
+ */
+const NO_SEAT_INVITATION =
+  'Bună ziua! Am citit lucrarea dumneavoastră de la cercul științific și v-aș propune să vă coordonez lucrarea de finalizare a studiilor. Dacă acceptați, depuneți cererea din portal.'
+
+if (fullTeacherId) {
+  await q(
+    `INSERT INTO invitations (academic_year_id, teacher_id, student_id, message, expires_at)
+     SELECT $1, $2, s.id, $3, now() + interval '9 days'
+       FROM users s
+      WHERE s.role = 'student' AND s.is_demo = false
+        AND NOT EXISTS (
+          SELECT 1 FROM requests r
+           WHERE r.student_id = s.id AND r.status IN ('approved', 'pending', 'defended'))
+        AND NOT EXISTS (
+          SELECT 1 FROM invitations i WHERE i.student_id = s.id AND i.status = 'pending')
+        AND NOT EXISTS (
+          SELECT 1 FROM invitations i2 WHERE i2.teacher_id = $2 AND i2.message = $3)
+      ORDER BY s.name
+      LIMIT 1`,
+    [currentYear.id, fullTeacherId, NO_SEAT_INVITATION],
+  )
+}
 
 /* The demo account's profile photo, deleted on every startup.
  *

@@ -1,4 +1,5 @@
 import { execute, query, queryOne } from './db'
+import type { Transaction } from './db'
 import { capacityOf, freeFor, isFullFor } from './seats'
 import type {
   Level as SeatLevel,
@@ -251,6 +252,20 @@ interface PotRow {
 }
 
 /**
+ * How a capacity read reaches the database.
+ *
+ * Through the pool for a screen, and through the very transaction that is about
+ * to write the approval for a gate. Both run the same two statements: a gate
+ * that asked the pool while holding a lock in a transaction would be answering
+ * from outside its own lock, which is the whole thing `capacityForUpdate` is
+ * there to prevent.
+ */
+type Runner = <T>(sql: string, params: unknown[]) => Promise<T[]>
+
+const inside = (tx: Transaction): Runner =>
+  async <T>(sql: string, params: unknown[]) => (await tx.query<T>(sql, params)).rows
+
+/**
  * Every coordinator's capacity for the year, keyed by coordinator.
  *
  * Two statements rather than one: the bases are one row per coordinator and the
@@ -262,10 +277,11 @@ interface PotRow {
 export async function teacherCapacities(
   teacherId?: string | null,
   yearId?: string,
+  run: Runner = query,
 ): Promise<Map<string, TeacherCapacityShape>> {
   const params = [teacherId ?? null, yearId ?? null]
 
-  const bases = await query<BaseRow>(
+  const bases = await run<BaseRow>(
     `SELECT t.id AS teacher_id, a.bachelor_base, a.master_base,
             COALESCE(y.default_bachelor_seats, 0) AS norm_bachelor,
             COALESCE(y.default_master_seats, 0)   AS norm_master
@@ -287,7 +303,7 @@ export async function teacherCapacities(
    * „defended” counts as taken: a bachelor's thesis defended in the February
    * session used to hand the seat back for the remaining seven months of the
    * year, which nobody had decided. */
-  const pots = await query<PotRow>(
+  const pots = await run<PotRow>(
     `WITH gr AS (
        SELECT g.teacher_id, g.level, g.programme_id, SUM(g.seats)::int AS granted
          FROM seat_grants g
@@ -353,8 +369,9 @@ export async function teacherCapacities(
 export async function teacherCapacity(
   teacherId: string,
   yearId?: string,
+  run: Runner = query,
 ): Promise<TeacherCapacityShape> {
-  const all = await teacherCapacities(teacherId, yearId)
+  const all = await teacherCapacities(teacherId, yearId, run)
   return (
     all.get(teacherId) ?? {
       teacher_id: teacherId,
@@ -362,6 +379,52 @@ export async function teacherCapacity(
       master: capacityOf({ level: 'master', base: 0, isNorm: false, pots: [] }),
     }
   )
+}
+
+/**
+ * The same capacity, read with the coordinator's seats held against everybody
+ * else for the rest of the transaction.
+ *
+ * WHY A LOCK AT ALL. Every gate used to read capacity through the pool and then
+ * write the approval in a separate transaction. Two students accepting the last
+ * seat in the same second both read „one free” and both got an approved row —
+ * the refusal was real, and simply never reached the second of them. A comment
+ * saying „rare” would have been the other option; it is not, in a faculty where
+ * a deadline at midnight puts two hundred students on the same minute.
+ *
+ * WHAT IS LOCKED. The coordinator's own row in `seat_allocations`, which IS the
+ * object being contended: the base lives in it, and every seat spent at this
+ * coordinator is counted against it. `SELECT … FOR UPDATE` on one existing row
+ * and nothing else, so two students at two different coordinators never wait on
+ * each other, and the lock ports unchanged to MySQL — an advisory lock
+ * (`pg_advisory_xact_lock`) would not, and locking `users` instead would have
+ * made every request wait on the presence timestamp of the coordinator.
+ *
+ * WHY THE ROW IS CREATED FIRST. A coordinator on the year's norm has no
+ * allocation row, and there is no locking a row that does not exist. The insert
+ * writes both bases NULL, which is exactly the statement „nobody has decided
+ * about this one” that `teacherCapacities` already reads as the norm — so the
+ * row changes no number on any screen. It is the lock's home, and it would have
+ * been written by the director's first save anyway.
+ */
+export async function capacityForUpdate(
+  tx: Transaction,
+  teacherId: string,
+): Promise<TeacherCapacityShape> {
+  await tx.query(
+    `INSERT INTO seat_allocations (teacher_id, academic_year_id)
+     VALUES ($1, (SELECT id FROM academic_years WHERE is_current))
+     ON CONFLICT (teacher_id, academic_year_id) DO NOTHING`,
+    [teacherId],
+  )
+  await tx.query(
+    `SELECT teacher_id FROM seat_allocations
+      WHERE teacher_id = $1
+        AND academic_year_id = (SELECT id FROM academic_years WHERE is_current)
+      FOR UPDATE`,
+    [teacherId],
+  )
+  return teacherCapacity(teacherId, undefined, inside(tx))
 }
 
 export interface Seats {

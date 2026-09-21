@@ -11,7 +11,7 @@
     "build:only": "astro build",
     "preview": "astro preview",
     "check": "astro check",
-    "test": "node --experimental-strip-types --test test/*.test.ts",
+    "test": "node --experimental-strip-types --import ./test/resolve.mjs --test test/*.test.ts",
     "verify": "npm run check && npm test",
     "db:migrate": "node scripts/migrate.mjs",
     "db:seed": "node scripts/seed.mjs",

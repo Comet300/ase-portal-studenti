@@ -16,6 +16,14 @@ export interface AcademicYear {
   starts_on: string
   ends_on: string
   is_current: boolean
+  /* The department's norm for the year: what a coordinator's base is until
+   * somebody decides otherwise about them (0019). Declared here because the
+   * director's allocation form has to be able to name the number it is offering
+   * to go back to — „pe norma anului” with no number beside it asks the reader
+   * to remember what the norm is. The queries already read them: every one of
+   * them is `SELECT *`. */
+  default_bachelor_seats: number
+  default_master_seats: number
 }
 
 export function currentYear(): Promise<AcademicYear | null> {

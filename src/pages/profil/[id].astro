@@ -7,8 +7,9 @@ import { internalPath } from '../../lib/http'
 import { ROLE_LABELS } from '../../lib/auth'
 import { queryOne, query } from '../../lib/db'
 import { id as routeId } from '../../lib/ids'
-import { formatDate, studentRequests, teacherSeats } from '../../lib/repo'
-import { officialName } from '../../lib/text'
+import { formatDate, studentRequests, teacherCapacity } from '../../lib/repo'
+import { atLevel, freeFor, fullBecause } from '../../lib/seats'
+import { numar, officialName } from '../../lib/text'
 import { groupLabel, languageLabel, levelLabel } from '../../lib/years'
 
 /**
@@ -62,7 +63,25 @@ if (!person) return Astro.rewrite('/404')
 const isTeacherProfile = person.role !== 'student'
 const isMe = person.id === me.id
 
-const seats = isTeacherProfile ? await teacherSeats(person.id) : null
+/* Locurile, spuse pe nivel și — când se poate — pentru cine citește.
+ *
+ * Ecranul spunea „x din y locuri ocupate · z libere” pe suma celor două
+ * niveluri, cu rezervările pe programe adunate în „libere”. Era ultimul loc din
+ * portal din care un cititor mai putea deduce un verdict despre coordonator
+ * dintr-o cifră care, de la 0019, este despre (coordonator, nivel, program).
+ * `free_any` chiar este răspunsul onest pentru un cititor fără program în
+ * context — dar atunci trebuie scris pe nivel, pentru că o sumă a celor două
+ * niveluri nu este liberă pentru nimeni.
+ *
+ * Pentru un student care are nivelul în fișă se scrie exact numărul porții:
+ * același `freeFor` pe care îl aplică `/api/cereri/depune`, cu aceeași frază de
+ * refuz ca în catalog (`fullBecause`) — două ecrane, un singur adevăr. */
+const capacity = isTeacherProfile ? await teacherCapacity(person.id) : null
+const viewerLevel = me.role === 'student' ? me.program : null
+const freeForViewer =
+  capacity && viewerLevel ? freeFor(atLevel(capacity, viewerLevel), me.programme_id) : null
+const freeAnywhere = capacity ? capacity.bachelor.free_any + capacity.master.free_any : 0
+const isFullForViewer = freeForViewer !== null ? freeForViewer === 0 : freeAnywhere === 0
 
 // A student with a request under way cannot submit another; the button has to
 // know that.
@@ -195,10 +214,25 @@ Astro.response.headers.set('vary', 'referer')
             )
           }
           {
-            isTeacherProfile && seats && (
+            isTeacherProfile && capacity && (
               <p class="muted text-sm">
-                {seats.total_taken} din {seats.total_seats} locuri ocupate
-                {seats.free > 0 ? ` · ${seats.free} libere` : ' · fără locuri disponibile'}
+                Licență {capacity.bachelor.taken} din {capacity.bachelor.total} · master{' '}
+                {capacity.master.taken} din {capacity.master.total}
+                {freeForViewer !== null &&
+                  (freeForViewer > 0
+                    ? ` · ${numar(freeForViewer, 'loc pentru tine', 'locuri pentru tine')}`
+                    : ' · niciun loc pentru programul tău')}
+              </p>
+            )
+          }
+          {/* De ce nu, nu doar că nu. Aceeași propoziție ca în catalog: un loc
+              rămas poate fi al altui program, iar „fără locuri” pe o fișă care
+              arată locuri libere pe nivel este exact neînțelegerea pe care o
+              repară. */}
+          {
+            isTeacherProfile && capacity && viewerLevel && freeForViewer === 0 && (
+              <p class="muted text-sm">
+                {fullBecause(atLevel(capacity, viewerLevel), me.specialization)}
               </p>
             )
           }
@@ -216,9 +250,11 @@ Astro.response.headers.set('vary', 'referer')
                   Ai deja o cerere activă. Poți depune alta doar după ce o retragi sau primești o
                   decizie.
                 </span>
-              ) : seats?.free === 0 ? (
+              ) : isFullForViewer ? (
                 <span class="hint">
-                  {person.name} nu mai are locuri libere în această sesiune.
+                  {freeForViewer === null
+                    ? `${person.name} nu mai are locuri libere în această sesiune.`
+                    : `${person.name} nu mai are locuri pentru programul tău în această sesiune.`}
                 </span>
               ) : (
                 <a class="btn btn--primary btn--sm" href={`/lucrarea-mea?coordonator=${person.id}`}>

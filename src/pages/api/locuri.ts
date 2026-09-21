@@ -77,10 +77,18 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
     /* „Pe normă” is a value, not an absence: it puts the coordinator back on the
      * year's norm, so a later change of the norm reaches them again. Sent as a
      * separate field because an empty number input is indistinguishable from a
-     * cleared one, and „0 seats” has to stay expressible. */
-    const onNorm = String(form.get('pe_norma') ?? '')
+     * cleared one, and „0 seats” has to stay expressible.
+     *
+     * `getAll`, and one checkbox per level sharing the name. The route read
+     * `form.get('pe_norma')` and understood a single value, including an
+     * „ambele” that no form has ever sent — and `form.get` returns only the
+     * FIRST of several fields with one name, so two boxes ticked would have put
+     * only licență back on the norm while master was silently saved as a fixed
+     * number. Two independent facts are two entries, and the vocabulary is the
+     * level itself rather than a third word meaning „both”. */
+    const onNorm = form.getAll('pe_norma').map(String)
     const wantsNorm = (level: 'bachelor' | 'master') =>
-      onNorm === 'ambele' || onNorm === (level === 'master' ? 'master' : 'licenta')
+      onNorm.includes(level === 'master' ? 'master' : 'licenta')
 
     const typed = {
       bachelor: Number(form.get('locuri_licenta') ?? 0),
@@ -245,11 +253,12 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
 
     await sendEmail({
       to: teacher.email,
-      subject: `Ai primit ${Math.trunc(seats)} locuri pentru ${programme.name}`,
+      subject: `Ai primit ${numar(Math.trunc(seats), 'loc', 'locuri')} pentru ${programme.name}`,
       html: template(
         'Locuri suplimentare acordate',
-        html`<p>Directorul de departament ți-a rezervat <strong>${Math.trunc(seats)}</strong>
-         locuri pentru <strong>${programme.name}</strong> (${LEVEL_WORD[programme.level]}).</p>
+        html`<p>Directorul de departament ți-a rezervat
+         <strong>${numar(Math.trunc(seats), 'loc', 'locuri')}</strong>
+         pentru <strong>${programme.name}</strong> (${LEVEL_WORD[programme.level]}).</p>
          <p>Ele pot fi ocupate numai de studenți de la acest program de studiu.</p>
          ${quote(reason)}`,
         { text: 'Deschide locurile de coordonare', url: `${base}${TEACHER_PAGE}` },
@@ -258,7 +267,7 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
 
     return redirectWithNotice(
       HEAD_PAGE,
-      `${Math.trunc(seats)} locuri rezervate pentru ${programme.name} la ${teacher.name}. Numai studenții acestui program le pot ocupa.`,
+      `${numar(Math.trunc(seats), 'loc rezervat', 'locuri rezervate')} pentru ${programme.name} la ${teacher.name}. Numai studenții acestui program le pot ocupa.`,
     )
   }
 
@@ -411,8 +420,9 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
         subject: `Cerere de locuri suplimentare — ${u!.name}`,
         html: template(
           'Cerere de locuri suplimentare',
-          html`<p><strong>${u!.name}</strong> solicită <strong>${Math.trunc(extra)}</strong> locuri
-           suplimentare pentru <strong>${programme.name}</strong>
+          html`<p><strong>${u!.name}</strong> solicită
+           <strong>${numar(Math.trunc(extra), 'loc suplimentar', 'locuri suplimentare')}</strong>
+           pentru <strong>${programme.name}</strong>
            (${LEVEL_WORD[programme.level]}).</p>
            <p style="padding:12px 16px;background:#f8f9fa;border-radius:4px;white-space:pre-wrap">${reason}</p>`,
           { text: 'Deschide alocarea locurilor', url: `${base}${HEAD_PAGE}` },
@@ -497,16 +507,16 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
       await sendEmail({
         to: teacher.email,
         subject: granted
-          ? `Ai primit ${decided.extra_seats} locuri pentru ${where}`
+          ? `Ai primit ${numar(decided.extra_seats, 'loc', 'locuri')} pentru ${where}`
           : 'Cererea de locuri suplimentare a fost respinsă',
         html: template(
           granted ? 'Locuri suplimentare aprobate' : 'Cerere de locuri respinsă',
           granted
             ? html`<p>Directorul de departament ți-a rezervat încă
-               <strong>${decided.extra_seats}</strong> locuri pentru <strong>${where}</strong>.</p>
+               <strong>${numar(decided.extra_seats, 'loc', 'locuri')}</strong> pentru <strong>${where}</strong>.</p>
                <p>Ele pot fi ocupate numai de studenți de la acest program de studiu.</p>
                ${note ? quote(note) : ''}`
-            : html`<p>Cererea pentru ${decided.extra_seats} locuri la ${where} a fost respinsă.</p>
+            : html`<p>Cererea pentru ${numar(decided.extra_seats, 'loc', 'locuri')} la ${where} a fost respinsă.</p>
                ${note ? html`<p><strong>Motiv:</strong> ${note}</p>` : ''}`,
           { text: 'Deschide locurile de coordonare', url: `${base}${TEACHER_PAGE}` },
         ),
@@ -526,7 +536,7 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
     return redirectWithNotice(
       HEAD_PAGE,
       decision === 'approved'
-        ? `${decided.extra_seats} locuri rezervate pentru ${where}. Cadrul didactic a fost notificat.`
+        ? `${numar(decided.extra_seats, 'loc rezervat', 'locuri rezervate')} pentru ${where}. Cadrul didactic a fost notificat.`
         : 'Cerere respinsă.',
     )
   }

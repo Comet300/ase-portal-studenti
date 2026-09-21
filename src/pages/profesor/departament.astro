@@ -511,10 +511,23 @@ const sections = [
                           <input type="hidden" name="actiune" value="aloca" />
                           <input type="hidden" name="profesor_id" value={t.id} />
 
+                          {/* Întoarcerea pe normă, ca bifă, pe fiecare nivel.
+                              API-ul o știe de la 0019 — „pe_norma” — dar niciun
+                              formular nu a trimis vreodată câmpul, așa că orice
+                              salvare scria un număr fix și un coordonator nu mai
+                              putea fi pus înapoi pe norma anului din portal.
+                              Două bife cu același nume, citite cu `getAll`:
+                              nivelurile sunt două decizii, iar `get` ar fi
+                              întors-o doar pe prima. */}
                           <div class="field">
                             <label class="label" for={`lic-${t.id}`}>Locuri de bază, licență</label>
                             <input class="input input--num" id={`lic-${t.id}`} name="locuri_licenta"
                               type="number" min="0" max="40" value={t.bachelor.base} />
+                            <label class="pe-norma" for={`norma-lic-${t.id}`}>
+                              <input type="checkbox" id={`norma-lic-${t.id}`} name="pe_norma"
+                                value="licenta" checked={t.bachelor.is_norm} />
+                              <span>Pe norma anului ({year?.default_bachelor_seats ?? 0})</span>
+                            </label>
                             <span class="hint">
                               {t.bachelor.taken} ocupate
                               {t.bachelor.is_norm ? ' · acum pe norma anului' : ''}
@@ -525,6 +538,11 @@ const sections = [
                             <label class="label" for={`mas-${t.id}`}>Locuri de bază, master</label>
                             <input class="input input--num" id={`mas-${t.id}`} name="locuri_master"
                               type="number" min="0" max="40" value={t.master.base} />
+                            <label class="pe-norma" for={`norma-mas-${t.id}`}>
+                              <input type="checkbox" id={`norma-mas-${t.id}`} name="pe_norma"
+                                value="master" checked={t.master.is_norm} />
+                              <span>Pe norma anului ({year?.default_master_seats ?? 0})</span>
+                            </label>
                             <span class="hint">
                               {t.master.taken} ocupate
                               {t.master.is_norm ? ' · acum pe norma anului' : ''}
@@ -536,8 +554,9 @@ const sections = [
                             <input class="input" id={`nota-baza-${t.id}`} name="nota"
                               placeholder="Ex: preia grupa colegei plecate în concediu." />
                             <span class="hint">
-                              Rămâne în jurnalul locurilor. Salvarea fixează numerele: coordonatorul
-                              iese de pe norma anului.
+                              Rămâne în jurnalul locurilor. Cu bifa scoasă, salvarea fixează
+                              numărul scris; cu bifa pusă, numărul de alături nu se citește, iar
+                              o schimbare a normei anului îl atinge din nou.
                             </span>
                           </div>
 
@@ -998,6 +1017,19 @@ const sections = [
   }
   .alocare .field {
     min-width: 120px;
+  }
+  /* Bifa stă sub numărul pe care îl anulează, nu lângă el: alăturate, se
+     citeau ca două câmpuri de completat, iar ținta de atingere a bifei o
+     lipea de input. `--tap` o ține apăsabilă cu degetul. */
+  .pe-norma {
+    display: flex;
+    align-items: center;
+    gap: var(--s-2);
+    min-height: var(--tap);
+    font-size: var(--t-sm);
+    color: var(--ink-soft);
+    cursor: pointer;
+    white-space: nowrap;
   }
   /* Două decizii diferite, una sub alta: baza este comună pe nivel, rezerva
      este a unui singur program. Puse pe același rând s-ar fi citit ca patru

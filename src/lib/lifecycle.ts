@@ -36,6 +36,17 @@ export interface Invitation {
   expires_at: string
   responded_at: string | null
   created_at: string
+  /* Which pot the seat would have to come out of, carried on the row.
+   *
+   * A proposal is addressed to a person, and a seat is reserved to a (level,
+   * study programme) since 0019 — so „can this one still be honoured” is a
+   * question about the student, not about the coordinator, and the screen
+   * listing the proposals cannot answer it without these three. The student's
+   * CURRENT programme: an invitation pins nothing, only an approved request
+   * does. */
+  student_level: 'bachelor' | 'master' | null
+  student_programme_id: string | null
+  student_programme_name: string | null
 }
 
 const INVITATION_FIELDS = `
@@ -43,12 +54,15 @@ const INVITATION_FIELDS = `
   i.response_reason, i.expires_at, i.responded_at, i.created_at,
   t.name AS teacher_name, t.academic_title,
   s.name AS student_name, s.student_number, s.father_initial,
+  COALESCE(sp.level, s.program) AS student_level,
+  s.programme_id AS student_programme_id, sp.name AS student_programme_name,
   tp.title AS topic_title`
 
 const INVITATION_JOINS = `
   FROM invitations i
   JOIN users t ON t.id = i.teacher_id
   JOIN users s ON s.id = i.student_id
+  LEFT JOIN study_programmes sp ON sp.id = s.programme_id
   LEFT JOIN topics tp ON tp.id = i.topic_id`
 
 export function teacherInvitations(teacherId: string): Promise<Invitation[]> {
@@ -79,6 +93,122 @@ export function openInvitationFor(
       WHERE i.id = $2 AND i.student_id = $1 AND i.status = 'pending' AND i.expires_at > now()`,
     [studentId, invitationId],
   )
+}
+
+/**
+ * Live proposals, counted against the capacity they will have to come out of.
+ *
+ * A proposal is not a seat — nobody accepts every offer, which is why sending
+ * more than you have is allowed at all. It stops being harmless when the
+ * coordinator cannot see the gap: the portal will refuse whoever accepts last,
+ * and the refusal lands on a student who did nothing wrong. So the gap is put
+ * on the coordinator's own screen, per level and per study programme, because
+ * that is the granularity a seat has since 0019 — four open proposals against
+ * three free seats is only a problem if the four are in the same pot.
+ *
+ * The programme is the student's current one: an invitation is not a request
+ * and pins nothing, so there is nothing else it could be.
+ */
+export interface OpenInvitationPot {
+  level: 'bachelor' | 'master'
+  programme_id: string | null
+  programme_name: string | null
+  open: number
+}
+
+export function openInvitationPots(teacherId: string): Promise<OpenInvitationPot[]> {
+  return query<OpenInvitationPot>(
+    `SELECT COALESCE(p.level, s.program) AS level,
+            s.programme_id, p.name AS programme_name,
+            count(*)::int AS open
+       FROM invitations i
+       JOIN users s ON s.id = i.student_id
+       LEFT JOIN study_programmes p ON p.id = s.programme_id
+      WHERE i.teacher_id = $1
+        AND i.academic_year_id = (SELECT id FROM academic_years WHERE is_current)
+        AND i.status IN ('pending', 'accepted')
+        AND i.expires_at > now()
+        AND COALESCE(p.level, s.program) IN ('bachelor', 'master')
+        -- A student who already turned the proposal into a request is no
+        -- longer outstanding against anything: the seat is either spent or
+        -- refused, and counting them again would show a gap that is closed.
+        AND NOT EXISTS (SELECT 1 FROM requests r
+                         WHERE r.invitation_id = i.id
+                           AND r.status IN ('pending', 'approved', 'defended'))
+      GROUP BY 1, 2, 3`,
+    [teacherId],
+  )
+}
+
+/**
+ * Tells the coordinator that a proposal of theirs can no longer be honoured.
+ *
+ * They are the only person who can do anything about it — ask the director for
+ * a seat for that programme, or withdraw another — and until now nothing said
+ * so: the student met a refusal and the coordinator met nothing at all.
+ *
+ * Said ONCE per proposal, and the proposal's own thread is what remembers that.
+ * A student who presses „Acceptă” three times, or who retries the form after
+ * the coordinator's next student defends, would otherwise send three identical
+ * emails about one fact. The check is the event's subject, not a new column:
+ * the thread is already where this portal keeps „what has been said between
+ * these two, about which”.
+ *
+ * Returns whether it said anything, so the caller can word the student's own
+ * message accordingly — promising that somebody has been notified when nothing
+ * was sent is worse than saying nothing.
+ */
+export async function tellCoordinatorSeatIsGone(e: {
+  invitationId: string
+  teacherId: string
+  teacherName: string
+  teacherEmail: string
+  studentId: string
+  studentName: string
+  /** The study programme by name, or the level when the student has none. */
+  cohort: string
+  baseUrl: string
+}): Promise<boolean> {
+  const alreadySaid = await queryOne<{ id: string }>(
+    `SELECT id FROM messages
+      WHERE kind = 'event' AND event_type = 'invitation_no_seat'
+        AND subject_kind = 'invitation' AND subject_id = $1
+      LIMIT 1`,
+    [e.invitationId],
+  )
+  if (alreadySaid) return false
+
+  await postEvent({
+    studentId: e.studentId,
+    teacherId: e.teacherId,
+    senderId: e.teacherId,
+    eventType: 'invitation_no_seat',
+    body:
+      `Propunerea către ${e.studentName} nu mai poate fi onorată: nu mai ai niciun loc ` +
+      `liber pentru ${e.cohort}. Cere-i directorului de departament un loc pentru ` +
+      `${e.cohort} sau retrage o altă propunere; până atunci cererea nu poate fi aprobată.`,
+    createConversation: true,
+    subjectKind: 'invitation',
+    subjectId: e.invitationId,
+  })
+
+  await sendEmail({
+    to: e.teacherEmail,
+    subject: `Propunerea către ${e.studentName} nu mai are loc`,
+    html: template(
+      'O propunere de-a ta nu mai poate fi onorată',
+      html`<p><strong>${e.studentName}</strong> a răspuns propunerii tale, dar nu mai ai
+       niciun loc liber pentru <strong>${e.cohort}</strong>, așa că portalul nu poate
+       aproba coordonarea.</p>
+       <p>Studentul nu are ce face în privința asta. Tu poți: cere-i directorului de
+       departament un loc pentru ${e.cohort}, sau retrage o altă propunere deschisă.
+       Propunerea rămâne valabilă până expiră, deci cererea poate fi depusă în clipa în
+       care apare un loc.</p>`,
+      { text: 'Vezi propunerile trimise', url: `${e.baseUrl}/profesor/studenti?sectiune=invitatii` },
+    ),
+  })
+
+  return true
 }
 
 /* --- seat requests ---------------------------------------------------------- */

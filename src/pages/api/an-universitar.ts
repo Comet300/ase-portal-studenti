@@ -5,6 +5,7 @@ import { deadEnd, redirectWithNotice } from '../../lib/http'
 import { parseArchiveRows, parseArchiveLevel } from '../../lib/archive'
 import { formAction } from '../../lib/forms'
 import { FORMS_OF_STUDY, normalizeLocation, programmeTitle } from '../../lib/programmes.mjs'
+import { numar } from '../../lib/text'
 import { openYear } from '../../lib/years'
 import { id as formId } from '../../lib/ids'
 
@@ -210,6 +211,108 @@ export const POST: APIRoute = async ({ request, locals }) => {
       u!.id,
     ])
     return back(`Centrul „${name}” a fost adăugat. Îl poți alege acum la „Program nou”.`)
+  }
+
+  /* Correcting the spelling of a centre, title and all.
+   *
+   * WHY THIS SCREEN NEEDED ONE. „Buzau” typed instead of „Buzău” could be
+   * deleted only while no programme named it (`ON DELETE RESTRICT`), so the
+   * moment a cohort was on it the misspelling was permanent: the only way out
+   * was a second centre, a second programme, and one cohort split in half —
+   * which is the thing migration 0025 exists to prevent.
+   *
+   * WHY IT IS NOT JUST THE UPDATE. `study_programmes.location` cascades on
+   * update (0025), so the rename really does reach every programme. But
+   * `study_programmes.name` and `users.specialization` are COMPOSED from the
+   * five facts by `programmeTitle` and materialised — so the cascade alone
+   * would move the centre and leave „Marketing · învățământ la distanță ·
+   * Buzau” written on the catalogue, the seats ledger, the topic list and six
+   * filtered screens. Migration 0024 recomposed both in SQL after exactly this
+   * kind of move; here the composing is done by the module instead, so there is
+   * one definition of a title rather than two that can drift.
+   *
+   * A rename that lands on an existing centre is a MERGE — two sets of seats,
+   * two catalogue entries and two halves of one cohort coming together — and
+   * this refuses it, as 0024 and 0025 refuse it. It is the director's decision
+   * about people, not a spelling correction. */
+  if (action === 'redenumeste_centru') {
+    const from = normalizeLocation(form.get('centru'))
+    const to = normalizeLocation(form.get('nume_nou'))
+
+    if (!to) return back('Scrie numele corect al centrului.', true)
+    if (to.length > 120) {
+      return back('Numele centrului este prea lung: cel mult 120 de caractere.', true)
+    }
+    if (to === from) return back(`Centrul se numește deja „${to}”.`, true)
+
+    const centres = await query<{ name: string }>(`SELECT name FROM teaching_locations`)
+    if (!centres.some((c) => c.name === from)) {
+      return back(`Centrul „${from}” nu este în lista facultății.`, true)
+    }
+    /* Case-insensitively, as „Adaugă un centru”: „bucurești” is not a second
+     * București, and a rename that only changes the case of the SAME row is a
+     * correction this must still allow through. */
+    const key = to.toLocaleLowerCase('ro-RO')
+    const clash = centres.find(
+      (c) => c.name !== from && c.name.toLocaleLowerCase('ro-RO') === key,
+    )
+    if (clash) {
+      return back(
+        `Există deja un centru „${clash.name}”. Redenumirea l-ar uni cu „${from}”, adică ar aduce la un loc două seturi de locuri și două jumătăți dintr-o cohortă — asta nu o face o corectură de scriere. Mută întâi programele dintr-un centru în celălalt, apoi șterge centrul rămas gol.`,
+        true,
+      )
+    }
+
+    const renamed = await transaction(async (client) => {
+      // The cascade of 0025 carries the new name into every programme taught
+      // there, in this year and in the archived ones alike.
+      await client.query(`UPDATE teaching_locations SET name = $2 WHERE name = $1`, [from, to])
+
+      const { rows: programmes } = await client.query<{
+        id: string
+        level: string
+        form_of_study: string
+        specialisation: string
+        language: string
+        location: string
+      }>(
+        `SELECT id, level, form_of_study, specialisation, language, location
+           FROM study_programmes WHERE location = $1`,
+        [to],
+      )
+
+      for (const p of programmes) {
+        await client.query(`UPDATE study_programmes SET name = $2 WHERE id = $1`, [
+          p.id,
+          programmeTitle(p),
+        ])
+      }
+
+      /* The copy on the student follows the rename, exactly as in 0024:
+       * `users.specialization` is a denormalised copy of the display title and
+       * six screens group and filter on it without a join, so leaving it would
+       * show one cohort as two groups — under two spellings of one city. */
+      const { rowCount: students } = await client.query(
+        `UPDATE users u
+            SET specialization = p.name
+           FROM study_programmes p
+          WHERE p.id = u.programme_id AND p.location = $1
+            AND u.specialization IS DISTINCT FROM p.name`,
+        [to],
+      )
+
+      return { programmes: programmes.length, students: students ?? 0 }
+    })
+
+    return back(
+      `Centrul „${from}” se numește acum „${to}”. ` +
+        (renamed.programmes === 0
+          ? 'Niciun program de studiu nu se preda acolo.'
+          : `${numar(renamed.programmes, 'program de studiu și-a', 'programe de studiu și-au')} recompus denumirea` +
+            (renamed.students > 0
+              ? `, iar ${numar(renamed.students, 'student a fost trecut', 'studenți au fost trecuți')} pe denumirea nouă.`
+              : '.')),
+    )
   }
 
   /* A centre opened by mistake has to be closable, or the list only ever grows

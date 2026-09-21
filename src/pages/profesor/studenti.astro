@@ -4,7 +4,7 @@ import AlegeData from '../../components/AlegeData.astro'
 import ProfesorLayout from '../../layouts/ProfesorLayout.astro'
 import Taburi from '../../components/Taburi.astro'
 import { query } from '../../lib/db'
-import { INVITATION_WINDOW_DAYS, teacherInvitations } from '../../lib/lifecycle'
+import { INVITATION_WINDOW_DAYS, openInvitationPots, teacherInvitations } from '../../lib/lifecycle'
 import {
   BUCKET_LABELS,
   dueBucket,
@@ -47,7 +47,7 @@ const requestedSection = Astro.url.searchParams.get('sectiune') ?? ''
 const sectiune = (SECTIONS as readonly string[]).includes(requestedSection) ? requestedSection : 'cereri'
 const openStudentId = Astro.url.searchParams.get('student')
 
-const [allRequests, studenti, teme, seats, capacitate, invitatii, studentDirectoryRows, years, titleChanges] =
+const [allRequests, studenti, teme, seats, capacitate, invitatii, propuneriDeschise, studentDirectoryRows, years, titleChanges] =
   await Promise.all([
     teacherRequests(u.id),
     supervisedStudents(u.id),
@@ -55,6 +55,7 @@ const [allRequests, studenti, teme, seats, capacitate, invitatii, studentDirecto
     teacherSeats(u.id),
     teacherCapacity(u.id),
     teacherInvitations(u.id),
+    openInvitationPots(u.id),
     studentDirectory(),
     allYears(),
     teacherTitleChanges(u.id),
@@ -110,6 +111,23 @@ const decidedRequests = allRequests.filter((c) => c.status !== 'pending')
 // sent for nothing.
 const invitabili = studentDirectoryRows.filter((s) => s.request_status !== 'approved')
 const openInvitations = invitatii.filter((i) => i.status === 'pending')
+
+/* Câte propuneri sunt pe drum, față de câte locuri le așteaptă.
+ *
+ * O propunere nu este un loc — nu acceptă toată lumea, de asta se pot trimite
+ * mai multe decât ai. Devine o problemă abia când nu o vezi: poarta din
+ * `/api/cereri/depune` refuză cererea ultimului care acceptă, iar refuzul cade
+ * pe un student care n-a greșit nimic. Comparația se face pe (nivel, program),
+ * pentru că atât înseamnă un loc de la 0019 încoace: patru propuneri peste trei
+ * locuri contează doar dacă cele patru sunt din același program. */
+const suprapuneri = propuneriDeschise
+  .map((p) => ({
+    ...p,
+    free: freeFor(atLevel(capacitate, p.level), p.programme_id),
+    cohort: p.programme_name ?? (p.level === 'master' ? 'master' : 'licență'),
+  }))
+  .filter((p) => p.open > p.free)
+  .sort((a, b) => b.open - b.free - (a.open - a.free))
 
 /* One thesis, or all of them.
  *
@@ -1013,11 +1031,30 @@ function deadline(expiresAt: string | null | undefined) {
   {
     sectiune === 'invitatii' && (
       <div class="stack">
+        {/* Supraangajarea, scrisă, înainte să o afle altcineva.
+            Poți trimite mai multe propuneri decât ai locuri — nu acceptă toată
+            lumea — dar dacă acceptă, portalul refuză cererea ultimilor, iar
+            refuzul cade pe un student care n-a greșit nimic. Numărul stă aici,
+            pe (nivel, program), ca alegerea să fie a ta. */}
+        {suprapuneri.length > 0 && (
+          <p class="fara-locuri">
+            <strong>Ai trimis mai multe propuneri decât locuri</strong>:{' '}
+            {suprapuneri
+              .map((p) => `${p.cohort} — ${numar(p.open, 'propunere', 'propuneri')}, ${numar(p.free, 'loc liber', 'locuri libere')}`)
+              .join(' · ')}
+            . Dacă acceptă mai mulți decât încap, cererea ultimilor este refuzată și studentul
+            este anunțat că nu este vina lui.{' '}
+            <a class="link" href={CERE_LOCURI}>Cere-i directorului locuri pentru aceste programe</a>
+            {' '}sau așteaptă răspunsurile înainte de a mai trimite.
+          </p>
+        )}
+
         <section class="panel">
           <div class="panel__header">
             <h2 class="section-title">Propune coordonarea unui student</h2>
             <span class="muted text-sm">
-              {seats.free} {seats.free === 1 ? 'loc liber' : 'locuri libere'}
+              {numar(seats.free, 'loc liber', 'locuri libere')} ·{' '}
+              {numar(openInvitations.length, 'propunere deschisă', 'propuneri deschise')}
             </span>
           </div>
 
@@ -1152,6 +1189,26 @@ function deadline(expiresAt: string | null | undefined) {
                   {i.topic_title && (
                     <p class="muted text-xs">Temă propusă: {i.topic_title}</p>
                   )}
+
+                  {/* Propunerea asta, acum, nu „ai depășit undeva”: locul se
+                      numără pe nivelul și programul studentului căruia i-ai
+                      scris, deci verdictul este al rândului. Apare doar cât
+                      timp mai poate fi onorată sau nu — o propunere refuzată
+                      sau expirată nu mai așteaptă niciun loc. */}
+                  {(i.status === 'pending' || i.status === 'accepted') &&
+                    freeFor(
+                      atLevel(capacitate, i.student_level === 'master' ? 'master' : 'bachelor'),
+                      i.student_programme_id,
+                    ) === 0 && (
+                      <p class="muted text-xs">
+                        Fără loc pentru{' '}
+                        {i.student_programme_name ??
+                          (i.student_level === 'master' ? 'master' : 'licență')}{' '}
+                        în acest moment: dacă acceptă, cererea nu poate fi aprobată.{' '}
+                        <a class="link" href={CERE_LOCURI}>Cere-i directorului un loc</a>.
+                      </p>
+                    )}
+
                   <p class="invitatii__mesaj">{i.message}</p>
 
                   {i.response_reason && (
